@@ -257,15 +257,53 @@ Three implementations:
 | `blockedGlobs` | `(deny file-read* (subpath ...))` | omit bind mount | don't mount path |
 | `allowBash: true` | allow `process-exec` | allow in seccomp | default |
 
+### Harness compatibility
+
+The sandbox wraps the entire session, so every harness runs inside it. Key
+concerns and how they are addressed:
+
+| Concern | Solution |
+|---------|----------|
+| Harness needs its LLM API (Anthropic, OpenAI, etc.) | Two-tier network model (see below) |
+| Harness config dirs (`~/.claude/`, `~/.codex/`) | Mounted read-only inside the sandbox |
+| Node/Python runtime (`/usr/`, `/lib/`) | Mounted read-only (default for all backends) |
+| Authz server callback (`127.0.0.1:{port}`) | Localhost to authz port always allowed |
+| Git binary and workspace `.git/` | Git mounted read-only; `.git` writable |
+| Package managers (`npm install`, `pip install`) | Work when `allowNetwork: true`; deps dir is inside workspace |
+| PTY/terminal interaction | Natively supported by sandbox-exec and bwrap |
+| Unknown/custom harnesses | User manually allowlists provider domain |
+
 ### Network proxy (`src/main/services/network-proxy.ts`)
 
-Per-session HTTP + SOCKS5 proxy running on the host. Responsibilities:
+Per-session HTTP + SOCKS5 proxy running on the host.
 
-1. **Domain filtering**: Allow/deny outbound requests based on policy.
+**Two-tier network model**: Harnesses are LLM clients — they must reach their
+provider API to function. `allowNetwork` in the policy controls *agent-initiated*
+traffic, not the harness's own control plane.
+
+| Tier | What | Governed by | Example |
+|------|------|-------------|---------|
+| **Control plane** | Harness → LLM provider API | Always allowed; auto-detected from harness ID | `api.anthropic.com`, `api.openai.com` |
+| **Agent action** | Agent-initiated HTTP (curl, npm, MCP, etc.) | Policy `allowNetwork` + domain allowlist | `api.github.com`, `registry.npmjs.org` |
+
+Known harness → provider domain mappings:
+
+| Harness | Auto-allowed domains |
+|---------|---------------------|
+| `claude` | `api.anthropic.com`, `*.anthropic.com` |
+| `codex` | `api.openai.com`, `*.openai.com` |
+| `openclaw` | Configurable (user sets provider URL) |
+| Unknown | None auto-allowed; user adds manually via policy allowlist |
+
+When `allowNetwork: false`, the proxy blocks all agent action traffic but still
+permits control plane traffic so the harness can function. The user sees this
+clearly in the UI: "Network: restricted (LLM API only)."
+
+**Other responsibilities:**
+
+1. **Domain filtering**: Allow/deny agent action requests based on policy.
 2. **Credential injection**: Add auth headers for configured domains.
 3. **Request logging**: Log all outbound requests to activity feed.
-4. **Full block**: If `allowNetwork: false`, reject everything (defense-in-depth
-   behind the sandbox's own network isolation).
 
 The sandbox routes traffic to the proxy via:
 - macOS: SBPL profile restricts network to the proxy socket only.
