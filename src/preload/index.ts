@@ -231,6 +231,22 @@ contextBridge.exposeInMainWorld('latch', {
   generateSessionTitle: (payload: { goal: string }) =>
     ipcRenderer.invoke('latch:generate-session-title', payload),
 
+  // ── Updater ──────────────────────────────────────────────────────────────
+
+  checkForUpdates: () => ipcRenderer.invoke('latch:updater-check'),
+
+  downloadUpdate: () => ipcRenderer.invoke('latch:updater-download'),
+
+  installUpdate: () => ipcRenderer.invoke('latch:updater-install'),
+
+  getUpdateState: () => ipcRenderer.invoke('latch:updater-state'),
+
+  onUpdaterStatus: (callback: (status: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:updater-status', handler)
+    return () => { ipcRenderer.removeListener('latch:updater-status', handler) }
+  },
+
   // ── Settings (encrypted key-value store) ────────────────────────────────
 
   getSetting: (payload: { key: string }) =>

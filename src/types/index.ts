@@ -243,6 +243,24 @@ export interface FeedItem {
   harnessId: string;
 }
 
+// ─── Updater ─────────────────────────────────────────────────────────────────
+
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export interface UpdateState {
+  status: UpdateStatus
+  version: string | null
+  progress: number | null
+  error: string | null
+}
+
 // ─── Rail panels ──────────────────────────────────────────────────────────────
 
 export type RailPanel = 'activity' | 'policy';
@@ -343,6 +361,13 @@ export interface LatchAPI {
 
   // Session title generation (LLM)
   generateSessionTitle(payload: { goal: string }): Promise<{ ok: boolean; title?: string; error?: string }>;
+
+  // Updater
+  checkForUpdates(): Promise<{ ok: boolean } & UpdateState>;
+  downloadUpdate(): Promise<{ ok: boolean } & UpdateState>;
+  installUpdate(): Promise<{ ok: boolean }>;
+  getUpdateState(): Promise<{ ok: boolean } & UpdateState>;
+  onUpdaterStatus(callback: (state: UpdateState) => void): () => void;
 
   // Settings (encrypted key-value store)
   getSetting(payload: { key: string }): Promise<{ ok: boolean; value: string | null; error?: string }>;

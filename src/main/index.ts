@@ -39,6 +39,7 @@ import { FeedStore }                            from './feed-store'
 import { Radar }                                 from './radar'
 import { SettingsStore }                         from './settings-store'
 import { initTelemetrySDK, bindTelemetrySettings, track } from './telemetry'
+import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdateState } from './updater'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -101,6 +102,9 @@ initTelemetrySDK('A-US-1996460381')
 
 app.whenReady().then(() => {
   mainWindow = createWindow()
+
+  // Auto-updater — wires events to the renderer via latch:updater-status.
+  initUpdater(mainWindow)
 
   // Shared send function for forwarding events to the renderer.
   const sendToRenderer = (channel: string, payload: unknown) => {
@@ -560,6 +564,27 @@ app.whenReady().then(() => {
       return { cancelled: true }
     }
     return { cancelled: false, filePath: result.filePaths[0] }
+  })
+
+  // ── Updater handlers ─────────────────────────────────────────────────
+
+  ipcMain.handle('latch:updater-check', async () => {
+    const state = await checkForUpdates()
+    return { ok: true, ...state }
+  })
+
+  ipcMain.handle('latch:updater-download', async () => {
+    const state = await downloadUpdate()
+    return { ok: true, ...state }
+  })
+
+  ipcMain.handle('latch:updater-install', async () => {
+    quitAndInstall()
+    return { ok: true }
+  })
+
+  ipcMain.handle('latch:updater-state', async () => {
+    return { ok: true, ...getUpdateState() }
   })
 
   // ── Agents handlers ──────────────────────────────────────────────────
