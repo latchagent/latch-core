@@ -4,8 +4,8 @@
  * Ported from `lib/cloud/anomaly.ts` and wrapped in a periodic runner.
  */
 
-import type { ActivityEvent, RadarSignal, RadarConfig } from '../types'
-import type { ActivityStore } from './activity-store'
+import type { ActivityEvent, RadarSignal, RadarConfig } from '../../types'
+import type { ActivityStore } from '../stores/activity-store'
 
 // ─── Detection (ported from cloud) ──────────────────────────────────────────
 

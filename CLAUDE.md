@@ -22,17 +22,32 @@ npm run build        # production build → out/
 ## Project structure
 
 ```
-apps/desktop/
+├── .agents/skills/                # Agent Skills (agentskills.io spec) — see below
+├── .claude/skills -> ../.agents/skills  # Symlink for Claude Code discovery
 ├── src/
 │   ├── main/                      # Main process (TypeScript, ESM)
 │   │   ├── index.ts               # BrowserWindow, all ipcMain handlers
-│   │   ├── pty-manager.ts         # PTY lifecycle via node-pty
-│   │   ├── session-store.ts       # SQLite: sessions, policy overrides
-│   │   ├── policy-store.ts        # SQLite: global policy definitions
-│   │   ├── skills-store.ts        # SQLite: skills bank + harness sync
-│   │   ├── workflow-store.ts      # SQLite: workflow state machine
-│   │   ├── harnesses.ts           # Detects claude / codex / openclaw
-│   │   └── git-workspaces.ts      # Git worktree create/list/remove
+│   │   ├── stores/                # SQLite data access layer
+│   │   │   ├── session-store.ts   # Sessions, policy overrides
+│   │   │   ├── policy-store.ts    # Global policy definitions
+│   │   │   ├── skills-store.ts    # Skills bank + harness sync
+│   │   │   ├── mcp-store.ts       # MCP server configurations
+│   │   │   ├── activity-store.ts  # Tool-call activity log
+│   │   │   ├── feed-store.ts      # Agent status feed
+│   │   │   └── settings-store.ts  # Encrypted key-value settings
+│   │   ├── services/              # Business logic & background services
+│   │   │   ├── authz-server.ts    # Runtime tool-call authorization
+│   │   │   ├── policy-enforcer.ts # Harness-native config generation
+│   │   │   ├── policy-generator.ts # AI policy generation (OpenAI)
+│   │   │   ├── mcp-sync.ts        # MCP config sync to harnesses
+│   │   │   ├── radar.ts           # Anomaly detection engine
+│   │   │   ├── telemetry.ts       # Anonymous usage telemetry
+│   │   │   └── updater.ts         # Auto-update lifecycle
+│   │   └── lib/                   # Infrastructure
+│   │       ├── pty-manager.ts     # PTY lifecycle via node-pty
+│   │       ├── docker-manager.ts  # Docker container management
+│   │       ├── git-workspaces.ts  # Git worktree create/list/remove
+│   │       └── harnesses.ts       # Detects claude / codex / openclaw
 │   ├── preload/
 │   │   └── index.ts               # contextBridge → window.latch API
 │   ├── renderer/                  # Renderer process (React + TypeScript)
@@ -63,9 +78,6 @@ apps/desktop/
 │   └── types/
 │       └── index.ts               # Shared TS interfaces + Window.latch
 ├── out/                           # Build output (electron-vite)
-│   ├── main/index.js
-│   ├── preload/index.js
-│   └── renderer/index.html + assets/
 ├── electron.vite.config.ts        # electron-vite build config
 ├── tsconfig.json                  # Root TS config (references node + web)
 ├── tsconfig.node.json             # Main + preload TS config
@@ -75,8 +87,19 @@ apps/desktop/
 └── package.json
 ```
 
-> **Legacy directories**: `electron/` and `renderer/` contain the old vanilla JS
-> code (pre-migration). They are no longer used and can be deleted.
+### Agent Skills (`.agents/skills/`)
+
+Repo-level skills following the [agentskills.io spec](https://agentskills.io/specification)
+that teach contributor agents how to work in this codebase. Symlinked into
+`.claude/skills/` for automatic Claude Code discovery.
+
+| Skill | What it teaches |
+|-------|----------------|
+| `adding-ipc-handlers` | The 4-file IPC dance: types → preload → main → renderer |
+| `adding-sqlite-stores` | SQLite store class pattern with migrations and wiring |
+| `adding-react-components` | Panels, modals, Zustand, Rail registration, CSS tokens |
+| `adding-service-modules` | Main-process services: lifecycle, deps, testing |
+| `running-and-testing` | Build, dev, typecheck, vitest, native module gotchas |
 
 ---
 

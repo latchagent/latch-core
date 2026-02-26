@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { authorizeToolCall, DEFAULT_COMMAND_RULES, matchGlob } from './authz-server'
-import type { PolicyDocument } from '../types'
+import type { PolicyDocument } from '../../types'
 
 function makePolicy(overrides?: Partial<PolicyDocument['permissions']>): PolicyDocument {
   return {

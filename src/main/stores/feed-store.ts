@@ -5,7 +5,7 @@
  */
 
 import type Database from 'better-sqlite3'
-import type { FeedItem } from '../types'
+import type { FeedItem } from '../../types'
 
 let idCounter = 0
 

@@ -21,25 +21,25 @@ import {
   removeWorktree,
   getWorkspaceRoot,
   getBranchPrefix
-} from './git-workspaces'
-import { detectAllHarnesses }                   from './harnesses'
-import SessionStore                              from './session-store'
-import { PolicyStore }                           from './policy-store'
-import { enforcePolicy }                         from './policy-enforcer'
-import { generatePolicy, generateSessionTitle }  from './policy-generator'
-import { SkillsStore }                           from './skills-store'
-import { McpStore }                              from './mcp-store'
-import { syncMcpToHarness }                      from './mcp-sync'
+} from './lib/git-workspaces'
+import { detectAllHarnesses }                   from './lib/harnesses'
+import SessionStore                              from './stores/session-store'
+import { PolicyStore }                           from './stores/policy-store'
+import { enforcePolicy }                         from './services/policy-enforcer'
+import { generatePolicy, generateSessionTitle }  from './services/policy-generator'
+import { SkillsStore }                           from './stores/skills-store'
+import { McpStore }                              from './stores/mcp-store'
+import { syncMcpToHarness }                      from './services/mcp-sync'
 
-import PtyManager                                from './pty-manager'
-import DockerManager                             from './docker-manager'
-import { AuthzServer }                           from './authz-server'
-import { ActivityStore }                         from './activity-store'
-import { FeedStore }                            from './feed-store'
-import { Radar }                                 from './radar'
-import { SettingsStore }                         from './settings-store'
-import { initTelemetrySDK, bindTelemetrySettings, track } from './telemetry'
-import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdateState } from './updater'
+import PtyManager                                from './lib/pty-manager'
+import DockerManager                             from './lib/docker-manager'
+import { AuthzServer }                           from './services/authz-server'
+import { ActivityStore }                         from './stores/activity-store'
+import { FeedStore }                            from './stores/feed-store'
+import { Radar }                                 from './services/radar'
+import { SettingsStore }                         from './stores/settings-store'
+import { initTelemetrySDK, bindTelemetrySettings, track } from './services/telemetry'
+import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdateState } from './services/updater'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import OpenAI from 'openai'
 import { zodResponseFormat } from 'openai/helpers/zod'
-import type { PolicyDocument } from '../types'
+import type { PolicyDocument } from '../../types'
 
 // ─── Zod schemas matching PolicyDocument ──────────────────────────────────────
 

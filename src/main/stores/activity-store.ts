@@ -5,7 +5,7 @@
  */
 
 import type Database from 'better-sqlite3'
-import type { ActivityEvent, ActionClass, RiskLevel, AuthzDecision } from '../types'
+import type { ActivityEvent, ActionClass, RiskLevel, AuthzDecision } from '../../types'
 
 let idCounter = 0
 

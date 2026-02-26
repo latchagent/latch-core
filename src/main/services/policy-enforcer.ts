@@ -6,8 +6,8 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import type { PolicyDocument, PolicyPermissions, CodexPolicyConfig, HarnessesConfig, ToolRule, McpServerRule, CommandRule } from '../types'
-import type { PolicyStore } from './policy-store'
+import type { PolicyDocument, PolicyPermissions, CodexPolicyConfig, HarnessesConfig, ToolRule, McpServerRule, CommandRule } from '../../types'
+import type { PolicyStore } from '../stores/policy-store'
 
 // ─── Session ID validation ───────────────────────────────────────────────────
 

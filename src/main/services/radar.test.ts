@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { detectAnomalies } from './radar'
-import type { ActivityEvent } from '../types'
+import type { ActivityEvent } from '../../types'
 
 function makeEvent(overrides: Partial<ActivityEvent> & { timestamp: string }): ActivityEvent {
   return {

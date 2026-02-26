@@ -10,13 +10,13 @@
 import crypto from 'node:crypto'
 import http from 'node:http'
 import os from 'node:os'
-import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule } from '../types'
-import type { PolicyStore } from './policy-store'
+import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule } from '../../types'
+import type { PolicyStore } from '../stores/policy-store'
 import { resolvePolicy } from './policy-enforcer'
-import type { ActivityStore } from './activity-store'
+import type { ActivityStore } from '../stores/activity-store'
 import type { Radar } from './radar'
-import type { FeedStore } from './feed-store'
-import type { SettingsStore } from './settings-store'
+import type { FeedStore } from '../stores/feed-store'
+import type { SettingsStore } from '../stores/settings-store'
 
 const MAX_BODY_BYTES = 64 * 1024 // 64 KB max request body
 const APPROVAL_TIMEOUT_MS = 120_000 // 120 seconds for interactive approval
