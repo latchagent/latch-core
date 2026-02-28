@@ -42,6 +42,9 @@ export class McpStore {
 
     // Idempotent migration: add tools column
     try { this.db.exec('ALTER TABLE mcp_servers ADD COLUMN tools TEXT') } catch { /* already exists */ }
+
+    // Idempotent migration: add tool_descriptions column
+    try { this.db.exec('ALTER TABLE mcp_servers ADD COLUMN tool_descriptions TEXT') } catch { /* already exists */ }
   }
 
   listServers() {
@@ -62,11 +65,11 @@ export class McpStore {
 
     const now = new Date().toISOString()
     this.db.prepare(`
-      INSERT INTO mcp_servers (id, name, description, transport, command, args, tools, env, url, headers, harnesses, enabled, tags, catalog_id, created_at, updated_at)
-      VALUES (@id, @name, @description, @transport, @command, @args, @tools, @env, @url, @headers, @harnesses, @enabled, @tags, @catalog_id, @now, @now)
+      INSERT INTO mcp_servers (id, name, description, transport, command, args, tools, tool_descriptions, env, url, headers, harnesses, enabled, tags, catalog_id, created_at, updated_at)
+      VALUES (@id, @name, @description, @transport, @command, @args, @tools, @tool_descriptions, @env, @url, @headers, @harnesses, @enabled, @tags, @catalog_id, @now, @now)
       ON CONFLICT(id) DO UPDATE SET
         name = @name, description = @description, transport = @transport,
-        command = @command, args = @args, tools = @tools, env = @env,
+        command = @command, args = @args, tools = @tools, tool_descriptions = @tool_descriptions, env = @env,
         url = @url, headers = @headers, harnesses = @harnesses,
         enabled = @enabled, tags = @tags, catalog_id = @catalog_id,
         updated_at = @now
@@ -78,6 +81,7 @@ export class McpStore {
       command: server.command ?? null,
       args: server.args ? JSON.stringify(server.args) : null,
       tools: Array.isArray(server.tools) && server.tools.length ? JSON.stringify(server.tools) : null,
+      tool_descriptions: server.toolDescriptions && Object.keys(server.toolDescriptions).length ? JSON.stringify(server.toolDescriptions) : null,
       env: server.env ? JSON.stringify(server.env) : null,
       url: server.url ?? null,
       headers: server.headers ? JSON.stringify(server.headers) : null,
@@ -107,6 +111,11 @@ export class McpStore {
       try { tools = JSON.parse(row.tools) } catch { /* fallback */ }
     }
 
+    let toolDescriptions: Record<string, string> = {}
+    if (row.tool_descriptions) {
+      try { toolDescriptions = JSON.parse(row.tool_descriptions) } catch { /* fallback */ }
+    }
+
     let env: Record<string, string> | undefined
     if (row.env) {
       try { env = JSON.parse(row.env) } catch { /* fallback */ }
@@ -130,6 +139,7 @@ export class McpStore {
       command: row.command ?? undefined,
       args,
       tools,
+      toolDescriptions,
       env,
       url: row.url ?? undefined,
       headers,

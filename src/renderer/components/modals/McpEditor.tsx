@@ -7,8 +7,10 @@ import React, { useEffect, useState, KeyboardEvent } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import type { McpServerRecord, McpTransport } from '../../../types'
 
+const SECRET_REF_RE = /^\$\{secret:[^}]+\}$/
+
 export default function McpEditor() {
-  const { mcpEditorServer, closeMcpEditor, saveMcpServer } = useAppStore()
+  const { mcpEditorServer, closeMcpEditor, saveMcpServer, secrets, loadSecrets, introspectMcpServer } = useAppStore()
 
   const base = mcpEditorServer
   const [name,      setName]      = useState(base?.name        ?? '')
@@ -21,6 +23,10 @@ export default function McpEditor() {
   const [tags,      setTags]      = useState(base?.tags?.join(', ')      ?? '')
   const [harnesses, setHarnesses] = useState(base?.harnesses?.join(', ') ?? '')
   const [enabled,   setEnabled]   = useState(base?.enabled !== false)
+  const [toolDescs, setToolDescs] = useState<Record<string, string>>(base?.toolDescriptions ?? {})
+  const [discovering, setDiscovering] = useState(false)
+  const [discoverError, setDiscoverError] = useState<string | null>(null)
+  const [discoverCount, setDiscoverCount] = useState<number | null>(null)
 
   // Env vars as array of [key, value] pairs
   const [envRows, setEnvRows] = useState<[string, string][]>(() => {
@@ -39,6 +45,7 @@ export default function McpEditor() {
   })
 
   useEffect(() => {
+    loadSecrets()
     setName(base?.name        ?? '')
     setDesc(base?.description ?? '')
     setTransport(base?.transport ?? 'stdio')
@@ -49,6 +56,10 @@ export default function McpEditor() {
     setTags(base?.tags?.join(', ')      ?? '')
     setHarnesses(base?.harnesses?.join(', ') ?? '')
     setEnabled(base?.enabled !== false)
+    setToolDescs(base?.toolDescriptions ?? {})
+    setDiscovering(false)
+    setDiscoverError(null)
+    setDiscoverCount(null)
     setEnvRows(base?.env && Object.keys(base.env).length ? Object.entries(base.env) : [])
     setHeaderRows(base?.headers && Object.keys(base.headers).length ? Object.entries(base.headers) : [])
   }, [mcpEditorServer]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -70,6 +81,7 @@ export default function McpEditor() {
       command:     transport === 'stdio' ? command.trim() || undefined : undefined,
       args:        transport === 'stdio' ? args.split(',').map((a) => a.trim()).filter(Boolean) : undefined,
       tools:       tools.split(',').map((t) => t.trim()).filter(Boolean),
+      toolDescriptions: toolDescs,
       env:         Object.keys(env).length ? env : undefined,
       url:         transport === 'http' ? url.trim() || undefined : undefined,
       headers:     transport === 'http' && Object.keys(headers).length ? headers : undefined,
@@ -80,6 +92,30 @@ export default function McpEditor() {
     }
     await saveMcpServer(server)
   }
+
+  const handleDiscover = async () => {
+    if (!base?.id) return
+    setDiscovering(true)
+    setDiscoverError(null)
+    setDiscoverCount(null)
+    const result = await introspectMcpServer(base.id)
+    setDiscovering(false)
+    if (result.ok && result.tools) {
+      const names = result.tools.map((t) => t.name)
+      setTools(names.join(', '))
+      const descs: Record<string, string> = {}
+      result.tools.forEach((t) => { if (t.description) descs[t.name] = t.description })
+      setToolDescs(descs)
+      setDiscoverCount(names.length)
+    } else {
+      setDiscoverError(result.error ?? 'Discovery failed.')
+    }
+  }
+
+  const canDiscover = !!base?.id && (
+    (transport === 'stdio' && command.trim()) ||
+    (transport === 'http' && url.trim())
+  )
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') closeMcpEditor()
@@ -237,12 +273,30 @@ export default function McpEditor() {
                     value={k}
                     onChange={(e) => updateEnvRow(i, 0, e.target.value)}
                   />
-                  <input
-                    className="modal-input kv-value"
-                    placeholder="value"
-                    value={v}
-                    onChange={(e) => updateEnvRow(i, 1, e.target.value)}
-                  />
+                  <div className="kv-value-wrap">
+                    {SECRET_REF_RE.test(v) && <span className="kv-secret-icon" title="Using vault secret">&#x1f512;</span>}
+                    <input
+                      className={`modal-input kv-value${SECRET_REF_RE.test(v) ? ' is-secret' : ''}`}
+                      placeholder="value"
+                      value={v}
+                      onChange={(e) => updateEnvRow(i, 1, e.target.value)}
+                    />
+                    {secrets.length > 0 && (
+                      <select
+                        className="kv-secret-select"
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) updateEnvRow(i, 1, e.target.value)
+                        }}
+                        title="Use a vault secret"
+                      >
+                        <option value="">secret...</option>
+                        {secrets.map((s) => (
+                          <option key={s.id} value={`\${secret:${s.key}}`}>{s.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                   <button className="kv-remove" onClick={() => removeEnvRow(i)} type="button">x</button>
                 </div>
               ))}
@@ -251,7 +305,20 @@ export default function McpEditor() {
           </div>
 
           <div className="modal-field">
-            <label className="modal-label" htmlFor="mcp-tools">Tools (comma-separated)</label>
+            <div className="mcp-discover-row">
+              <label className="modal-label" htmlFor="mcp-tools">Tools (comma-separated)</label>
+              <button
+                className="mcp-discover-btn"
+                type="button"
+                disabled={!canDiscover || discovering}
+                onClick={handleDiscover}
+                title={!base?.id ? 'Save the server first to discover tools' : 'Discover tools from running server'}
+              >
+                {discovering ? 'Discovering...' : 'Discover Tools'}
+              </button>
+            </div>
+            {discoverError && <div className="mcp-discover-error">{discoverError}</div>}
+            {discoverCount !== null && !discoverError && <div className="mcp-discover-count">Found {discoverCount} tools</div>}
             <input
               className="modal-input"
               id="mcp-tools"

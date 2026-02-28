@@ -55,7 +55,12 @@ export function detectAnomalies(activity: ActivityEvent[], config?: Partial<Rada
   const baseline = activity.filter((e) => { const ts = new Date(e.timestamp).getTime(); return Number.isFinite(ts) && ts >= baselineStart && ts < baselineEnd })
 
   const signals: RadarSignal[] = []
-  if (baseline.length < 10 && recent.length < 5) return signals
+
+  // Require a mature baseline before reporting anomalies.
+  // Without enough historical data, everything looks anomalous.
+  const MIN_BASELINE = 50
+  if (baseline.length < MIN_BASELINE) return signals
+  if (recent.length < 3) return signals
 
   // Build baseline windows
   const wCount = Math.max(1, Math.floor((baselineEnd - baselineStart) / windowMs))
@@ -86,11 +91,11 @@ export function detectAnomalies(activity: ActivityEvent[], config?: Partial<Rada
   const zT = zThreshold(cfg.sensitivity)
   const volThreshold = 1 + cfg.volumeThresholdPct / 100
 
-  // Traffic volume spike
+  // Traffic volume spike (requires non-zero baseline mean)
   const { mean: vMean, std: vStd } = meanStd(counts)
-  const vRatio = vMean > 0 ? recent.length / vMean : Infinity
+  const vRatio = vMean > 0 ? recent.length / vMean : 0
   const vZ = zScore(recent.length, vMean, vStd)
-  if (recent.length >= 3 && ((vMean > 0 && vRatio >= volThreshold && vZ >= zT) || (vMean === 0 && recent.length >= 5))) {
+  if (recent.length >= 3 && vMean > 0 && vRatio >= volThreshold && vZ >= zT) {
     signals.push({
       id: 'traffic-volume-spike',
       level: vRatio >= 3 ? 'high' : vRatio >= 2 ? 'medium' : 'low',
@@ -99,16 +104,18 @@ export function detectAnomalies(activity: ActivityEvent[], config?: Partial<Rada
     })
   }
 
-  // New tool access
-  const newTools = Array.from(rTools).filter((t) => !baselineTools.has(t))
-  if (newTools.length > 0) {
-    const hasHigh = recent.some((e) => newTools.includes(e.toolName) && e.risk === 'high')
-    signals.push({
-      id: 'new-tool-access',
-      level: hasHigh ? 'high' : cfg.sensitivity === 'high' ? 'medium' : 'low',
-      message: `New tool access detected: ${formatList(newTools)}.`,
-      observedAt: new Date().toISOString(),
-    })
+  // New tool access (only meaningful when baseline has a diverse set of known tools)
+  if (baselineTools.size >= 3) {
+    const newTools = Array.from(rTools).filter((t) => !baselineTools.has(t))
+    if (newTools.length > 0) {
+      const hasHigh = recent.some((e) => newTools.includes(e.toolName) && e.risk === 'high')
+      signals.push({
+        id: 'new-tool-access',
+        level: hasHigh ? 'high' : cfg.sensitivity === 'high' ? 'medium' : 'low',
+        message: `New tool access detected: ${formatList(newTools)}.`,
+        observedAt: new Date().toISOString(),
+      })
+    }
   }
 
   // Error rate spike
@@ -117,7 +124,7 @@ export function detectAnomalies(activity: ActivityEvent[], config?: Partial<Rada
   const rErrRate = recent.length > 0 ? rErrors / recent.length : 0
   const eDelta = (rErrRate - eMean) * 100
   const eZ = zScore(rErrRate, eMean, eStd)
-  if (recent.length >= 5 && eDelta >= cfg.errorRateThresholdPct && (eStd === 0 ? rErrRate > eMean : eZ >= zT)) {
+  if (recent.length >= 5 && eStd > 0 && eDelta >= cfg.errorRateThresholdPct && eZ >= zT) {
     signals.push({
       id: 'error-rate-spike',
       level: cfg.sensitivity === 'high' ? 'high' : 'medium',
@@ -132,7 +139,7 @@ export function detectAnomalies(activity: ActivityEvent[], config?: Partial<Rada
   const rHighRate = recent.length > 0 ? rHigh / recent.length : 0
   const hDelta = (rHighRate - hMean) * 100
   const hZ = zScore(rHighRate, hMean, hStd)
-  if (recent.length >= 5 && hDelta >= Math.max(5, cfg.errorRateThresholdPct / 2) && (hStd === 0 ? rHighRate > hMean : hZ >= zT)) {
+  if (recent.length >= 5 && hStd > 0 && hDelta >= Math.max(5, cfg.errorRateThresholdPct / 2) && hZ >= zT) {
     signals.push({
       id: 'high-risk-surge',
       level: 'high',

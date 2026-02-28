@@ -4,7 +4,7 @@
  * Shows config fields. Footer offers "Install" (catalog) or "Edit" (installed).
  */
 
-import React, { useMemo, KeyboardEvent } from 'react'
+import React, { useMemo, useState, KeyboardEvent } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import type { McpServerRecord } from '../../../types'
 
@@ -15,7 +15,11 @@ export default function McpDetail() {
     mcpServers,
     saveMcpServer,
     openMcpEditor,
+    introspectMcpServer,
   } = useAppStore()
+
+  const [discovering, setDiscovering] = useState(false)
+  const [discoverError, setDiscoverError] = useState<string | null>(null)
 
   const installedIds = useMemo(() => new Set(mcpServers.map((s) => s.id)), [mcpServers])
   const isInstalled = server ? installedIds.has(server.id) : false
@@ -36,6 +40,7 @@ export default function McpDetail() {
       enabled: true,
       tags: 'tags' in server ? server.tags ?? [] : [],
       tools: 'tools' in server && Array.isArray(server.tools) ? server.tools : [],
+      toolDescriptions: 'toolDescriptions' in server ? (server as McpServerRecord).toolDescriptions : {},
       catalogId: server.id,
     } as McpServerRecord)
     useAppStore.setState({ mcpInstallFlash: server.id })
@@ -50,11 +55,25 @@ export default function McpDetail() {
     closeMcpDetail()
   }
 
+  const handleDiscover = async () => {
+    if (!server || !isInstalled) return
+    setDiscovering(true)
+    setDiscoverError(null)
+    const result = await introspectMcpServer(server.id)
+    setDiscovering(false)
+    if (!result.ok) setDiscoverError(result.error ?? 'Discovery failed.')
+  }
+
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') closeMcpDetail()
   }
 
   if (!server) return null
+
+  // Use installed server data for tools/descriptions (fresh from store after discover)
+  const installed = mcpServers.find((s) => s.id === server.id)
+  const serverTools = installed?.tools ?? ('tools' in server ? (server as McpServerRecord).tools : []) ?? []
+  const serverToolDescs = installed?.toolDescriptions ?? ('toolDescriptions' in server ? (server as McpServerRecord).toolDescriptions : {}) ?? {}
 
   const icon = 'icon' in server ? (server as any).icon : server.name.charAt(0).toUpperCase()
   const envHints = 'envHints' in server ? (server as any).envHints : null
@@ -148,6 +167,41 @@ export default function McpDetail() {
                 <span className={`mcp-detail-status${server.enabled ? ' is-enabled' : ' is-disabled'}`}>
                   {server.enabled ? 'Enabled' : 'Disabled'}
                 </span>
+              </div>
+            )}
+          </div>
+
+          {/* Tools section */}
+          <div className="mcp-detail-config" style={{ marginTop: 16 }}>
+            <div className="mcp-detail-row">
+              <span className="mcp-detail-label">Tools</span>
+              {isInstalled && (
+                <button
+                  className="mcp-discover-btn"
+                  type="button"
+                  disabled={discovering}
+                  onClick={handleDiscover}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  {discovering ? 'Discovering...' : 'Discover Tools'}
+                </button>
+              )}
+            </div>
+            {discoverError && <div className="mcp-discover-error">{discoverError}</div>}
+            {serverTools.length > 0 ? (
+              <div className="mcp-detail-tools-list">
+                {serverTools.map((tool) => (
+                  <div key={tool} className="mcp-detail-tool-item">
+                    <code className="mcp-detail-tool-name">{tool}</code>
+                    {serverToolDescs[tool] && (
+                      <span className="mcp-detail-tool-desc">{serverToolDescs[tool]}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="panel-empty" style={{ padding: '8px 0', fontSize: 12 }}>
+                No tools discovered yet.
               </div>
             )}
           </div>

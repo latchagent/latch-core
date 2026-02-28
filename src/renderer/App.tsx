@@ -5,7 +5,7 @@
  * Responsibilities:
  *  - Register global event listeners (PTY data, window resize) once on mount.
  *  - Boot the application (load harnesses + sessions from DB).
- *  - Render the three-column layout: Sidebar | Terminal area | Rail.
+ *  - Render the two-column layout: Sidebar | Terminal area.
  *  - Mount modal overlays (PolicyEditor, SkillEditor).
  */
 
@@ -17,14 +17,16 @@ import { playNotificationSound } from './utils/notification-sound'
 import Sidebar         from './components/Sidebar'
 import Topbar          from './components/Topbar'
 import TerminalArea    from './components/TerminalArea'
-import Rail            from './components/Rail'
-import WelcomeScreen   from './components/WelcomeScreen'
+import WelcomeScreen       from './components/WelcomeScreen'
+import LatchTerminalPane   from './components/LatchTerminalPane'
 import PoliciesView    from './components/PoliciesView'
 import SkillsView      from './components/SkillsView'
 import AgentsView      from './components/AgentsView'
 import McpView         from './components/McpView'
 import FeedView         from './components/FeedView'
 import RadarView        from './components/RadarView'
+import VaultView        from './components/VaultView'
+import DocsView         from './components/DocsView'
 import CreatePolicyView from './components/CreatePolicyView'
 import SettingsView     from './components/panels/SettingsPanel'
 import PolicyEditor    from './components/modals/PolicyEditor'
@@ -32,6 +34,7 @@ import SkillEditor     from './components/modals/SkillEditor'
 import SkillDetail     from './components/modals/SkillDetail'
 import McpEditor       from './components/modals/McpEditor'
 import McpDetail       from './components/modals/McpDetail'
+import SecretEditor    from './components/modals/SecretEditor'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -71,11 +74,11 @@ export default function App() {
     loadSoundSetting,
     detectDocker,
     appBooting,
-    policyEditorOpen,
     skillEditorOpen,
     skillDetailOpen,
     mcpEditorOpen,
     mcpDetailOpen,
+    secretEditorOpen,
   } = useAppStore()
 
   // ── Boot ──────────────────────────────────────────────────────────────────
@@ -106,12 +109,12 @@ export default function App() {
     // Register feed listener
     const disposeFeedUpdate = window.latch?.onFeedUpdate?.((item) => {
       handleFeedUpdate(item)
-      if (useAppStore.getState().soundNotifications) playNotificationSound()
     })
 
     // Register approval listeners
     const disposeApprovalRequest = window.latch?.onApprovalRequest?.((approval) => {
       handleApprovalRequest(approval)
+      if (useAppStore.getState().soundNotifications) playNotificationSound()
     })
     const disposeApprovalResolved = window.latch?.onApprovalResolved?.((payload) => {
       handleApprovalResolved(payload)
@@ -142,7 +145,7 @@ export default function App() {
 
   useEffect(() => {
     const handleKeydown = (e: KeyboardEvent) => {
-      if (!e.metaKey) return
+      if (!e.metaKey && !e.ctrlKey) return
 
       if (e.key === 'n') {
         e.preventDefault()
@@ -211,9 +214,8 @@ export default function App() {
   const activeSession = activeSessionId ? sessions.get(activeSessionId) : undefined
 
   // Determine main content based on activeView
-  const showWelcome = activeView === 'home' && sessions.size === 0 && !appBooting
-  const isSessionView = activeView === 'home' && !showWelcome
-  const showRail = isSessionView
+  const showLatchHome = activeView === 'home' && !activeSessionId
+  const isSessionView = activeView === 'home' && !!activeSessionId
 
   let mainContent: React.ReactNode
   if (activeView === 'policies') {
@@ -226,13 +228,19 @@ export default function App() {
     mainContent = <McpView />
   } else if (activeView === 'feed') {
     mainContent = <FeedView />
+  } else if (activeView === 'vault') {
+    mainContent = <VaultView />
+  } else if (activeView === 'docs') {
+    mainContent = <DocsView />
   } else if (activeView === 'radar') {
     mainContent = <RadarView />
   } else if (activeView === 'create-policy') {
     mainContent = <CreatePolicyView />
+  } else if (activeView === 'edit-policy') {
+    mainContent = <PolicyEditor />
   } else if (activeView === 'settings') {
     mainContent = <SettingsView />
-  } else if (showWelcome) {
+  } else if (showLatchHome) {
     mainContent = <WelcomeScreen />
   } else {
     mainContent = (
@@ -250,20 +258,18 @@ export default function App() {
   return (
     <ErrorBoundary>
       {/* ── Modal overlays ──────────────────────────────────────────────── */}
-      {policyEditorOpen && <PolicyEditor />}
       {skillEditorOpen  && <SkillEditor />}
       {skillDetailOpen  && <SkillDetail />}
       {mcpEditorOpen    && <McpEditor />}
       {mcpDetailOpen    && <McpDetail />}
+      {secretEditorOpen && <SecretEditor />}
       {/* ── App shell ───────────────────────────────────────────────────── */}
-      <div className={`app${showRail ? '' : ' no-rail'}`}>
+      <div className="app no-rail">
         <Sidebar />
 
         <main className="main">
           {mainContent}
         </main>
-
-        {showRail && <Rail />}
       </div>
     </ErrorBoundary>
   )

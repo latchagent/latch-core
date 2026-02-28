@@ -13,12 +13,13 @@
  *    routed to the TerminalWizard instead of the PTY.
  */
 
-import React, { useEffect, useRef } from 'react'
-import { useAppStore } from '../store/useAppStore'
+import React, { useEffect, useRef, useState } from 'react'
+import { useAppStore, useTabAgentStatus } from '../store/useAppStore'
 import { terminalManager } from '../terminal/TerminalManager'
 import { TerminalWizard, buildWizardSteps } from '../terminal/TerminalWizard'
 import type { SessionRecord, TabRecord, DockerConfig } from '../../types'
 import ApprovalBar   from './ApprovalBar'
+import StatusDot     from './StatusDot'
 
 // ─── Tab pane ─────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,93 @@ function TabPane({ tab, isActive, sessionId, wizardRef }: TabPaneProps) {
   )
 }
 
+// ─── TabButton ───────────────────────────────────────────────────────────────
+
+interface TabButtonProps {
+  tab:        TabRecord
+  sessionId:  string
+  isActive:   boolean
+  canClose:   boolean
+  onActivate: () => void
+  onClose:    () => void
+}
+
+/** Single tab button with status dot — supports double-click to rename. */
+function TabButton({ tab, sessionId, isActive, canClose, onActivate, onClose }: TabButtonProps) {
+  const status = useTabAgentStatus(sessionId, tab.id)
+  const renameTab = useAppStore((s) => s.renameTab)
+  const [editing, setEditing] = useState(false)
+  const [editValue, setEditValue] = useState(tab.label)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const commitRename = () => {
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== tab.label) {
+      renameTab(sessionId, tab.id, trimmed)
+    }
+    setEditing(false)
+  }
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  const handleClick = () => {
+    if (editing) return
+    if (clickTimer.current) {
+      // Second click within window — it's a double-click
+      clearTimeout(clickTimer.current)
+      clickTimer.current = null
+      setEditValue(tab.label)
+      setEditing(true)
+    } else {
+      // First click — wait to see if a second follows
+      clickTimer.current = setTimeout(() => {
+        clickTimer.current = null
+        onActivate()
+      }, 250)
+    }
+  }
+
+  return (
+    <button
+      className={`terminal-tab${isActive ? ' is-active' : ''}`}
+      onClick={handleClick}
+    >
+      <StatusDot status={status} />
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="terminal-tab-rename"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') setEditing(false)
+            e.stopPropagation()
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span>{tab.label}</span>
+      )}
+      {canClose && !editing && (
+        <span
+          className="terminal-tab-close"
+          onClick={(e) => { e.stopPropagation(); onClose() }}
+        >
+          ×
+        </span>
+      )}
+    </button>
+  )
+}
+
 // ─── TerminalArea ─────────────────────────────────────────────────────────────
 
 interface TerminalAreaProps {
@@ -159,11 +247,10 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
 
     // Ensure policies + MCP servers are loaded before wizard starts
     const state0 = useAppStore.getState()
-    if (!state0.policiesLoaded) state0.loadPolicies()
     state0.loadMcpServers()
 
     // Delay wizard start until the terminal is mounted
-    const startWizard = () => {
+    const startWizard = async () => {
       const term = terminalManager.get(tabId)
       if (!term) {
         // Terminal not yet mounted — retry on next frame
@@ -171,20 +258,31 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
         return
       }
 
+      // Ensure policies are loaded before building wizard steps
+      const preState = useAppStore.getState()
+      if (!preState.policiesLoaded) await preState.loadPolicies()
+
       // Fit the terminal first so it renders properly
       terminalManager.fit(tabId)
 
       const state = useAppStore.getState()
       const harnesses = state.harnesses
       const dockerAvailable = state.dockerAvailable
+      const policies = state.policies.map(p => ({ id: p.id, name: p.name }))
 
       // Check for a pending project dir (set by "Open Project" button)
       const pendingProjectDir = state.pendingProjectDir
 
       const steps = buildWizardSteps({
         harnesses,
+        policies,
         pendingProjectDir,
       })
+
+      const onCancel = () => {
+        // User pressed Ctrl+C — delete the session
+        useAppStore.getState().deleteSession(sessionId)
+      }
 
       const wizard = new TerminalWizard(tabId, steps, async (answers) => {
         // If projectDir was pre-set via pendingProjectDir, use it
@@ -231,7 +329,13 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
           terminalManager.writeln(tabId, '\x1b[33mSandbox enabled but Docker not detected — running without sandbox.\x1b[0m')
         }
 
-        // Apply harness + docker to session in store
+        // Resolve policy selection
+        const selectedPolicyId = (answers.policy as string) || 'none'
+        const selectedPolicy = selectedPolicyId !== 'none'
+          ? policies.find(p => p.id === selectedPolicyId)
+          : null
+
+        // Apply harness + docker + policy to session in store
         useAppStore.setState((s) => {
           const sessions = new Map(s.sessions)
           const sess = sessions.get(sessionId)
@@ -243,6 +347,8 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
                 harness: harness.label,
                 harnessCommand: harness.recommendedCommand,
               } : {}),
+              policyId: selectedPolicy ? selectedPolicy.id : '',
+              policy: selectedPolicy ? selectedPolicy.name : 'None',
               docker,
             })
           }
@@ -262,7 +368,7 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
           projectDir: isOpenClaw ? undefined : projectDir,
           mcpServerIds: mcpServerIds.length > 0 ? mcpServerIds : undefined,
         })
-      })
+      }, onCancel)
 
       wizardRef.current = wizard
 
@@ -341,21 +447,15 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
 
         <div className="terminal-tabs" id="terminal-tabs">
           {tabs.map((tab) => (
-            <button
+            <TabButton
               key={tab.id}
-              className={`terminal-tab${tab.id === activeTabId ? ' is-active' : ''}`}
-              onClick={() => activateTab(session.id, tab.id)}
-            >
-              <span>{tab.label}</span>
-              {tabs.length > 1 && (
-                <span
-                  className="terminal-tab-close"
-                  onClick={(e) => { e.stopPropagation(); closeTab(session.id, tab.id) }}
-                >
-                  ×
-                </span>
-              )}
-            </button>
+              tab={tab}
+              sessionId={session.id}
+              isActive={tab.id === activeTabId}
+              canClose={tabs.length > 1}
+              onActivate={() => activateTab(session.id, tab.id)}
+              onClose={() => closeTab(session.id, tab.id)}
+            />
           ))}
         </div>
 

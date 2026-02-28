@@ -3,28 +3,6 @@ import { ShieldCheck } from '@phosphor-icons/react'
 import { useAppStore } from '../store/useAppStore'
 import type { PolicyDocument } from '../../types'
 
-function PermDots({ policy }: { policy: PolicyDocument }) {
-  const p = policy.permissions
-  if (!p) return null
-
-  const items = [
-    { label: 'Bash',    on: p.allowBash },
-    { label: 'Network', on: p.allowNetwork },
-    { label: 'Writes',  on: p.allowFileWrite },
-    { label: 'Confirm', on: p.confirmDestructive },
-  ]
-
-  return (
-    <div className="panel-perm-list">
-      {items.map(({ label, on }) => (
-        <span key={label} className={`perm-badge ${on ? 'is-on' : 'is-off'}`}>
-          {label}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 export default function PoliciesView() {
   const {
     activeSessionId,
@@ -100,7 +78,6 @@ export default function PoliciesView() {
                 <div className="policy-list-desc">{policy.description}</div>
               </div>
               <div className="policy-list-right">
-                <PermDots policy={policy} />
                 <div className="policy-list-actions">
                   <button className="panel-action" onClick={() => handleEditPolicy(policy)}>
                     Edit

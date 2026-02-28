@@ -1,11 +1,13 @@
 /**
  * @module PolicyEditor
- * @description Modal for creating / editing a PolicyDocument.
+ * @description Full-page view for creating / editing a PolicyDocument.
  * Used for both global policy edits and ephemeral session override creation.
- * Includes per-harness config sections for Claude Code, Codex, and OpenClaw.
+ * Includes per-harness config sections for Claude Code, Codex, and OpenClaw,
+ * split into tabs for easier navigation.
  */
 
 import React, { useEffect, useState, KeyboardEvent } from 'react'
+import { ArrowLeft } from '@phosphor-icons/react'
 import { useAppStore } from '../../store/useAppStore'
 import type {
   PolicyDocument,
@@ -162,7 +164,15 @@ function McpServerRulesEditor({ rules, onChange }: {
   rules: McpServerRule[]
   onChange: (next: McpServerRule[]) => void
 }) {
+  const mcpServers = useAppStore((s) => s.mcpServers)
+  const [manualMode, setManualMode] = useState(false)
   const [input, setInput] = useState('')
+
+  const existingServerNames = new Set(rules.map(r => r.server))
+  const availableServers = mcpServers.filter((s) => {
+    const serverKey = s.name.toLowerCase().replace(/\s+/g, '-')
+    return !existingServerNames.has(serverKey)
+  })
 
   const addRule = () => {
     const server = input.trim()
@@ -170,6 +180,12 @@ function McpServerRulesEditor({ rules, onChange }: {
     if (rules.find(r => r.server === server)) return
     onChange([...rules, { server, decision: 'deny' }])
     setInput('')
+  }
+
+  const addFromDropdown = (value: string) => {
+    if (!value) return
+    if (rules.find(r => r.server === value)) return
+    onChange([...rules, { server: value, decision: 'deny' }])
   }
 
   const removeRule = (server: string) => {
@@ -202,15 +218,35 @@ function McpServerRulesEditor({ rules, onChange }: {
         </div>
       ))}
       <div className="add-tool-row">
-        <input
-          className="add-tool-input"
-          type="text"
-          placeholder="github"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') addRule() }}
-        />
-        <button type="button" className="add-tool-btn" onClick={addRule}>Add</button>
+        {manualMode ? (
+          <>
+            <input
+              className="add-tool-input"
+              type="text"
+              placeholder="server-name"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addRule() }}
+            />
+            <button type="button" className="add-tool-btn" onClick={addRule}>Add</button>
+            <button type="button" className="add-tool-btn" onClick={() => setManualMode(false)} title="Switch to dropdown">List</button>
+          </>
+        ) : (
+          <>
+            <select
+              className="add-tool-input"
+              value=""
+              onChange={(e) => addFromDropdown(e.target.value)}
+            >
+              <option value="">Select server...</option>
+              {availableServers.map((s) => {
+                const serverKey = s.name.toLowerCase().replace(/\s+/g, '-')
+                return <option key={s.id} value={serverKey}>{s.name}</option>
+              })}
+            </select>
+            <button type="button" className="add-tool-btn" onClick={() => setManualMode(true)} title="Type a custom server name">Manual</button>
+          </>
+        )}
       </div>
     </>
   )
@@ -278,14 +314,26 @@ function CommandRulesEditor({ rules, onChange }: {
 
 // ─── MCP tool picker (grouped by server) ────────────────────────────────────
 
-function McpToolPicker({ rules, onChange }: {
+function McpToolPicker({ rules, onChange, serverRules }: {
   rules: ToolRule[]
   onChange: (next: ToolRule[]) => void
+  serverRules: McpServerRule[]
 }) {
   const mcpServers = useAppStore((s) => s.mcpServers)
-  const serversWithTools = mcpServers.filter((s) => s.tools && s.tools.length > 0)
 
-  if (serversWithTools.length === 0) return null
+  // Only show tools for servers that have been added to this policy's server rules
+  const addedServerNames = new Set(serverRules.map(r => r.server))
+  const serversWithTools = mcpServers.filter((s) => {
+    const serverKey = s.name.toLowerCase().replace(/\s+/g, '-')
+    return addedServerNames.has(serverKey) && s.tools && s.tools.length > 0
+  })
+
+  if (serversWithTools.length === 0) {
+    if (serverRules.length === 0) {
+      return <div className="pe-hint">Add MCP servers above to configure individual tool rules.</div>
+    }
+    return <div className="pe-hint">No tool metadata available for the added servers.</div>
+  }
 
   const toPattern = (server: McpServerRecord, tool: string) =>
     `mcp__${server.name.toLowerCase().replace(/\s+/g, '-')}__${tool}`
@@ -334,13 +382,14 @@ function McpToolPicker({ rules, onChange }: {
             {server.tools.map((tool) => {
               const pattern = toPattern(server, tool)
               const d = getDecision(pattern)
+              const desc = server.toolDescriptions?.[tool]
               return (
                 <button
                   key={pattern}
                   type="button"
                   className={`tool-chip ${decisionClass(d)}`}
                   onClick={() => cycleDecision(pattern)}
-                  title={`${pattern}: ${d === 'unset' ? 'no rule' : d} — click to cycle`}
+                  title={`${pattern}: ${d === 'unset' ? 'no rule' : d}${desc ? ' — ' + desc : ''} — click to cycle`}
                 >
                   {d !== 'unset' && <span className="chip-decision-label">{decisionLabel(d)}</span>}
                   {tool}
@@ -358,6 +407,15 @@ function McpToolPicker({ rules, onChange }: {
 
 const CLAUDE_TOOLS   = ['Read', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch', 'Task', 'NotebookEdit']
 const OPENCLAW_TOOLS = ['read', 'write', 'exec', 'web_search', 'web_fetch', 'browser']
+
+type PeTab = 'general' | 'claude' | 'codex' | 'openclaw'
+
+const PE_TABS: { id: PeTab; label: string }[] = [
+  { id: 'general',  label: 'General' },
+  { id: 'claude',   label: 'Claude Code' },
+  { id: 'codex',    label: 'Codex' },
+  { id: 'openclaw', label: 'OpenClaw' },
+]
 
 // ─── Helpers: convert legacy arrays to/from ToolRule[] ───────────────────────
 
@@ -394,6 +452,7 @@ export default function PolicyEditor() {
   } = useAppStore()
 
   const base = policyEditorPolicy
+  const [activeTab, setActiveTab] = useState<PeTab>('general')
   const [name,   setName]   = useState(base?.name        ?? '')
   const [desc,   setDesc]   = useState(base?.description ?? '')
   const [perms,  setPerms]  = useState<PolicyPermissions>(base?.permissions ?? DEFAULT_PERMS)
@@ -412,6 +471,7 @@ export default function PolicyEditor() {
 
   // Sync form if the editor is reopened with different policy
   useEffect(() => {
+    setActiveTab('general')
     setName(base?.name        ?? '')
     setDesc(base?.description ?? '')
     setPerms(base?.permissions ?? DEFAULT_PERMS)
@@ -484,22 +544,43 @@ export default function PolicyEditor() {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave()
   }
 
-  return (
-    <div
-      className="modal-backdrop"
-      id="policy-editor-backdrop"
-      onKeyDown={handleKeyDown}
-      onClick={(e) => { if (e.target === e.currentTarget) closePolicyEditor() }}
-    >
-      <div className="modal" id="policy-editor-modal">
-        <div className="modal-header">
-          <span className="modal-title">
-            {policyEditorIsOverride ? 'Create Session Override' : (base?.id ? 'Edit Policy' : 'New Policy')}
-          </span>
-          <button className="modal-close" onClick={closePolicyEditor}>x</button>
-        </div>
+  const title = policyEditorIsOverride
+    ? 'Session Override'
+    : (base?.id ? (name || base.name || 'Edit Policy') : 'New Policy')
 
-        <div className="modal-body">
+  return (
+    <div className="view-container" onKeyDown={handleKeyDown}>
+      {/* ── Back + Title ─────────────────────────────────────────── */}
+      <div className="cp-back-row">
+        <button className="cp-back-btn" onClick={closePolicyEditor}>
+          <ArrowLeft size={14} weight="bold" style={{ marginRight: 4, verticalAlign: -1 }} />
+          Back to Policies
+        </button>
+      </div>
+
+      <div className="view-header">
+        <h2 className="view-title">{title}</h2>
+        <button className="view-action-btn" onClick={handleSave}>
+          Save Policy
+        </button>
+      </div>
+
+      {/* ── Tabs ─────────────────────────────────────────────────── */}
+      <div className="pe-tabs">
+        {PE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`pe-tab${activeTab === tab.id ? ' is-active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── General tab ──────────────────────────────────────────── */}
+      {activeTab === 'general' && (
+        <>
           <div className="modal-field">
             <label className="modal-label" htmlFor="pe-name">Name</label>
             <input
@@ -522,17 +603,21 @@ export default function PolicyEditor() {
             />
           </div>
 
-          <div className="modal-section-label">Permissions</div>
+          <div className="view-section-label">Permissions</div>
 
           {(
             [
-              ['pe-allow-bash',    'Allow shell / bash commands', 'allowBash'          ],
-              ['pe-allow-network', 'Allow network access',        'allowNetwork'        ],
-              ['pe-allow-writes',  'Allow file writes',           'allowFileWrite'      ],
-              ['pe-confirm-dest',  'Confirm destructive operations', 'confirmDestructive'],
-            ] as [string, string, keyof Omit<PolicyPermissions, 'blockedGlobs' | 'commandRules'>][]
-          ).map(([id, label, key]) => (
-            <label key={id} className="modal-toggle">
+              ['pe-allow-bash',    'Allow shell / bash commands', 'allowBash',
+                'When enabled, agents can execute shell commands (e.g. npm install, git commit). Disable to block all terminal/bash execution.'],
+              ['pe-allow-network', 'Allow network access',        'allowNetwork',
+                'Controls outbound network calls — HTTP requests, API calls, package downloads. Does not affect local file or shell access.'],
+              ['pe-allow-writes',  'Allow file writes',           'allowFileWrite',
+                'When enabled, agents can create and modify files on disk. Disable to make the session read-only.'],
+              ['pe-confirm-dest',  'Confirm destructive operations', 'confirmDestructive',
+                'When enabled, high-risk actions (e.g. deleting files, force-pushing) require your explicit approval before proceeding.'],
+            ] as [string, string, keyof Omit<PolicyPermissions, 'blockedGlobs' | 'commandRules'>, string][]
+          ).map(([id, label, key, tooltip]) => (
+            <label key={id} className="modal-toggle" title={tooltip}>
               <input
                 type="checkbox"
                 id={id}
@@ -540,10 +625,11 @@ export default function PolicyEditor() {
                 onChange={(e) => updatePerm(key, e.target.checked)}
               />
               <span className="modal-toggle-label">{label}</span>
+              <span className="modal-toggle-hint">{tooltip}</span>
             </label>
           ))}
 
-          <div className="modal-section-label">Blocked paths (globs)</div>
+          <div className="view-section-label">Blocked paths (globs)</div>
           <div className="modal-globs" id="pe-globs-list">
             {globs.map((g, i) => (
               <div key={i} className="modal-glob-row">
@@ -566,33 +652,39 @@ export default function PolicyEditor() {
           </div>
           <button className="modal-add-glob" onClick={addGlob}>+ Add path</button>
 
-          <div className="modal-section-label">Command rules (regex)</div>
+          <div className="view-section-label">Command rules (regex)</div>
           <div className="modal-field">
             <label className="modal-label">Shell command patterns matched against the full command string</label>
             <CommandRulesEditor rules={commandRules} onChange={setCommandRules} />
           </div>
+        </>
+      )}
 
-          {/* ── Claude Code config ──────────────────────────────────── */}
-          <div className="modal-section-label">Claude Code</div>
+      {/* ── Claude Code tab ──────────────────────────────────────── */}
+      {activeTab === 'claude' && (
+        <>
           <div className="modal-field">
             <label className="modal-label">Tool rules</label>
             <ToolRulesEditor tools={CLAUDE_TOOLS} rules={claudeToolRules} onChange={setClaudeToolRules} />
           </div>
           <div className="modal-field">
+            <label className="modal-label">MCP server rules</label>
+            <McpServerRulesEditor rules={claudeMcpRules} onChange={setClaudeMcpRules} />
+          </div>
+          <div className="modal-field">
             <label className="modal-label">MCP tool rules</label>
-            <McpToolPicker rules={claudeToolRules} onChange={setClaudeToolRules} />
+            <McpToolPicker rules={claudeToolRules} onChange={setClaudeToolRules} serverRules={claudeMcpRules} />
           </div>
           <div className="modal-field">
             <label className="modal-label">Custom tool rules</label>
             <CustomToolRules rules={claudeToolRules} builtinTools={CLAUDE_TOOLS} onChange={setClaudeToolRules} />
           </div>
-          <div className="modal-field">
-            <label className="modal-label">MCP server rules</label>
-            <McpServerRulesEditor rules={claudeMcpRules} onChange={setClaudeMcpRules} />
-          </div>
+        </>
+      )}
 
-          {/* ── Codex config ───────────────────────────────────────── */}
-          <div className="modal-section-label">Codex</div>
+      {/* ── Codex tab ────────────────────────────────────────────── */}
+      {activeTab === 'codex' && (
+        <>
           <div className="modal-field">
             <label className="modal-label" htmlFor="pe-codex-approval">Approval mode</label>
             <select
@@ -622,43 +714,41 @@ export default function PolicyEditor() {
             </select>
           </div>
           <div className="modal-field">
+            <label className="modal-label">MCP server rules</label>
+            <McpServerRulesEditor rules={codexMcpRules} onChange={setCodexMcpRules} />
+          </div>
+          <div className="modal-field">
             <label className="modal-label">MCP tool rules</label>
-            <McpToolPicker rules={codexToolRules} onChange={setCodexToolRules} />
+            <McpToolPicker rules={codexToolRules} onChange={setCodexToolRules} serverRules={codexMcpRules} />
           </div>
           <div className="modal-field">
             <label className="modal-label">Custom tool rules</label>
             <CustomToolRules rules={codexToolRules} builtinTools={[]} onChange={setCodexToolRules} />
           </div>
-          <div className="modal-field">
-            <label className="modal-label">MCP server rules</label>
-            <McpServerRulesEditor rules={codexMcpRules} onChange={setCodexMcpRules} />
-          </div>
+        </>
+      )}
 
-          {/* ── OpenClaw config ────────────────────────────────────── */}
-          <div className="modal-section-label">OpenClaw</div>
+      {/* ── OpenClaw tab ─────────────────────────────────────────── */}
+      {activeTab === 'openclaw' && (
+        <>
           <div className="modal-field">
             <label className="modal-label">Tool rules</label>
             <ToolRulesEditor tools={OPENCLAW_TOOLS} rules={openclawToolRules} onChange={setOpenclawToolRules} />
           </div>
           <div className="modal-field">
+            <label className="modal-label">MCP server rules</label>
+            <McpServerRulesEditor rules={openclawMcpRules} onChange={setOpenclawMcpRules} />
+          </div>
+          <div className="modal-field">
             <label className="modal-label">MCP tool rules</label>
-            <McpToolPicker rules={openclawToolRules} onChange={setOpenclawToolRules} />
+            <McpToolPicker rules={openclawToolRules} onChange={setOpenclawToolRules} serverRules={openclawMcpRules} />
           </div>
           <div className="modal-field">
             <label className="modal-label">Custom tool rules</label>
             <CustomToolRules rules={openclawToolRules} builtinTools={OPENCLAW_TOOLS} onChange={setOpenclawToolRules} />
           </div>
-          <div className="modal-field">
-            <label className="modal-label">MCP server rules</label>
-            <McpServerRulesEditor rules={openclawMcpRules} onChange={setOpenclawMcpRules} />
-          </div>
-        </div>
-
-        <div className="modal-footer">
-          <button className="modal-btn" onClick={closePolicyEditor}>Cancel</button>
-          <button className="modal-btn is-primary" onClick={handleSave}>Save Policy</button>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

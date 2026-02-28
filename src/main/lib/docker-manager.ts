@@ -113,7 +113,15 @@ class DockerManager {
 
     this._setStatus(sessionId, 'starting', opts.image)
 
-    const args = ['run', '-d', '--rm', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--name', `latch-${sessionId}`.replace(/[^a-zA-Z0-9_.-]/g, '-')]
+    const args = [
+      'run', '-d', '--rm',
+      '--cap-drop=ALL',
+      '--security-opt=no-new-privileges',
+      '--memory=4g',
+      '--cpus=2',
+      '--pids-limit=512',
+      '--name', `latch-${sessionId}`.replace(/[^a-zA-Z0-9_.-]/g, '-'),
+    ]
 
     // Workspace mount
     if (opts.workspacePath) {
@@ -130,7 +138,7 @@ class DockerManager {
       for (const p of opts.ports) {
         if (typeof p.host !== 'number' || typeof p.container !== 'number') continue
         if (p.host < 1024 || p.host > 65535 || p.container < 1 || p.container > 65535) continue
-        args.push('-p', `${p.host}:${p.container}`)
+        args.push('-p', `127.0.0.1:${p.host}:${p.container}`)
       }
     }
 
@@ -203,9 +211,29 @@ class DockerManager {
   disposeAll(): void {
     if (!this.dockerPath) return
     this.containers.forEach((record) => {
-      try { execFileSync(this.dockerPath!, ['stop', '-t', '5', record.containerId], { timeout: 10000 }) } catch { /* best-effort */ }
+      try { execFileSync(this.dockerPath!, ['stop', '-t', '5', record.containerId], { timeout: 10000 }) } catch (err: any) { console.warn('[docker] Failed to stop container:', record.containerId, err?.message) }
     })
     this.containers.clear()
+  }
+
+  /** Clean up orphaned Latch containers from a previous crash. */
+  async cleanupOrphaned(): Promise<void> {
+    if (!this.dockerPath) return
+    try {
+      await new Promise<void>((resolve) => {
+        execFile(this.dockerPath!, ['ps', '-a', '--filter', 'name=latch-', '--format', '{{.ID}}'], { timeout: 10000 }, (err, stdout) => {
+          if (err || !stdout.trim()) { resolve(); return }
+          const ids = stdout.trim().split('\n').filter(Boolean)
+          for (const id of ids) {
+            try { execFileSync(this.dockerPath!, ['rm', '-f', id], { timeout: 10000 }) } catch { /* best-effort */ }
+          }
+          if (ids.length > 0) console.warn(`[docker] Cleaned up ${ids.length} orphaned container(s)`)
+          resolve()
+        })
+      })
+    } catch (err: any) {
+      console.warn('[docker] Orphan cleanup failed:', err?.message)
+    }
   }
 
   /** Check if a host path should be blocked from volume mounts. */
@@ -221,7 +249,8 @@ class DockerManager {
       '/etc', '/var/run', '/root',
       path.join(os.homedir(), '.ssh'),
       path.join(os.homedir(), '.gnupg'),
-      '/proc', '/sys'
+      '/proc', '/sys',
+      '/var/run/docker.sock',
     ]
     return blocked.some(b => resolved === b || resolved.startsWith(b + '/'))
   }

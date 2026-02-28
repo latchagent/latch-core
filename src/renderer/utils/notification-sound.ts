@@ -18,6 +18,7 @@ function getContext(): AudioContext {
 export function playNotificationSound(): void {
   try {
     const ac = getContext();
+    if (ac.state === 'suspended') ac.resume();
     const now = ac.currentTime;
 
     const gain = ac.createGain();

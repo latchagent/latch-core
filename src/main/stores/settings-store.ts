@@ -78,7 +78,7 @@ export class SettingsStore {
         storedValue = safeStorage.encryptString(value).toString('hex')
         encrypted = 1
       } else {
-        console.warn('[SettingsStore] safeStorage encryption unavailable — storing in plaintext.')
+        throw new Error('Platform encryption (safeStorage) is unavailable. Cannot store sensitive value in plaintext.')
       }
     }
 

@@ -1,6 +1,7 @@
 import React from 'react'
-import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Gear, ShieldWarning } from '@phosphor-icons/react'
-import { useAppStore } from '../store/useAppStore'
+import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Key, Gear, ShieldWarning, BookOpenText } from '@phosphor-icons/react'
+import { useAppStore, useAgentStatus } from '../store/useAppStore'
+import StatusDot from './StatusDot'
 import type { SessionRecord, AppView } from '../../types'
 
 // ─── SessionItem ──────────────────────────────────────────────────────────────
@@ -14,6 +15,7 @@ interface SessionItemProps {
 
 function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps) {
   const isDisconnected = session.needsReconnect && !session.showWizard
+  const status = useAgentStatus(session.id)
 
   return (
     <div
@@ -21,7 +23,10 @@ function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps)
       onClick={onClick}
     >
       <div className="session-item-content">
-        <span>{session.name}</span>
+        <span className="session-item-name">
+          <StatusDot status={status} />
+          {session.name}
+        </span>
         <span className="session-meta">
           {isDisconnected
             ? `${session.harness || 'Shell'} · disconnected`
@@ -73,7 +78,7 @@ export default function Sidebar() {
       {/* ── Navigation ─────────────────────────────────────────── */}
       <nav className="sidebar-nav">
         <button
-          className={`sidebar-nav-item${activeView === 'home' ? ' is-active' : ''}`}
+          className={`sidebar-nav-item${activeView === 'home' && !activeSessionId ? ' is-active' : ''}`}
           onClick={() => setActiveView('home')}
         >
           <Terminal className="sidebar-nav-icon" weight="light" />
@@ -113,7 +118,14 @@ export default function Sidebar() {
           onClick={() => setActiveView('mcp')}
         >
           <HardDrives className="sidebar-nav-icon" weight="light" />
-          MCP Servers
+          MCP
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'vault' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('vault')}
+        >
+          <Key className="sidebar-nav-icon" weight="light" />
+          Vault
         </button>
         <button
           className={`sidebar-nav-item${activeView === 'radar' ? ' is-active' : ''}`}
@@ -126,6 +138,13 @@ export default function Sidebar() {
               {radarSignals.length}
             </span>
           )}
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'docs' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('docs')}
+        >
+          <BookOpenText className="sidebar-nav-icon" weight="light" />
+          Docs
         </button>
         <button
           className={`sidebar-nav-item${activeView === 'settings' ? ' is-active' : ''}`}

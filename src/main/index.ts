@@ -12,6 +12,7 @@
 
 import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import path from 'node:path'
+import type Database from 'better-sqlite3'
 
 // Local modules — these are JS files imported as ESM so Vite will bundle them.
 import {
@@ -30,37 +31,58 @@ import { generatePolicy, generateSessionTitle }  from './services/policy-generat
 import { SkillsStore }                           from './stores/skills-store'
 import { McpStore }                              from './stores/mcp-store'
 import { syncMcpToHarness }                      from './services/mcp-sync'
+import { introspectMcpServer }                   from './services/mcp-introspect'
 
 import PtyManager                                from './lib/pty-manager'
 import DockerManager                             from './lib/docker-manager'
 import { AuthzServer }                           from './services/authz-server'
+import { Supervisor }                            from './services/supervisor'
 import { ActivityStore }                         from './stores/activity-store'
 import { FeedStore }                            from './stores/feed-store'
 import { Radar }                                 from './services/radar'
 import { SettingsStore }                         from './stores/settings-store'
+import { SecretStore }                           from './stores/secret-store'
 import { initTelemetrySDK, bindTelemetrySettings, track } from './services/telemetry'
+import {
+  validateIpc,
+  PtyCreateSchema, PtyWriteSchema, PtyResizeSchema, PtyKillSchema,
+  SessionCreateSchema, SessionUpdateSchema,
+  PolicySaveSchema, SkillSaveSchema, McpSaveSchema,
+  AgentsReadSchema, AgentsWriteSchema,
+  SettingsKeySchema, SettingsSetSchema,
+  SecretSaveSchema, DockerStartSchema, AuthzRegisterSchema,
+} from './lib/ipc-schemas'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdateState } from './services/updater'
+import { initDebugLog, closeDebugLog } from './services/debug-log'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow
-let ptyManager: any
-let dockerManager: any
-let sessionStore: any
-let policyStore: any
-let skillsStore: any
-let mcpStore: any
+// Initialised in app.whenReady() — always available inside IPC handlers.
+let ptyManager!: PtyManager
+let dockerManager!: DockerManager
+let sessionStore!: SessionStore
+let policyStore!: PolicyStore
+let skillsStore!: SkillsStore
+let mcpStore!: McpStore
+let db!: Database.Database
 
+// Nullable singletons — may not be available depending on runtime conditions.
 let authzServer: AuthzServer | null = null
+let supervisor: Supervisor | null = null
 let activityStore: ActivityStore | null = null
 let feedStore: FeedStore | null = null
 let radar: Radar | null = null
 let settingsStore: SettingsStore | null = null
-let db: any = null
+let secretStore: SecretStore | null = null
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
 function createWindow(): BrowserWindow {
+  // Resolve icon path — electron-builder embeds icons in production,
+  // but in dev we load from the build/ directory.
+  const iconPath = path.join(__dirname, '../../build/icon.png')
+
   const win = new BrowserWindow({
     width:           1280,
     height:          820,
@@ -69,6 +91,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#05060a',
     title:           'Latch Desktop',
     titleBarStyle:   process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    icon:            iconPath,
     show:            false,
     webPreferences: {
       preload:          path.join(__dirname, '../preload/index.js'),
@@ -77,6 +100,11 @@ function createWindow(): BrowserWindow {
       sandbox:          true
     }
   })
+
+  // Set macOS dock icon in dev mode
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(iconPath)
+  }
 
   // electron-vite dev mode: load from Vite dev server; production: load built HTML.
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -87,6 +115,21 @@ function createWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
+  // Prevent the renderer from navigating away from the app.
+  // All external URLs should use shell.openExternal() via the latch:open-external IPC.
+  win.webContents.on('will-navigate', (event, url) => {
+    const allowed = process.env.ELECTRON_RENDERER_URL
+    if (allowed && url.startsWith(allowed)) return // Allow Vite HMR in dev
+    console.warn('[security] Blocked navigation to:', url)
+    event.preventDefault()
+  })
+
+  // Block all attempts to open new windows (e.g. target="_blank" links).
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    console.warn('[security] Blocked window.open to:', url)
+    return { action: 'deny' }
+  })
+
   if (process.env.LATCH_DEVTOOLS === '1') {
     win.webContents.openDevTools({ mode: 'detach' })
   }
@@ -94,9 +137,13 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+// ─── Debug logging (captures console.warn/error to file) ────────────────────
+
+initDebugLog()
+
 // ─── Telemetry SDK (must init before app.whenReady) ──────────────────────────
 
-initTelemetrySDK('A-US-1996460381')
+initTelemetrySDK(process.env.LATCH_APTABASE_KEY ?? 'A-US-1996460381')
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
@@ -133,12 +180,16 @@ app.whenReady().then(() => {
     activityStore = ActivityStore.open(db)
     feedStore     = FeedStore.open(db)
     settingsStore = SettingsStore.open(db)
+    secretStore   = SecretStore.open(db)
 
     // Bind telemetry to settings store (SDK already initialised above)
     bindTelemetrySettings((k) => settingsStore!.get(k))
 
     // Notifications on PTY exit (task completion)
     ptyManager.onExit((tabId: string) => {
+      // Unregister tab from supervisor
+      supervisor?.unregisterTab(tabId)
+
       const notifSetting = settingsStore?.get('notifications-enabled')
       // Default ON (null = never set = default ON)
       if (notifSetting === 'false') return
@@ -156,41 +207,49 @@ app.whenReady().then(() => {
     authzServer.setRadar(radar)
     if (feedStore) authzServer.setFeedStore(feedStore)
     authzServer.setSettingsStore(settingsStore)
+    if (secretStore) authzServer.setSecretStore(secretStore)
     authzServer.start().catch((err: any) => {
       console.error('Authz server start failed:', err?.message)
       authzServer = null
     })
     radar.start()
+
+    // Start supervisor — terminal-driving policy enforcement.
+    // The supervisor watches PTY output for harness permission prompts and
+    // types yes/no based on policy decisions queued by the authz server.
+    supervisor = new Supervisor(authzServer, ptyManager, sendToRenderer, feedStore)
   } catch (err: any) {
     const unavailable = (name: string) => ({
       ok:    false,
       error: `${name} unavailable: ${err?.message}`
     })
+    // Fallback stubs so IPC handlers return errors instead of crashing.
     sessionStore = {
       listSessions:  () => unavailable('SessionStore'),
       createSession: () => unavailable('SessionStore'),
       updateSession: () => unavailable('SessionStore'),
       setOverride:   () => unavailable('SessionStore')
-    }
+    } as unknown as SessionStore
     policyStore = {
       listPolicies: () => unavailable('PolicyStore'),
       getPolicy:    () => unavailable('PolicyStore'),
       savePolicy:   () => unavailable('PolicyStore'),
       deletePolicy: () => unavailable('PolicyStore')
-    }
+    } as unknown as PolicyStore
     skillsStore = {
       listSkills:    () => unavailable('SkillsStore'),
       getSkill:      () => unavailable('SkillsStore'),
       saveSkill:     () => unavailable('SkillsStore'),
       deleteSkill:   () => unavailable('SkillsStore'),
       syncToHarness: () => unavailable('SkillsStore')
-    }
+    } as unknown as SkillsStore
     mcpStore = {
       listServers:  () => unavailable('McpStore'),
       getServer:    () => unavailable('McpStore'),
       saveServer:   () => unavailable('McpStore'),
       deleteServer: () => unavailable('McpStore')
-    }
+    } as unknown as McpStore
+    secretStore = null
   }
 
   // ── macOS re-activate ───────────────────────────────────────────────────
@@ -201,19 +260,32 @@ app.whenReady().then(() => {
   // ── PTY handlers ────────────────────────────────────────────────────────
 
   ipcMain.handle('latch:pty-create', async (_event, payload) => {
+    const v = validateIpc(PtyCreateSchema, payload)
+    if (!v.ok) return v
     try {
-      // Validate Docker container ID format if provided (must be 12 hex chars).
-      if (payload.dockerContainerId) {
-        if (!/^[a-f0-9]{12}$/.test(payload.dockerContainerId)) {
-          return { ok: false, error: 'Invalid container ID format.' }
-        }
+      // Inject authz secret into PTY env so the renderer never sees it
+      const ptyEnv = { ...(v.data.env || {}) }
+      if (authzServer) {
+        ptyEnv.LATCH_AUTHZ_SECRET = authzServer.getSecret()
       }
 
-      const record = ptyManager.create(payload.sessionId, {
-        ...payload,
-        env: payload.env,
-        dockerContainerId: payload.dockerContainerId,
+      // Inject vault secrets as env vars so agents can use $KEY
+      if (secretStore) {
+        const secretEnv = secretStore.allKeyValues()
+        Object.assign(ptyEnv, secretEnv)
+      }
+
+      const record = ptyManager.create(v.data.sessionId, {
+        ...v.data,
+        env: Object.keys(ptyEnv).length ? ptyEnv : undefined,
+        dockerContainerId: v.data.dockerContainerId,
       })
+
+      // Load secret values for terminal output redaction
+      if (secretStore) {
+        ptyManager.setRedactionValues(v.data.sessionId, secretStore.allValues())
+      }
+
       return { ok: true, pid: record.ptyProcess.pid, cwd: record.cwd, shell: record.shell }
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Failed to start shell.' }
@@ -221,8 +293,10 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:pty-write', async (_event, payload) => {
+    const v = validateIpc(PtyWriteSchema, payload)
+    if (!v.ok) return v
     try {
-      ptyManager.write(payload.sessionId, payload.data)
+      ptyManager.write(v.data.sessionId, v.data.data)
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err?.message || 'PTY write failed.' }
@@ -230,8 +304,10 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:pty-resize', async (_event, payload) => {
+    const v = validateIpc(PtyResizeSchema, payload)
+    if (!v.ok) return v
     try {
-      ptyManager.resize(payload.sessionId, payload.cols, payload.rows)
+      ptyManager.resize(v.data.sessionId, v.data.cols, v.data.rows)
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err?.message || 'PTY resize failed.' }
@@ -239,8 +315,10 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:pty-kill', async (_event, payload) => {
+    const v = validateIpc(PtyKillSchema, payload)
+    if (!v.ok) return v
     try {
-      ptyManager.kill(payload.sessionId)
+      ptyManager.kill(v.data.sessionId)
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err?.message || 'PTY kill failed.' }
@@ -293,13 +371,17 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:session-create', async (_event: any, payload: any) => {
-    const result = sessionStore.createSession(payload)
-    track('session_created', { harness: payload?.harness_id ?? '' })
+    const v = validateIpc(SessionCreateSchema, payload)
+    if (!v.ok) return v
+    const result = sessionStore.createSession(v.data)
+    track('session_created', { harness: v.data.harness_id ?? '' })
     return result
   })
 
   ipcMain.handle('latch:session-update', async (_event: any, payload: any) => {
-    return sessionStore.updateSession(payload.id, payload.updates)
+    const v = validateIpc(SessionUpdateSchema, payload)
+    if (!v.ok) return v
+    return sessionStore.updateSession(v.data.id, v.data.updates)
   })
 
   ipcMain.handle('latch:session-set-override', async (_event: any, { id, override }: any) => {
@@ -321,7 +403,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:policy-save', async (_event: any, policy: any) => {
-    return policyStore.savePolicy(policy)
+    const v = validateIpc(PolicySaveSchema, policy)
+    if (!v.ok) return v
+    return policyStore.savePolicy(v.data)
   })
 
   ipcMain.handle('latch:policy-delete', async (_event: any, { id }: any) => {
@@ -360,28 +444,84 @@ app.whenReady().then(() => {
 
   // ── Settings handlers ──────────────────────────────────────────────────
 
-  ipcMain.handle('latch:settings-get', async (_event: any, { key }: any) => {
+  // Keys the renderer is allowed to read via settings-get.
+  // Sensitive keys (API keys, tokens) must never be readable from the renderer.
+  const SETTINGS_READ_ALLOWLIST = new Set([
+    'sandbox-enabled',
+    'default-docker-image',
+    'sound-notifications',
+    'auto-accept',
+    'notifications-enabled',
+    'telemetry-enabled',
+  ])
+
+  ipcMain.handle('latch:settings-get', async (_event: any, payload: any) => {
+    const v = validateIpc(SettingsKeySchema, payload)
+    if (!v.ok) return v
     if (!settingsStore) return { ok: false, error: 'SettingsStore unavailable' }
-    const value = settingsStore.get(key)
+    if (!SETTINGS_READ_ALLOWLIST.has(v.data.key)) return { ok: false, error: `Setting '${v.data.key}' is not readable from the renderer.` }
+    const value = settingsStore.get(v.data.key)
     return { ok: true, value }
   })
 
-  ipcMain.handle('latch:settings-set', async (_event: any, { key, value, sensitive }: any) => {
+  ipcMain.handle('latch:settings-set', async (_event: any, payload: any) => {
+    const v = validateIpc(SettingsSetSchema, payload)
+    if (!v.ok) return v
     if (!settingsStore) return { ok: false, error: 'SettingsStore unavailable' }
-    settingsStore.set(key, value, !!sensitive)
+    settingsStore.set(v.data.key, v.data.value, !!v.data.sensitive)
     return { ok: true }
   })
 
-  ipcMain.handle('latch:settings-delete', async (_event: any, { key }: any) => {
+  ipcMain.handle('latch:settings-delete', async (_event: any, payload: any) => {
+    const v = validateIpc(SettingsKeySchema, payload)
+    if (!v.ok) return v
     if (!settingsStore) return { ok: false, error: 'SettingsStore unavailable' }
-    settingsStore.delete(key)
+    settingsStore.delete(v.data.key)
     return { ok: true }
   })
 
-  ipcMain.handle('latch:settings-has', async (_event: any, { key }: any) => {
+  ipcMain.handle('latch:settings-has', async (_event: any, payload: any) => {
+    const v = validateIpc(SettingsKeySchema, payload)
+    if (!v.ok) return v
     if (!settingsStore) return { ok: false, error: 'SettingsStore unavailable' }
-    const result = settingsStore.has(key)
+    const result = settingsStore.has(v.data.key)
     return { ok: true, ...result }
+  })
+
+  // ── Secrets (vault) handlers ────────────────────────────────────────────
+
+  ipcMain.handle('latch:secret-list', async (_event: any, payload: any = {}) => {
+    if (!secretStore) return { ok: false, secrets: [], error: 'SecretStore unavailable' }
+    return secretStore.list(payload?.scope)
+  })
+
+  ipcMain.handle('latch:secret-get', async (_event: any, { id }: any) => {
+    if (!secretStore) return { ok: false, error: 'SecretStore unavailable' }
+    return secretStore.get(id)
+  })
+
+  ipcMain.handle('latch:secret-save', async (_event: any, params: any) => {
+    if (!secretStore) return { ok: false, error: 'SecretStore unavailable' }
+    const v = validateIpc(SecretSaveSchema, params)
+    if (!v.ok) return v
+    return secretStore.save(v.data)
+  })
+
+  ipcMain.handle('latch:secret-delete', async (_event: any, { id }: any) => {
+    if (!secretStore) return { ok: false, error: 'SecretStore unavailable' }
+    return secretStore.delete(id)
+  })
+
+  ipcMain.handle('latch:secret-validate', async (_event: any, { env }: any) => {
+    if (!secretStore) return { ok: false, missing: [], error: 'SecretStore unavailable' }
+    const { validateSecretRefs } = await import('./services/secret-resolver')
+    const missing = validateSecretRefs(env ?? {}, secretStore)
+    return { ok: true, missing }
+  })
+
+  ipcMain.handle('latch:secret-hints', async () => {
+    if (!secretStore) return { ok: false, hints: [], error: 'SecretStore unavailable' }
+    return { ok: true, hints: secretStore.listHints() }
   })
 
   // ── Skills handlers ─────────────────────────────────────────────────────
@@ -395,7 +535,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:skills-save', async (_event: any, skill: any) => {
-    return skillsStore.saveSkill(skill)
+    const v = validateIpc(SkillSaveSchema, skill)
+    if (!v.ok) return v
+    return skillsStore.saveSkill(v.data)
   })
 
   ipcMain.handle('latch:skills-delete', async (_event: any, { id }: any) => {
@@ -417,7 +559,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:mcp-save', async (_event: any, server: any) => {
-    return mcpStore.saveServer(server)
+    const v = validateIpc(McpSaveSchema, server)
+    if (!v.ok) return v
+    return mcpStore.saveServer(v.data)
   })
 
   ipcMain.handle('latch:mcp-delete', async (_event: any, { id }: any) => {
@@ -426,7 +570,16 @@ app.whenReady().then(() => {
 
   ipcMain.handle('latch:mcp-sync', async (_event: any, { harnessId, targetDir }: any) => {
     const { servers } = mcpStore.listServers()
-    return syncMcpToHarness(servers ?? [], harnessId, targetDir)
+    const secretCtx = authzServer && secretStore
+      ? { authzUrl: `http://127.0.0.1:${authzServer.getPort()}`, authzSecret: authzServer.getSecret() }
+      : null
+    return syncMcpToHarness(servers ?? [], harnessId, targetDir, secretCtx)
+  })
+
+  ipcMain.handle('latch:mcp-introspect', async (_event: any, { id }: any) => {
+    const result = mcpStore.getServer(id)
+    if (!result.ok || !result.server) return { ok: false, error: result.error ?? 'Server not found.' }
+    return introspectMcpServer(result.server, secretStore)
   })
 
   // ── Activity / Authz handlers ──────────────────────────────────────────
@@ -495,9 +648,11 @@ app.whenReady().then(() => {
     return { ok: true, port: authzServer?.getPort() ?? 0 }
   })
 
-  ipcMain.handle('latch:authz-register', async (_event: any, { sessionId, harnessId, policyId, policyOverride }: any) => {
-    authzServer?.registerSession(sessionId, harnessId, policyId, policyOverride ?? null)
-    return { ok: true, secret: authzServer?.getSecret() ?? null }
+  ipcMain.handle('latch:authz-register', async (_event: any, payload: any) => {
+    const v = validateIpc(AuthzRegisterSchema, payload)
+    if (!v.ok) return v
+    authzServer?.registerSession(v.data.sessionId, v.data.harnessId, v.data.policyId, v.data.policyOverride ?? null)
+    return { ok: true }
   })
 
   ipcMain.handle('latch:authz-unregister', async (_event: any, { sessionId }: any) => {
@@ -505,12 +660,20 @@ app.whenReady().then(() => {
     return { ok: true }
   })
 
-  ipcMain.handle('latch:authz-secret', async () => {
-    return { ok: true, secret: authzServer?.getSecret() ?? null }
+  ipcMain.handle('latch:approval-resolve', async (_event: any, { id, decision }: any) => {
+    // Try supervisor first (handles escalated prompt decisions for Claude sessions).
+    // Falls through to authzServer for Codex/OpenClaw's ApprovalBar flow.
+    supervisor?.resolveDecision(id, decision)
+    authzServer?.resolveApproval(id, decision)
+    return { ok: true }
   })
 
-  ipcMain.handle('latch:approval-resolve', async (_event: any, { id, decision }: any) => {
-    authzServer?.resolveApproval(id, decision)
+  // ── Supervisor handlers ─────────────────────────────────────────────────
+
+  ipcMain.handle('latch:supervisor-register-tab', async (_event: any, payload: any) => {
+    const { tabId, sessionId, harnessId } = payload ?? {}
+    if (!tabId || !sessionId) return { ok: false, error: 'Missing tabId or sessionId' }
+    supervisor?.registerTab(tabId, sessionId, harnessId ?? 'claude')
     return { ok: true }
   })
 
@@ -518,6 +681,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('latch:docker-detect', async () => {
     const result = await dockerManager.detect()
+    if (result.available) dockerManager.cleanupOrphaned()
     return { ok: true, ...result }
   })
 
@@ -526,7 +690,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:docker-start', async (_event: any, payload: any) => {
-    return dockerManager.start(payload.sessionId, payload)
+    const v = validateIpc(DockerStartSchema, payload)
+    if (!v.ok) return v
+    return dockerManager.start(v.data.sessionId, v.data)
   })
 
   ipcMain.handle('latch:docker-stop', async (_event: any, { sessionId }: any) => {
@@ -589,12 +755,22 @@ app.whenReady().then(() => {
 
   // ── Agents handlers ──────────────────────────────────────────────────
 
-  ipcMain.handle('latch:agents-read', async (_event: any, { dir }: any) => {
+  ipcMain.handle('latch:agents-read', async (_event: any, payload: any) => {
+    const v = validateIpc(AgentsReadSchema, payload)
+    if (!v.ok) return { ...v, content: '', filePath: '', fileName: '' }
     const fs = await import('node:fs/promises')
     const p = await import('node:path')
+    const homeDir = await import('node:os').then((os) => os.homedir())
+
+    // Path traversal guard: dir must resolve within the user's home directory
+    const resolvedDir = p.default.resolve(v.data.dir)
+    if (!resolvedDir.startsWith(homeDir)) {
+      return { ok: false, error: 'Directory must be within the user home directory.', content: '', filePath: '', fileName: '' }
+    }
+
     const candidates = ['AGENTS.md', 'agents.md']
     for (const name of candidates) {
-      const filePath = p.default.join(dir, name)
+      const filePath = p.default.join(resolvedDir, name)
       try {
         const content = await fs.readFile(filePath, 'utf-8')
         return { ok: true, content, filePath, fileName: name }
@@ -603,14 +779,29 @@ app.whenReady().then(() => {
       }
     }
     // No file found — return empty content with default path
-    const filePath = p.default.join(dir, 'AGENTS.md')
+    const filePath = p.default.join(resolvedDir, 'AGENTS.md')
     return { ok: true, content: '', filePath, fileName: 'AGENTS.md' }
   })
 
-  ipcMain.handle('latch:agents-write', async (_event: any, { filePath, content }: any) => {
+  ipcMain.handle('latch:agents-write', async (_event: any, payload: any) => {
+    const v = validateIpc(AgentsWriteSchema, payload)
+    if (!v.ok) return v
     const fs = await import('node:fs/promises')
+    const p = await import('node:path')
+    const homeDir = await import('node:os').then((os) => os.homedir())
+
+    // Path traversal guard: must be within home dir and must be an AGENTS.md file
+    const resolved = p.default.resolve(v.data.filePath)
+    const basename = p.default.basename(resolved).toLowerCase()
+    if (!resolved.startsWith(homeDir)) {
+      return { ok: false, error: 'File path must be within the user home directory.' }
+    }
+    if (basename !== 'agents.md') {
+      return { ok: false, error: 'Only AGENTS.md files can be written.' }
+    }
+
     try {
-      await fs.writeFile(filePath, content, 'utf-8')
+      await fs.writeFile(resolved, v.data.content, 'utf-8')
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err?.message ?? 'Write failed' }
@@ -631,4 +822,5 @@ app.on('before-quit', () => {
   authzServer?.stop()
   radar?.stop()
   db?.close()
+  closeDebugLog()
 })

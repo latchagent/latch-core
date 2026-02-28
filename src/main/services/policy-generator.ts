@@ -20,26 +20,26 @@ const PolicyPermissionsSchema = z.object({
 })
 
 const ClaudePolicyConfigSchema = z.object({
-  allowedTools: z.array(z.string()).optional().describe('Whitelist of Claude Code tool names (PascalCase). E.g. ["Read", "Write", "Bash"].'),
-  deniedTools:  z.array(z.string()).optional().describe('Blacklist of Claude Code tool names.'),
+  allowedTools: z.array(z.string()).optional().nullable().describe('Whitelist of Claude Code tool names (PascalCase). E.g. ["Read", "Write", "Bash"].'),
+  deniedTools:  z.array(z.string()).optional().nullable().describe('Blacklist of Claude Code tool names.'),
 })
 
 const CodexPolicyConfigSchema = z.object({
-  approvalMode: z.enum(['auto', 'read-only', 'full']).optional().describe('Codex approval mode.'),
-  sandbox:      z.enum(['strict', 'moderate', 'permissive']).optional().describe('Codex sandbox level.'),
-  deniedCommands: z.array(z.string()).optional().describe('Shell command prefixes to block.'),
-  promptCommands: z.array(z.string()).optional().describe('Shell command prefixes requiring approval.'),
+  approvalMode: z.enum(['auto', 'read-only', 'full']).optional().nullable().describe('Codex approval mode.'),
+  sandbox:      z.enum(['strict', 'moderate', 'permissive']).optional().nullable().describe('Codex sandbox level.'),
+  deniedCommands: z.array(z.string()).optional().nullable().describe('Shell command prefixes to block.'),
+  promptCommands: z.array(z.string()).optional().nullable().describe('Shell command prefixes requiring approval.'),
 })
 
 const OpenClawPolicyConfigSchema = z.object({
-  allowedTools: z.array(z.string()).optional().describe('Whitelist of OpenClaw tool names (lowercase).'),
-  deniedTools:  z.array(z.string()).optional().describe('Blacklist of OpenClaw tool names.'),
+  allowedTools: z.array(z.string()).optional().nullable().describe('Whitelist of OpenClaw tool names (lowercase).'),
+  deniedTools:  z.array(z.string()).optional().nullable().describe('Blacklist of OpenClaw tool names.'),
 })
 
 const HarnessesConfigSchema = z.object({
-  claude:   ClaudePolicyConfigSchema.optional(),
-  codex:    CodexPolicyConfigSchema.optional(),
-  openclaw: OpenClawPolicyConfigSchema.optional(),
+  claude:   ClaudePolicyConfigSchema.optional().nullable(),
+  codex:    CodexPolicyConfigSchema.optional().nullable(),
+  openclaw: OpenClawPolicyConfigSchema.optional().nullable(),
 })
 
 const PolicyDocumentSchema = z.object({

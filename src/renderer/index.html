@@ -3,11 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      CSP: scripts and styles only from 'self' (local files).
-      worker-src blob: is needed by xterm.js WebGL renderer internals.
+      CSP: strict policy for an Electron renderer.
+      - style-src 'unsafe-inline': required by xterm.js which injects <style> elements
+        for cursor, theme, and selection rendering. Cannot be replaced with nonces
+        because xterm creates styles dynamically at runtime.
+      - worker-src blob: required by xterm.js WebGL renderer internals.
+      - connect-src http://127.0.0.1:*: authz server runs on localhost.
     -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src blob:; img-src 'self' data:; connect-src 'self' http://127.0.0.1:*;" />
+          content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src blob:; img-src 'self' data:; connect-src 'self' http://127.0.0.1:*; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none';" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Latch Desktop</title>
   </head>

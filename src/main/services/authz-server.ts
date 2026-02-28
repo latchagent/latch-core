@@ -10,16 +10,37 @@
 import crypto from 'node:crypto'
 import http from 'node:http'
 import os from 'node:os'
-import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule } from '../../types'
+import vm from 'node:vm'
+import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule, SupervisorAction } from '../../types'
 import type { PolicyStore } from '../stores/policy-store'
-import { resolvePolicy } from './policy-enforcer'
+import { resolvePolicy, computeStrictestBaseline } from './policy-enforcer'
 import type { ActivityStore } from '../stores/activity-store'
 import type { Radar } from './radar'
 import type { FeedStore } from '../stores/feed-store'
 import type { SettingsStore } from '../stores/settings-store'
+import { evaluateWithLlm, shouldEvaluate } from './llm-evaluator'
 
 const MAX_BODY_BYTES = 64 * 1024 // 64 KB max request body
 const APPROVAL_TIMEOUT_MS = 120_000 // 120 seconds for interactive approval
+const REGEX_TIMEOUT_MS = 50 // Max time for a single regex test
+const RATE_LIMIT_WINDOW_MS = 10_000 // 10-second sliding window
+const RATE_LIMIT_MAX_REQUESTS = 100 // Max requests per window per session
+const PROMPT_GRANT_TTL_MS = 60_000 // 60-second grant after user approves a "prompt" tool
+
+/** Execute a regex test with a timeout to prevent ReDoS attacks. */
+function safeRegexTest(pattern: string, flags: string, input: string): boolean {
+  try {
+    const sandbox = { result: false, pattern, flags, input }
+    vm.runInNewContext(
+      'result = new RegExp(pattern, flags).test(input)',
+      sandbox,
+      { timeout: REGEX_TIMEOUT_MS },
+    )
+    return sandbox.result
+  } catch {
+    return false // timeout or invalid regex — treat as no match
+  }
+}
 
 // ─── Tool classification ─────────────────────────────────────────────────────
 
@@ -222,13 +243,11 @@ export function authorizeToolCall(
     // undefined = use defaults, [] = no rules (opt-out)
     const rules = p.commandRules !== undefined ? p.commandRules : DEFAULT_COMMAND_RULES
     for (const rule of rules) {
-      try {
-        if (new RegExp(rule.pattern, 'i').test(command)) {
-          if (rule.decision === 'deny') return { decision: 'deny', reason: rule.reason ?? `Command blocked by rule: ${rule.pattern}` }
-          if (rule.decision === 'prompt') return { decision: 'allow', reason: rule.reason ?? `Command requires approval: ${rule.pattern}`, needsPrompt: true }
-          break // 'allow' = skip remaining rules
-        }
-      } catch { /* bad regex — skip */ }
+      if (safeRegexTest(rule.pattern, 'i', command)) {
+        if (rule.decision === 'deny') return { decision: 'deny', reason: rule.reason ?? `Command blocked by rule: ${rule.pattern}` }
+        if (rule.decision === 'prompt') return { decision: 'allow', reason: rule.reason ?? `Command requires approval: ${rule.pattern}`, needsPrompt: true }
+        break // 'allow' = skip remaining rules
+      }
     }
   }
 
@@ -239,13 +258,34 @@ export function authorizeToolCall(
 export function matchGlob(filePath: string, glob: string): boolean {
   // Expand ~ to actual home directory
   const expanded = glob.replace(/^~/, os.homedir())
+  // Normalize path separators
+  const normalized = filePath.replace(/\\/g, '/')
+  const normalizedGlob = expanded.replace(/\\/g, '/')
   // Convert glob to regex
-  const regex = expanded
+  const regex = normalizedGlob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '{{GLOBSTAR}}')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\{\{GLOBSTAR\}\}/g, '.*')
-  return new RegExp(`^${regex}$`).test(filePath)
+    .replace(/\/\*\*\//g, '/{{GLOBSTAR}}/')  // /**/  → match any depth with slashes
+    .replace(/\/\*\*$/g, '/{{GLOBSTAR_END}}')  // /**  at end → match any depth
+    .replace(/\*\*/g, '{{GLOBSTAR_BARE}}')   // bare ** → match anything
+    .replace(/\*/g, '[^/]*')                  // * → match within single segment
+    .replace(/\{\{GLOBSTAR\}\}/g, '(?:.+/)?')
+    .replace(/\{\{GLOBSTAR_END\}\}/g, '.*')
+    .replace(/\{\{GLOBSTAR_BARE\}\}/g, '.*')
+  return new RegExp(`^${regex}$`).test(normalized)
+}
+
+/** Extract a short detail string from tool input for feed display. */
+function toolDetailStr(toolName: string, toolInput: Record<string, unknown>): string {
+  const cmd = toolInput?.command
+  if (cmd && typeof cmd === 'string') {
+    const short = cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd
+    return ` — ${short}`
+  }
+  const fp = toolInput?.file_path ?? toolInput?.path
+  if (fp && typeof fp === 'string') {
+    return ` — ${fp}`
+  }
+  return ''
 }
 
 // ─── Session registry ────────────────────────────────────────────────────────
@@ -269,11 +309,24 @@ export class AuthzServer {
     res: http.ServerResponse
     timer: ReturnType<typeof setTimeout>
   }>()
+  private rateLimitBuckets = new Map<string, number[]>()
+  /** Time-limited grants for tools approved via the ApprovalBar.
+   *  Key: `${sessionId}:${normalizedToolName}` → expiry timestamp.
+   *  Set when user clicks Approve; consumed when the LLM retries the tool.
+   */
+  private promptGrants = new Map<string, number>()
+  /** Queued supervisor actions per session. The supervisor service consumes
+   *  these when it detects a terminal prompt and needs to type yes/no.
+   */
+  private supervisorActions = new Map<string, SupervisorAction[]>()
+  /** Callback invoked when a new supervisor action is queued. */
+  private supervisorCallback: ((action: SupervisorAction) => void) | null = null
   private policyStore: PolicyStore
   private activityStore: ActivityStore
   private radar: Radar | null = null
   private feedStore: FeedStore | null = null
   private settingsStore: SettingsStore | null = null
+  private secretStore: import('../stores/secret-store').SecretStore | null = null
   private sendToRenderer: (channel: string, payload: unknown) => void
 
   constructor(
@@ -305,6 +358,35 @@ export class AuthzServer {
   /** Wire up the settings store to read auto-accept preference. */
   setSettingsStore(store: SettingsStore): void {
     this.settingsStore = store
+  }
+
+  /** Wire up the secret store for /secrets/resolve endpoint. */
+  setSecretStore(store: import('../stores/secret-store').SecretStore): void {
+    this.secretStore = store
+  }
+
+  /** Register a callback for supervisor actions (used by Supervisor service). */
+  onSupervisorAction(callback: (action: SupervisorAction) => void): void {
+    this.supervisorCallback = callback
+  }
+
+  /** Pop the next queued supervisor action for a session matching a tool name.
+   *  The supervisor calls this when it detects a terminal prompt and needs to
+   *  decide what to type. Returns undefined if no matching action is queued.
+   */
+  popSupervisorAction(sessionId: string, toolName: string): SupervisorAction | undefined {
+    const queue = this.supervisorActions.get(sessionId)
+    if (!queue?.length) return undefined
+    // Match by normalized tool name (case-insensitive)
+    const normTarget = normalizeToolKey(toolName)
+    const idx = queue.findIndex(a => normalizeToolKey(a.toolName) === normTarget)
+    if (idx < 0) return undefined
+    return queue.splice(idx, 1)[0]
+  }
+
+  /** Peek at all queued supervisor actions for a session (without consuming). */
+  peekSupervisorActions(sessionId: string): SupervisorAction[] {
+    return this.supervisorActions.get(sessionId) ?? []
   }
 
   /** Start listening on 127.0.0.1 with an OS-assigned port. */
@@ -356,6 +438,13 @@ export class AuthzServer {
       }
     }
     this.sessions.delete(sessionId)
+    this.rateLimitBuckets.delete(sessionId)
+    // Clean up prompt grants for this session
+    for (const key of this.promptGrants.keys()) {
+      if (key.startsWith(`${sessionId}:`)) this.promptGrants.delete(key)
+    }
+    // Clean up queued supervisor actions
+    this.supervisorActions.delete(sessionId)
   }
 
   /** Check if a tool call needs interactive approval based on policy. */
@@ -372,7 +461,10 @@ export class AuthzServer {
     this.sendToRenderer('latch:feed-update', item)
   }
 
-  /** Resolve a pending approval (called from IPC or timeout). */
+  /** Resolve a pending approval (called from IPC or timeout).
+   *  For confirmDestructive approvals: completes the held HTTP response.
+   *  For needsPrompt approvals: sets a time-limited grant (HTTP already responded).
+   */
   resolveApproval(id: string, decision: ApprovalDecision): void {
     const entry = this.pendingApprovals.get(id)
     if (!entry) return
@@ -399,9 +491,20 @@ export class AuthzServer {
 
     // Surface in feed
     const verb = decision === 'approve' ? 'Approved' : 'Denied'
-    this.emitPolicyFeed(approval.sessionId, approval.harnessId, `${verb}: ${approval.toolName}`)
+    this.emitPolicyFeed(approval.sessionId, approval.harnessId, `${verb}: ${approval.toolName}${toolDetailStr(approval.toolName, approval.toolInput)}`)
 
-    // Complete the held HTTP response
+    // If this is a "prompt" tool approval (res is null — HTTP already responded
+    // with 403), set a time-limited grant so the LLM's retry succeeds.
+    if (res === null || (res as any)?._headerSent) {
+      if (decision === 'approve') {
+        const grantKey = `${approval.sessionId}:${normalizeToolKey(approval.toolName)}`
+        this.promptGrants.set(grantKey, Date.now() + PROMPT_GRANT_TTL_MS)
+      }
+      this.sendToRenderer('latch:approval-resolved', { id })
+      return
+    }
+
+    // Complete the held HTTP response (confirmDestructive flow)
     try {
       if (authzDecision === 'allow') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -417,36 +520,77 @@ export class AuthzServer {
     this.sendToRenderer('latch:approval-resolved', { id })
   }
 
+  /** Resolve a prompt approval on timeout (no HTTP response to send). */
+  private resolvePromptApproval(id: string): void {
+    this.resolveApproval(id, 'deny')
+  }
+
+  /** Check rate limit for a session. Returns true if request is allowed. */
+  private checkRateLimit(sessionId: string): boolean {
+    const now = Date.now()
+    const cutoff = now - RATE_LIMIT_WINDOW_MS
+    let timestamps = this.rateLimitBuckets.get(sessionId)
+    if (!timestamps) {
+      timestamps = []
+      this.rateLimitBuckets.set(sessionId, timestamps)
+    }
+    // Evict expired timestamps
+    while (timestamps.length > 0 && timestamps[0] < cutoff) timestamps.shift()
+    if (timestamps.length >= RATE_LIMIT_MAX_REQUESTS) return false
+    timestamps.push(now)
+    return true
+  }
+
   /** Handle incoming HTTP requests. */
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    // Authenticate via shared secret
-    const authHeader = req.headers['authorization']
-    if (!authHeader || authHeader !== `Bearer ${this.secret}`) {
-      res.writeHead(401)
-      res.end(JSON.stringify({ error: 'Unauthorized' }))
-      return
-    }
-
     if (req.method !== 'POST') {
       res.writeHead(404)
       res.end('Not found')
       return
     }
 
-    // Route: POST /authorize/:sessionId — tool-call authorization (Claude Code / OpenClaw)
-    const authzMatch = req.url?.match(/^\/authorize\/([^/]+)$/)
+    // Route: POST /supervise/:sessionId — supervisor notification (Claude Code hook, non-blocking)
+    const superviseMatch = req.url?.match(/^\/supervise\/([^/]+)$/)
+    // Route: POST /authorize/:sessionId — tool-call authorization (Codex / OpenClaw)
+    const authzMatch = !superviseMatch ? req.url?.match(/^\/authorize\/([^/]+)$/) : null
     // Route: POST /notify/:sessionId — turn-complete observation (Codex notify hook)
-    const notifyMatch = !authzMatch ? req.url?.match(/^\/notify\/([^/]+)$/) : null
-    // Route: POST /feed/:sessionId — agent status update
-    const feedMatch = (!authzMatch && !notifyMatch) ? req.url?.match(/^\/feed\/([^/]+)$/) : null
+    const notifyMatch = (!superviseMatch && !authzMatch) ? req.url?.match(/^\/notify\/([^/]+)$/) : null
+    // Route: POST /feed/:sessionId — agent status update (no auth required — localhost only)
+    const feedMatch = (!superviseMatch && !authzMatch && !notifyMatch) ? req.url?.match(/^\/feed\/([^/]+)$/) : null
+    // Route: POST /secrets/resolve — resolve secret keys for latch-mcp-wrap
+    const secretsMatch = (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch)
+      ? req.url?.match(/^\/secrets\/resolve$/)
+      : null
 
-    if (!authzMatch && !notifyMatch && !feedMatch) {
+    if (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch) {
       res.writeHead(404)
       res.end('Not found')
       return
     }
 
-    const sessionId = decodeURIComponent((authzMatch ?? notifyMatch ?? feedMatch)![1])
+    // Authenticate via shared secret (skip for feed — it only writes status
+    // messages and the server is bound to 127.0.0.1, so auth adds no value
+    // but breaks when harnesses sanitize subprocess env vars).
+    if (!feedMatch) {
+      const authHeader = req.headers['authorization']
+      if (!authHeader || authHeader !== `Bearer ${this.secret}`) {
+        res.writeHead(401)
+        res.end(JSON.stringify({ error: 'Unauthorized' }))
+        return
+      }
+    }
+
+    const sessionId = secretsMatch
+      ? ''
+      : decodeURIComponent((superviseMatch ?? authzMatch ?? notifyMatch ?? feedMatch)![1])
+
+    // Rate limit per session (skip for secrets endpoint which has no session)
+    if (sessionId && !this.checkRateLimit(sessionId)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Rate limit exceeded. Try again shortly.' }))
+      return
+    }
+
     let body = ''
     let bodyBytes = 0
 
@@ -463,8 +607,18 @@ export class AuthzServer {
     req.on('end', () => {
       if (bodyBytes > MAX_BODY_BYTES) return // already responded
       try {
-        if (authzMatch) {
-          this.processAuthorize(sessionId, body, res)
+        if (secretsMatch) {
+          this.processSecretsResolve(body, res)
+        } else if (superviseMatch) {
+          this.processSupervisor(sessionId, body, res)
+        } else if (authzMatch) {
+          this.processAuthorize(sessionId, body, res).catch((err: any) => {
+            console.error('Authz error (async):', err?.message)
+            if (!res.headersSent) {
+              res.writeHead(500)
+              res.end(JSON.stringify({ error: err?.message ?? 'Internal error' }))
+            }
+          })
         } else if (notifyMatch) {
           this.processNotify(sessionId, body, res)
         } else if (feedMatch) {
@@ -508,6 +662,162 @@ export class AuthzServer {
     res.end(JSON.stringify({ ok: true }))
   }
 
+  /** Resolve secret keys for latch-mcp-wrap. */
+  private processSecretsResolve(body: string, res: http.ServerResponse): void {
+    if (!this.secretStore) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'SecretStore unavailable' }))
+      return
+    }
+
+    let payload: { keys?: string[] }
+    try {
+      payload = JSON.parse(body)
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON' }))
+      return
+    }
+
+    if (!Array.isArray(payload.keys)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Missing keys array' }))
+      return
+    }
+
+    const resolved: Record<string, string> = {}
+    for (const key of payload.keys) {
+      const value = this.secretStore.resolve(String(key))
+      if (value !== null) resolved[key] = value
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ resolved }))
+  }
+
+  /** Process a supervisor notification from Claude Code's PreToolUse hook.
+   *  Evaluates policy, queues a supervisor action, and responds immediately.
+   *  Hard denies return 403 (hook exits 2). Everything else returns 200
+   *  (hook exits 0, Claude prompts natively, supervisor types yes/no).
+   */
+  private processSupervisor(sessionId: string, body: string, res: http.ServerResponse): void {
+    const registered = this.sessions.get(sessionId)
+    if (!registered) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ decision: 'deny', reason: 'Unknown session — denied by default.' }))
+      return
+    }
+
+    let payload: Record<string, unknown>
+    try {
+      payload = JSON.parse(body)
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON' }))
+      return
+    }
+
+    // Accept both Claude Code format (tool_name/tool_input) and generic format
+    const toolName  = String(payload.tool_name ?? payload.toolName ?? 'unknown')
+    const toolInput = (payload.tool_input ?? payload.args ?? {}) as Record<string, unknown>
+    const { actionClass, risk } = classifyTool(toolName)
+
+    // Resolve effective policy (same merge logic as processAuthorize)
+    const allResult = this.policyStore.listPolicies()
+    let basePolicy: PolicyDocument
+    if (allResult.ok && allResult.policies?.length) {
+      basePolicy = computeStrictestBaseline(allResult.policies, registered.harnessId)
+    } else {
+      basePolicy = {
+        id: '__emergency__',
+        name: 'Emergency Deny-All',
+        description: 'No policies available.',
+        permissions: {
+          allowBash: false, allowNetwork: false, allowFileWrite: false,
+          confirmDestructive: true, blockedGlobs: [],
+        },
+        harnesses: {},
+      }
+    }
+
+    const effective = resolvePolicy(basePolicy, registered.policyOverride)
+    const { decision, reason: baseReason, needsPrompt: toolNeedsPrompt } = authorizeToolCall(toolName, toolInput, effective, registered.harnessId)
+
+    // Check confirmDestructive for write/execute tools not already covered by a tool rule.
+    // When confirmDestructive is set, escalate to the user instead of auto-approving.
+    // Auto-accept setting bypasses this (same as the old ApprovalBar behavior).
+    let needsPrompt = toolNeedsPrompt
+    let reason = baseReason
+    if (!needsPrompt && decision === 'allow' && effective.permissions.confirmDestructive) {
+      if (actionClass === 'execute' || actionClass === 'write') {
+        const autoAccept = this.settingsStore?.get('auto-accept')
+        if (autoAccept !== null && autoAccept !== 'true') {
+          needsPrompt = true
+          if (!reason) reason = 'Destructive operation — confirm before proceeding.'
+        }
+      }
+    }
+
+    // Record activity event
+    const activityDecision: AuthzDecision = decision === 'deny' ? 'deny' : needsPrompt ? 'ask' : 'allow'
+    const event = this.activityStore.record({
+      sessionId,
+      toolName,
+      actionClass,
+      risk,
+      decision: activityDecision,
+      reason,
+      harnessId: registered.harnessId,
+    })
+    this.sendToRenderer('latch:activity-event', event)
+    this.radar?.onEvent()
+
+    // Hard deny — block at hook level (defense-in-depth)
+    if (decision === 'deny') {
+      this.emitPolicyFeed(sessionId, registered.harnessId, `Blocked: ${toolName}${toolDetailStr(toolName, toolInput)} — ${reason}`)
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ decision: 'deny', reason }))
+      return
+    }
+
+    // Queue supervisor action for the terminal-driving supervisor
+    const supervisorDecision = needsPrompt ? 'prompt' as const : 'allow' as const
+    const action: SupervisorAction = {
+      id: crypto.randomBytes(8).toString('hex'),
+      sessionId,
+      toolName,
+      toolInput,
+      decision: supervisorDecision,
+      reason,
+      actionClass,
+      risk,
+      timestamp: Date.now(),
+    }
+
+    let queue = this.supervisorActions.get(sessionId)
+    if (!queue) {
+      queue = []
+      this.supervisorActions.set(sessionId, queue)
+    }
+    queue.push(action)
+
+    // Notify supervisor service
+    if (this.supervisorCallback) {
+      this.supervisorCallback(action)
+    }
+
+    // Emit to renderer for UI tracking
+    this.sendToRenderer('latch:supervisor-action', action)
+
+    // NOTE: Feed messaging for supervisor-managed sessions is handled by the
+    // Supervisor service itself (emitFeed), which attaches the approvalId so
+    // the Feed panel can render approve/deny buttons.
+
+    // Always respond 200 — hook exits 0, Claude prompts natively
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ decision: supervisorDecision, reason }))
+  }
+
   /** Process a Codex notify (turn-complete) event.
    *  Records it as an activity event so it appears in the Activity panel.
    */
@@ -545,7 +855,7 @@ export class AuthzServer {
   }
 
   /** Process an authorization request. */
-  private processAuthorize(sessionId: string, body: string, res: http.ServerResponse): void {
+  private async processAuthorize(sessionId: string, body: string, res: http.ServerResponse): Promise<void> {
     const registered = this.sessions.get(sessionId)
     if (!registered) {
       // Unknown session — denied by default
@@ -569,31 +879,55 @@ export class AuthzServer {
     const toolInput = (payload.tool_input ?? payload.args ?? {}) as Record<string, unknown>
     const { actionClass, risk } = classifyTool(toolName)
 
-    // Resolve effective policy
-    const result = this.policyStore.getPolicy(registered.policyId)
-    if (!result.ok || !result.policy) {
-      // Can't resolve policy — deny by default
-      const denyReason = 'Policy not found — denied by default.'
-      const event = this.activityStore.record({
-        sessionId,
-        toolName,
-        actionClass,
-        risk,
-        decision: 'deny',
-        reason: denyReason,
-        harnessId: registered.harnessId,
-      })
-      this.sendToRenderer('latch:activity-event', event)
-      this.radar?.onEvent()
-      this.emitPolicyFeed(sessionId, registered.harnessId, `Blocked: ${toolName} — ${denyReason}`)
+    // Resolve effective policy.
+    // All top-level policies are merged using strictest-wins semantics:
+    //   - Boolean permissions: AND (false if ANY policy says false)
+    //   - confirmDestructive: OR (true if ANY policy says true)
+    //   - Tool rules: deny > prompt > allow per pattern
+    // Session overrides are then applied on top as ephemeral tweaks.
+    const allResult = this.policyStore.listPolicies()
+    let basePolicy: PolicyDocument
 
-      res.writeHead(403)
-      res.end(JSON.stringify({ decision: 'deny', reason: denyReason }))
-      return
+    if (allResult.ok && allResult.policies?.length) {
+      basePolicy = computeStrictestBaseline(allResult.policies, registered.harnessId)
+    } else {
+      // No policies exist at all — use emergency deny-all
+      basePolicy = {
+        id: '__emergency__',
+        name: 'Emergency Deny-All',
+        description: 'No policies available.',
+        permissions: {
+          allowBash: false, allowNetwork: false, allowFileWrite: false,
+          confirmDestructive: true, blockedGlobs: [],
+        },
+        harnesses: {},
+      }
     }
 
-    const effective = resolvePolicy(result.policy, registered.policyOverride)
-    const { decision, reason, needsPrompt } = authorizeToolCall(toolName, toolInput, effective, registered.harnessId)
+    const effective = resolvePolicy(basePolicy, registered.policyOverride)
+    let { decision, reason, needsPrompt } = authorizeToolCall(toolName, toolInput, effective, registered.harnessId)
+
+    // LLM evaluator: when no static rule matched (allow with null reason),
+    // consult the LLM if the policy has an evaluator configured.
+    if (decision === 'allow' && reason === null && effective.llmEvaluator?.enabled) {
+      if (shouldEvaluate(effective.llmEvaluator, toolName)) {
+        const apiKey = this.settingsStore?.get('openai-api-key')
+        if (apiKey) {
+          const llmResult = await evaluateWithLlm(
+            effective.llmEvaluator, toolName, toolInput, actionClass, apiKey,
+          )
+          if (llmResult.decision === 'deny') {
+            decision = 'deny'
+            reason = `LLM evaluator: ${llmResult.reason}`
+          } else if (llmResult.decision === 'prompt') {
+            needsPrompt = true
+            reason = `LLM evaluator: ${llmResult.reason}`
+          } else {
+            reason = `LLM evaluator: ${llmResult.reason}`
+          }
+        }
+      }
+    }
 
     // If policy denies outright, record and respond immediately
     if (decision === 'deny') {
@@ -608,16 +942,95 @@ export class AuthzServer {
       })
       this.sendToRenderer('latch:activity-event', event)
       this.radar?.onEvent()
-      this.emitPolicyFeed(sessionId, registered.harnessId, `Blocked: ${toolName} — ${reason}`)
+      this.emitPolicyFeed(sessionId, registered.harnessId, `Blocked: ${toolName}${toolDetailStr(toolName, toolInput)} — ${reason}`)
 
       res.writeHead(403)
       res.end(JSON.stringify({ decision: 'deny', reason }))
       return
     }
 
-    // If interactive approval is needed, check auto-accept first
-    if (this.needsApproval(effective, actionClass, needsPrompt)) {
-      // Auto-accept: skip the interactive prompt and approve immediately
+    // ── Explicit "prompt" tool rules: deny-first + grant-after-approval ────
+    // Strategy: deny the tool call immediately (so the hook exits fast and
+    // doesn't get killed by the harness's hook timeout), then show the
+    // ApprovalBar in the Latch UI.  When the user clicks Approve, a
+    // time-limited grant is recorded.  The LLM sees the denial, tells the
+    // user, user says "try again", the retry hits the grant and succeeds.
+    if (needsPrompt) {
+      const grantKey = `${sessionId}:${normalizeToolKey(toolName)}`
+      const grantExpiry = this.promptGrants.get(grantKey)
+
+      // Check for existing grant (user already approved in ApprovalBar)
+      if (grantExpiry && Date.now() < grantExpiry) {
+        const event = this.activityStore.record({
+          sessionId,
+          toolName,
+          actionClass,
+          risk,
+          decision: 'allow',
+          reason: 'Approved via Latch policy grant.',
+          harnessId: registered.harnessId,
+        })
+        this.sendToRenderer('latch:activity-event', event)
+        this.radar?.onEvent()
+
+        res.writeHead(200)
+        res.end(JSON.stringify({ decision: 'allow' }))
+        return
+      }
+
+      // No grant — deny immediately and show ApprovalBar
+      const askReason = reason ?? `Tool "${toolName}" requires approval per policy rule.`
+
+      const event = this.activityStore.record({
+        sessionId,
+        toolName,
+        actionClass,
+        risk,
+        decision: 'ask',
+        reason: askReason,
+        harnessId: registered.harnessId,
+      })
+      this.sendToRenderer('latch:activity-event', event)
+      this.radar?.onEvent()
+      this.emitPolicyFeed(sessionId, registered.harnessId, `Awaiting approval: ${toolName}${toolDetailStr(toolName, toolInput)}`)
+
+      // Send approval request to renderer (ApprovalBar).
+      // When user clicks Approve, resolvePromptApproval sets the grant.
+      const approvalId = crypto.randomBytes(8).toString('hex')
+      const approval: PendingApproval = {
+        id: approvalId,
+        sessionId,
+        toolName,
+        toolInput,
+        actionClass,
+        risk,
+        harnessId: registered.harnessId,
+        createdAt: new Date().toISOString(),
+        timeoutMs: APPROVAL_TIMEOUT_MS,
+        timeoutDefault: 'deny',
+        reason: askReason,
+        promptTool: true,
+      }
+
+      // Store pending approval (no res — response already sent).
+      // Timer auto-denies after timeout (removes the ApprovalBar).
+      const timer = setTimeout(() => {
+        this.resolvePromptApproval(approvalId)
+      }, APPROVAL_TIMEOUT_MS)
+
+      this.pendingApprovals.set(approvalId, { approval, res: null as any, timer })
+      this.sendToRenderer('latch:approval-request', approval)
+
+      // Deny immediately — the hook exits fast, the LLM sees the reason
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ decision: 'deny', reason: `${askReason} Approve in Latch Desktop, then retry.` }))
+      return
+    }
+
+    // ── Generic confirmDestructive prompts: auto-accept or ApprovalBar ─────
+    if (this.needsApproval(effective, actionClass, false)) {
+      // Auto-accept: skip the interactive prompt and approve immediately.
+      // Only for generic destructive-operation prompts, NOT explicit tool rules.
       const autoAccept = this.settingsStore?.get('auto-accept')
       if (autoAccept === null || autoAccept === 'true') {
         // Default is ON (null = never explicitly set = default ON)

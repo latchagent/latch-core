@@ -79,12 +79,21 @@ export interface HarnessesConfig {
   openclaw?: OpenClawPolicyConfig;
 }
 
+export interface LlmEvaluatorConfig {
+  enabled: boolean;
+  intent: string;
+  scope: 'fallback' | 'all-mcp' | 'specific-servers';
+  servers?: string[];
+  model?: string;
+}
+
 export interface PolicyDocument {
   id: string;
   name: string;
   description: string;
   permissions: PolicyPermissions;
   harnesses: HarnessesConfig;
+  llmEvaluator?: LlmEvaluatorConfig;
 }
 
 // ─── MCP Server ──────────────────────────────────────────────────────────────
@@ -105,7 +114,27 @@ export interface McpServerRecord {
   enabled: boolean
   tags: string[]
   tools: string[]
+  toolDescriptions: Record<string, string>
   catalogId: string | null
+}
+
+export interface McpToolInfo {
+  name: string
+  description: string
+}
+
+// ─── Secret (vault) ──────────────────────────────────────────────────────────
+
+/** Metadata for a vault secret. Raw values never cross to the renderer. */
+export interface SecretRecord {
+  id: string
+  name: string              // Human label: "GitHub PAT"
+  key: string               // Machine reference: "GITHUB_TOKEN"
+  description: string       // What it's for: "API key for Spoonacular food/recipe API"
+  scope: 'global' | string  // 'global' or a session ID
+  tags: string[]
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Skill ────────────────────────────────────────────────────────────────────
@@ -145,6 +174,9 @@ export interface DockerConfig {
   status: DockerStatus;
 }
 
+/** Derived agent activity status for a session or tab. */
+export type AgentStatus = 'running' | 'waiting' | 'idle' | 'exited';
+
 // ─── Session ──────────────────────────────────────────────────────────────────
 
 /** One terminal tab — each tab has its own PTY process. */
@@ -183,7 +215,7 @@ export interface SessionRecord {
 
 export type ActionClass = 'read' | 'write' | 'execute' | 'send';
 export type RiskLevel = 'low' | 'medium' | 'high';
-export type AuthzDecision = 'allow' | 'deny';
+export type AuthzDecision = 'allow' | 'deny' | 'ask';
 
 export interface ActivityEvent {
   id: string;
@@ -231,6 +263,29 @@ export interface PendingApproval {
   createdAt: string
   timeoutMs: number
   timeoutDefault: ApprovalDecision
+  reason?: string
+  /** True when this approval is for an explicit "prompt" tool rule.
+   *  When approved, a grant is set and the terminal auto-sends a retry message.
+   */
+  promptTool?: boolean
+}
+
+// ─── Supervisor ──────────────────────────────────────────────────────────────
+
+/** Queued action from the authz server for the supervisor agent to handle.
+ *  The supervisor matches these to terminal prompts and types yes/no.
+ */
+export interface SupervisorAction {
+  id: string
+  sessionId: string
+  toolName: string
+  toolInput: Record<string, unknown>
+  /** 'allow' → supervisor auto-approves; 'prompt' → escalate to user via Latch UI. */
+  decision: 'allow' | 'deny' | 'prompt'
+  reason: string | null
+  actionClass: ActionClass
+  risk: RiskLevel
+  timestamp: number
 }
 
 // ─── Feed ─────────────────────────────────────────────────────────────────────
@@ -265,7 +320,7 @@ export interface UpdateState {
 
 export type RailPanel = 'activity' | 'policy';
 
-export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'settings' | 'feed' | 'radar';
+export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'settings' | 'feed' | 'radar' | 'vault' | 'docs';
 
 // ─── Window.latch API ─────────────────────────────────────────────────────────
 // These types mirror the contextBridge API from the preload script.
@@ -322,6 +377,7 @@ export interface LatchAPI {
   saveMcpServer(server: object): Promise<{ ok: boolean; error?: string }>;
   deleteMcpServer(payload: { id: string }): Promise<{ ok: boolean }>;
   syncMcpServers(payload: { harnessId: string; targetDir?: string }): Promise<{ ok: boolean; path?: string; error?: string }>;
+  introspectMcpServer(payload: { id: string }): Promise<{ ok: boolean; tools?: McpToolInfo[]; error?: string }>;
 
   // Docker sandbox
   dockerDetect(): Promise<{ ok: boolean; available: boolean; version?: string }>;
@@ -339,7 +395,6 @@ export interface LatchAPI {
   getAuthzPort(): Promise<{ ok: boolean; port: number }>;
   authzRegister(payload: { sessionId: string; harnessId: string; policyId: string; policyOverride?: PolicyDocument | null }): Promise<{ ok: boolean }>;
   authzUnregister(payload: { sessionId: string }): Promise<{ ok: boolean }>;
-  getAuthzSecret(): Promise<{ ok: boolean; secret: string | null }>;
   onActivityEvent(callback: (event: ActivityEvent) => void): () => void;
   onRadarSignal(callback: (signal: RadarSignal) => void): () => void;
 
@@ -347,6 +402,10 @@ export interface LatchAPI {
   resolveApproval(payload: { id: string; decision: ApprovalDecision }): Promise<{ ok: boolean }>;
   onApprovalRequest(callback: (approval: PendingApproval) => void): () => void;
   onApprovalResolved(callback: (payload: { id: string }) => void): () => void;
+
+  // Supervisor
+  supervisorRegisterTab(payload: { tabId: string; sessionId: string; harnessId: string }): Promise<{ ok: boolean; error?: string }>;
+  onSupervisorAction(callback: (action: SupervisorAction) => void): () => void;
 
   detectProjectStack(payload: { cwd: string }): Promise<{ ok: boolean; stack: string }>;
 
@@ -374,6 +433,14 @@ export interface LatchAPI {
   setSetting(payload: { key: string; value: string; sensitive?: boolean }): Promise<{ ok: boolean; error?: string }>;
   deleteSetting(payload: { key: string }): Promise<{ ok: boolean; error?: string }>;
   hasSetting(payload: { key: string }): Promise<{ ok: boolean; exists: boolean; encrypted: boolean; error?: string }>;
+
+  // Secrets (vault)
+  listSecrets(payload?: { scope?: string }): Promise<{ ok: boolean; secrets: SecretRecord[]; error?: string }>;
+  getSecret(payload: { id: string }): Promise<{ ok: boolean; secret?: SecretRecord; error?: string }>;
+  saveSecret(params: { id: string; name: string; key: string; value: string; description?: string; scope?: string; tags?: string[] }): Promise<{ ok: boolean; error?: string }>;
+  deleteSecret(payload: { id: string }): Promise<{ ok: boolean; error?: string }>;
+  validateSecretRefs(payload: { env: Record<string, string> }): Promise<{ ok: boolean; missing: string[]; error?: string }>;
+  listSecretHints(): Promise<{ ok: boolean; hints: Array<{ key: string; description: string }>; error?: string }>;
 
   // Feed
   listFeed(payload?: { sessionId?: string; limit?: number }): Promise<{ ok: boolean; items: FeedItem[]; total: number }>;

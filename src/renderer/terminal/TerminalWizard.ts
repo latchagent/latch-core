@@ -6,18 +6,7 @@
  */
 
 import { terminalManager } from './TerminalManager'
-
-// ─── ANSI helpers ────────────────────────────────────────────────────────────
-
-const BOLD    = '\x1b[1m'
-const DIM     = '\x1b[2m'
-const RESET   = '\x1b[0m'
-const GREEN   = '\x1b[32m'
-const CYAN    = '\x1b[36m'
-const YELLOW  = '\x1b[33m'
-const HIDE_CURSOR = '\x1b[?25l'
-const SHOW_CURSOR = '\x1b[?25h'
-const ERASE_LINE  = '\x1b[2K\r'
+import { BOLD, DIM, RESET, GREEN, CYAN, YELLOW, HIDE_CURSOR, SHOW_CURSOR, ERASE_LINE } from './ansi'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -42,6 +31,7 @@ export interface WizardAnswers {
 }
 
 type OnComplete = (answers: WizardAnswers) => void
+type OnCancel = () => void
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -51,6 +41,7 @@ export class TerminalWizard {
   private tabId: string
   private steps: WizardStep[]
   private onComplete: OnComplete
+  private onCancel: OnCancel | null
   private currentStep = 0
   private answers: WizardAnswers = {}
   private destroyed = false
@@ -65,18 +56,17 @@ export class TerminalWizard {
   // Escape sequence accumulator
   private escBuffer = ''
 
-  constructor(tabId: string, steps: WizardStep[], onComplete: OnComplete) {
+  constructor(tabId: string, steps: WizardStep[], onComplete: OnComplete, onCancel?: OnCancel) {
     this.tabId = tabId
     this.steps = steps
     this.onComplete = onComplete
+    this.onCancel = onCancel ?? null
   }
 
   /** Kick off the wizard — renders the banner and the first prompt. */
   start(): void {
     this.writeln('')
-    this.writeln(`${CYAN}${BOLD}  ┌─────────────────────────────────────┐${RESET}`)
-    this.writeln(`${CYAN}${BOLD}  │  Latch — New Session                │${RESET}`)
-    this.writeln(`${CYAN}${BOLD}  └─────────────────────────────────────┘${RESET}`)
+    this.writeln(`${CYAN}${BOLD}  Latch${RESET} ${DIM}· New Session${RESET}`)
     this.writeln('')
     this.advanceToNextStep()
   }
@@ -153,12 +143,9 @@ export class TerminalWizard {
       return
     }
 
-    // Ctrl+C — skip with default
+    // Ctrl+C — cancel wizard
     if (data === '\x03') {
-      this.answers[step.id] = step.default || ''
-      this.writeln('')
-      this.inputBuffer = ''
-      this.advance()
+      this.cancel()
       return
     }
 
@@ -185,12 +172,10 @@ export class TerminalWizard {
       return
     }
 
-    // Ctrl+C — select first
+    // Ctrl+C — cancel wizard
     if (data === '\x03') {
-      this.answers[step.id] = options[0]?.value ?? ''
       this.write(SHOW_CURSOR)
-      this.writeln('')
-      this.advance()
+      this.cancel()
       return
     }
   }
@@ -213,11 +198,9 @@ export class TerminalWizard {
       return
     }
 
-    // Ctrl+C
+    // Ctrl+C — cancel wizard
     if (data === '\x03') {
-      this.answers[step.id] = step.default === 'y'
-      this.writeln('')
-      this.advance()
+      this.cancel()
       return
     }
   }
@@ -229,11 +212,9 @@ export class TerminalWizard {
       return
     }
 
-    // Ctrl+C — skip with empty
+    // Ctrl+C — cancel wizard
     if (data === '\x03') {
-      this.answers[step.id] = ''
-      this.writeln('')
-      this.advance()
+      this.cancel()
       return
     }
   }
@@ -401,6 +382,18 @@ export class TerminalWizard {
     this.onComplete(this.answers)
   }
 
+  /** Cancel the wizard entirely. Shows a message and invokes onCancel. */
+  private cancel(): void {
+    if (this.destroyed) return
+    this.writeln('')
+    this.writeln(`  ${DIM}Cancelled.${RESET}`)
+    this.writeln('')
+    this.destroyed = true
+    if (this.onCancel) {
+      this.onCancel()
+    }
+  }
+
   // ─── Write helpers ──────────────────────────────────────────────────────
 
   private write(data: string): void {
@@ -418,6 +411,7 @@ export class TerminalWizard {
 
 export interface WizardStepBuilderOpts {
   harnesses: { id: string; label: string; installed: boolean }[]
+  policies: { id: string; name: string }[]
   pendingProjectDir?: string | null
 }
 
@@ -426,7 +420,7 @@ export interface WizardStepBuilderOpts {
  * Called once when the wizard starts.
  */
 export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
-  const { harnesses } = opts
+  const { harnesses, policies } = opts
 
   const harnessOptions: WizardOption[] = harnesses.map(h => ({
     label: `${h.label}${h.installed ? '' : ` ${DIM}(not detected)${RESET}`}`,
@@ -440,6 +434,12 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
   const autoSelectedHarness = harnessOptions.filter(o => !o.disabled).length <= 1
     ? defaultHarness
     : undefined
+
+  // Build policy options — "None" is always available
+  const policyOptions: WizardOption[] = [
+    { label: `${DIM}None (no policy)${RESET}`, value: 'none' },
+    ...policies.map(p => ({ label: p.name, value: p.id })),
+  ]
 
   const steps: WizardStep[] = [
     {
@@ -455,6 +455,15 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
       prompt: 'Project directory',
       type: 'browse',
       skip: !!opts.pendingProjectDir,
+    },
+    {
+      id: 'policy',
+      prompt: 'Policy',
+      type: 'select',
+      options: policyOptions,
+      default: policies.length > 0 ? policies[0].id : 'none',
+      hint: 'Select a policy to enforce guardrails for this session',
+      skip: policies.length === 0,
     },
     {
       id: 'goal',

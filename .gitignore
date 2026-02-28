@@ -39,6 +39,7 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+debug_logs/
 
 # Electron builder cache
 .electron-builder-cache/

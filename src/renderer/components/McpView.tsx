@@ -144,6 +144,7 @@ export default function McpView() {
       enabled: true,
       tags: catalogServer.tags,
       tools: catalogServer.tools ?? [],
+      toolDescriptions: {},
       catalogId: catalogServer.id,
     } as McpServerRecord)
   }
@@ -216,6 +217,9 @@ export default function McpView() {
                   )}
                 </div>
                 <span className={`mcp-transport-badge is-${server.transport}`}>{server.transport}</span>
+                {server.tools?.length > 0 && (
+                  <span className="mcp-tool-count-badge">{server.tools.length} tools</span>
+                )}
                 <div className="skill-catalog-actions">
                   <button
                     className={`skill-card-btn${server.enabled ? '' : ' is-muted'}`}

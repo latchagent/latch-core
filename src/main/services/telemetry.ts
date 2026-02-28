@@ -67,7 +67,7 @@ export async function track(
 
   try {
     await trackEvent(event, props)
-  } catch {
-    // Telemetry should never break the app
+  } catch (err: any) {
+    console.warn('[telemetry] Failed to track event:', event, err?.message)
   }
 }

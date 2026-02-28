@@ -9,6 +9,99 @@ import path from 'node:path'
 import type { PolicyDocument, PolicyPermissions, CodexPolicyConfig, HarnessesConfig, ToolRule, McpServerRule, CommandRule } from '../../types'
 import type { PolicyStore } from '../stores/policy-store'
 
+// ─── Strictest-baseline computation ──────────────────────────────────────────
+
+/** Priority map for merging tool/MCP/command rule decisions: higher = stricter. */
+const DECISION_PRIORITY: Record<string, number> = { allow: 1, prompt: 2, deny: 3 }
+
+/** Compute the most restrictive policy from a set of policies.
+ *  Used as a fallback when a session's assigned policyId is missing.
+ *
+ *  Merge strategy:
+ *  - Boolean permissions: AND (false if ANY policy says false)
+ *  - confirmDestructive: OR (true if ANY policy says true)
+ *  - blockedGlobs: union of all policies
+ *  - commandRules: collect all rules from all policies
+ *  - toolRules: merge by pattern — deny > prompt > allow wins
+ *  - mcpServerRules: merge by server — deny > prompt > allow wins
+ */
+export function computeStrictestBaseline(policies: PolicyDocument[], harnessId?: string): PolicyDocument {
+  const permissions: PolicyPermissions = {
+    allowBash: true,
+    allowNetwork: true,
+    allowFileWrite: true,
+    confirmDestructive: false,
+    blockedGlobs: [],
+  }
+
+  const allCommandRules: CommandRule[] = []
+  const toolRuleMap = new Map<string, ToolRule>()
+  const mcpRuleMap = new Map<string, McpServerRule>()
+
+  for (const p of policies) {
+    // AND for allow flags (false if ANY policy says false)
+    permissions.allowBash = permissions.allowBash && p.permissions.allowBash
+    permissions.allowNetwork = permissions.allowNetwork && p.permissions.allowNetwork
+    permissions.allowFileWrite = permissions.allowFileWrite && p.permissions.allowFileWrite
+    // OR for confirmDestructive (true if ANY policy says true)
+    permissions.confirmDestructive = permissions.confirmDestructive || p.permissions.confirmDestructive
+
+    // Union blockedGlobs
+    for (const g of p.permissions.blockedGlobs ?? []) {
+      if (!permissions.blockedGlobs.includes(g)) permissions.blockedGlobs.push(g)
+    }
+
+    // Collect all command rules
+    if (p.permissions.commandRules?.length) {
+      allCommandRules.push(...p.permissions.commandRules)
+    }
+
+    // Merge tool rules per harness (stricter decision wins)
+    const harnessKeys = harnessId ? [harnessId] : ['claude', 'codex', 'openclaw']
+    for (const hk of harnessKeys) {
+      const hc = p.harnesses?.[hk as keyof HarnessesConfig] as { toolRules?: ToolRule[]; mcpServerRules?: McpServerRule[] } | undefined
+      if (hc?.toolRules) {
+        for (const rule of hc.toolRules) {
+          const existing = toolRuleMap.get(rule.pattern)
+          if (!existing || (DECISION_PRIORITY[rule.decision] ?? 0) > (DECISION_PRIORITY[existing.decision] ?? 0)) {
+            toolRuleMap.set(rule.pattern, rule)
+          }
+        }
+      }
+      if (hc?.mcpServerRules) {
+        for (const rule of hc.mcpServerRules) {
+          const existing = mcpRuleMap.get(rule.server)
+          if (!existing || (DECISION_PRIORITY[rule.decision] ?? 0) > (DECISION_PRIORITY[existing.decision] ?? 0)) {
+            mcpRuleMap.set(rule.server, rule)
+          }
+        }
+      }
+    }
+  }
+
+  if (allCommandRules.length) permissions.commandRules = allCommandRules
+
+  const harnesses: HarnessesConfig = {}
+  const toolRules = Array.from(toolRuleMap.values())
+  const mcpServerRules = Array.from(mcpRuleMap.values())
+
+  if (toolRules.length || mcpServerRules.length) {
+    const hc: { toolRules?: ToolRule[]; mcpServerRules?: McpServerRule[] } = {}
+    if (toolRules.length) hc.toolRules = toolRules
+    if (mcpServerRules.length) hc.mcpServerRules = mcpServerRules
+    harnesses.claude = hc
+    harnesses.openclaw = hc
+  }
+
+  return {
+    id: '__strictest-baseline__',
+    name: 'Strictest Baseline (auto-computed)',
+    description: 'Auto-computed most restrictive merge of all policies. Used when assigned policy is missing.',
+    permissions,
+    harnesses,
+  }
+}
+
 // ─── Session ID validation ───────────────────────────────────────────────────
 
 /** Validate that a sessionId is safe for interpolation into commands/URLs. */
@@ -97,6 +190,18 @@ export function resolvePolicy(base: PolicyDocument, override: PolicyDocument | n
 /** Write `.claude/settings.json` with permissions derived from policy.
  *  When authzOptions is provided, injects a PreToolUse hook that calls the local authz server.
  */
+// Harmless read-only tools that can always be auto-allowed without prompting.
+// Everything else prompts natively — the Latch supervisor agent watches the
+// terminal and types yes/no based on policy evaluation.
+const CLAUDE_HARMLESS_TOOLS = [
+  'Read', 'Glob', 'Grep',
+  'AskUserQuestion',
+  'EnterPlanMode', 'ExitPlanMode',
+  'TodoRead', 'TodoWrite', 'TodoList',
+  'Skill',
+  'TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop',
+]
+
 export function enforceForClaude(
   policy: PolicyDocument,
   targetDir: string,
@@ -117,24 +222,32 @@ export function enforceForClaude(
     deny.push(`Write(${glob})`, `Edit(${glob})`, `Read(${glob})`)
   }
 
-  // Per-harness toolRules (new system — takes priority for defense-in-depth)
+  // Per-harness toolRules — only add DENY rules to Claude's native deny list.
+  // Allow and prompt rules are handled by the supervisor agent at runtime.
+  // This is defense-in-depth: denied tools are blocked by BOTH the hook AND
+  // Claude's native permission system.
   if (hc?.toolRules) {
     for (const rule of hc.toolRules) {
       if (rule.decision === 'deny' && !deny.includes(rule.pattern)) deny.push(rule.pattern)
-      if (rule.decision === 'allow' && !allow.includes(rule.pattern)) allow.push(rule.pattern)
-      // 'prompt' rules are NOT added to deny — runtime hook handles them
     }
   }
 
-  // Per-harness legacy config (backward compat, lower priority than toolRules)
+  // Per-harness legacy deniedTools (backward compat)
   if (hc?.deniedTools) {
     for (const tool of hc.deniedTools) {
       if (!deny.includes(tool)) deny.push(tool)
     }
   }
-  if (hc?.allowedTools) {
-    for (const tool of hc.allowedTools) {
-      if (!allow.includes(tool)) allow.push(tool)
+  // NOTE: hc.allowedTools is intentionally NOT added to Claude's native allow
+  // list. In the supervisor model, only CLAUDE_HARMLESS_TOOLS are auto-allowed.
+  // Everything else prompts natively so the supervisor can evaluate and respond.
+
+  // Add only harmless tools to the allow list. All other tools are left out so
+  // Claude's built-in permission system prompts natively. The Latch supervisor
+  // agent watches the terminal and types yes/no based on policy evaluation.
+  for (const tool of CLAUDE_HARMLESS_TOOLS) {
+    if (!deny.includes(tool) && !allow.includes(tool)) {
+      allow.push(tool)
     }
   }
 
@@ -156,35 +269,64 @@ export function enforceForClaude(
     ...(deny.length  ? { deny }  : {}),
   }
 
-  // Inject PreToolUse hook for runtime authorization.
+  // Inject PreToolUse hook for supervisor notification.
   // Claude Code hook format uses 3-level nesting: event → [{ matcher, hooks: [...] }]
-  // Exit code 2 = block the tool call.
   //
-  // Strategy: write curl output + HTTP status to temp vars. If the server is
-  // unreachable (curl exit 7/28/etc), fail open (exit 0) so the harness isn't
-  // bricked. If the server explicitly denies (HTTP 403), exit 2 to block.
-  // If the server allows (HTTP 200), exit 0.
+  // The hook notifies the Latch supervisor of each tool call. The supervisor
+  // evaluates policy and queues a decision. When Claude's native permission
+  // prompt appears, the supervisor types yes/no into the terminal.
+  //
+  //   200 → exit 0 (tool proceeds to native prompt; supervisor handles it)
+  //   403 → extract reason, write to stderr, exit 2 (hard deny — blocked by hook)
+  //   curl failure → exit 0 (fail open so harness isn't bricked)
+  //
+  // --connect-timeout 3: fail fast if server is unreachable
+  // --max-time 5: server always responds immediately (no held connections)
   if (authzOptions) {
     validateSessionId(authzOptions.sessionId)
-    const url = `http://127.0.0.1:${authzOptions.port}/authorize/${authzOptions.sessionId}`
-    // Use a longer timeout when confirmDestructive is on — the authz server
-    // may hold the request open while waiting for user approval.
-    const curlTimeout = policy.permissions.confirmDestructive ? 120 : 3
-    const hookCmd = [
-      `HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}'`,
-      `-H 'Content-Type: application/json'`,
-      `-H 'Authorization: Bearer ${authzOptions.secret}'`,
-      `--max-time ${curlTimeout} -d @- ${url} 2>/dev/null)`,
-      `|| true;`,
-      `if [ "$HTTP_CODE" = "403" ]; then exit 2; fi;`,
-      `exit 0`,
-    ].join(' ')
+    const url = `http://127.0.0.1:${authzOptions.port}/supervise/${authzOptions.sessionId}`
+
+    const scriptPath = path.join(claudeDir, 'latch-authz.sh')
+    const scriptContent = [
+      '#!/bin/bash',
+      '# Generated by Latch Desktop — do not edit manually.',
+      '# PreToolUse hook: notifies Latch supervisor of tool calls.',
+      '# Hard denies (403) are blocked here. Everything else exits 0;',
+      '# the supervisor handles prompt decisions by driving the terminal.',
+      `RESP=$(curl -s -w '\\n%{http_code}' \\`,
+      `  -H 'Content-Type: application/json' \\`,
+      `  -H 'Authorization: Bearer ${authzOptions.secret}' \\`,
+      `  --connect-timeout 3 --max-time 5 \\`,
+      `  -d @- '${url}' 2>/dev/null) || exit 0`,
+      '',
+      "HTTP_CODE=$(printf '%s\\n' \"$RESP\" | tail -n1)",
+      "BODY=$(printf '%s\\n' \"$RESP\" | sed '$d')",
+      '',
+      '# 403 = hard deny — block the tool call',
+      'if [ "$HTTP_CODE" = "403" ]; then',
+      '  REASON=$(printf \'%s\' "$BODY" | grep -o \'"reason":"[^"]*"\' | head -1 \\',
+      '    | sed \'s/"reason":"//;s/"$//\')',
+      '  printf \'%s\\n\' "${REASON:-Denied by Latch policy}" >&2',
+      '  exit 2',
+      'fi',
+      '',
+      '# 200 = supervisor notified. Output "ask" so Claude shows its native',
+      '# permission prompt. The supervisor watches the terminal and types yes/no.',
+      '# Without this output, exit 0 would bypass the permission check entirely.',
+      "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\"}}\\n'",
+      'exit 0',
+      '',
+    ].join('\n')
+
+    fs.writeFileSync(scriptPath, scriptContent, 'utf-8')
+    try { fs.chmodSync(scriptPath, 0o755) } catch { /* Windows — non-fatal */ }
+
     existing.hooks = {
       ...((existing.hooks as Record<string, unknown>) ?? {}),
       PreToolUse: [
         {
           matcher: '',
-          hooks: [{ type: 'command', command: hookCmd }],
+          hooks: [{ type: 'command', command: `bash '${scriptPath}'` }],
         },
       ],
     }
@@ -606,7 +748,7 @@ module.exports = function latchAuthzPlugin(api) {
             resolve({ action: 'allow' });
           } else {
             let reason = 'Latch policy denied this tool call.';
-            try { reason = JSON.parse(data).reason || reason; } catch {}
+            try { reason = JSON.parse(data).reason || reason; } catch { /* non-JSON response body */ }
             resolve({ action: 'block', reason: reason });
           }
         });
@@ -678,13 +820,17 @@ export async function enforcePolicy(
     sessionId?: string
   }
 ): Promise<{ ok: boolean; harnessCommand?: string; configPath?: string; error?: string }> {
-  const { policyId, policyOverride, harnessId, harnessCommand, worktreePath, projectDir, authzPort, authzSecret, sessionId } = payload
+  const { policyOverride, harnessId, harnessCommand, worktreePath, projectDir, authzPort, authzSecret, sessionId } = payload
 
-  // Fetch base policy from store
-  const result = policyStore.getPolicy(policyId)
-  if (!result.ok) return { ok: false, error: result.error }
+  // Merge ALL top-level policies using strictest-wins semantics.
+  // All policies are always active — session overrides are applied on top.
+  const allResult = policyStore.listPolicies()
+  if (!allResult.ok || !allResult.policies?.length) {
+    return { ok: false, error: 'No policies available for enforcement.' }
+  }
 
-  const effective = resolvePolicy(result.policy!, policyOverride)
+  const basePolicy = computeStrictestBaseline(allResult.policies, harnessId)
+  const effective = resolvePolicy(basePolicy, policyOverride)
 
   const targetDir = worktreePath ?? projectDir
 
@@ -694,12 +840,10 @@ export async function enforcePolicy(
         if (!targetDir) return { ok: false, error: 'No project directory or worktree available for policy enforcement.' }
         const authzOpts = (authzPort && sessionId && authzSecret) ? { port: authzPort, sessionId, secret: authzSecret } : undefined
         const { configPath } = enforceForClaude(effective, targetDir, authzOpts)
-        // Skip Claude's built-in permissions since Latch controls enforcement via PreToolUse hooks.
-        // --dangerously-skip-permissions bypasses Claude's allow/deny rules but hooks still fire.
-        const claudeCmd = harnessCommand
-          ? `${harnessCommand} --dangerously-skip-permissions`
-          : harnessCommand
-        return { ok: true, harnessCommand: claudeCmd, configPath }
+        // Supervisor model: minimal allow list (harmless tools only), deny list from
+        // policy, everything else prompts natively. The PreToolUse hook notifies the
+        // supervisor, which types yes/no into the terminal based on policy evaluation.
+        return { ok: true, harnessCommand, configPath }
       }
       case 'codex': {
         if (!targetDir) return { ok: false, error: 'No project directory or worktree available for policy enforcement.' }

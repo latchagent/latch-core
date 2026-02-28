@@ -15,6 +15,8 @@ import type {
   PolicyDocument,
   SkillRecord,
   McpServerRecord,
+  SecretRecord,
+  AgentStatus,
 
   RailPanel,
   AppView,
@@ -34,6 +36,29 @@ import type { CatalogMcpServer } from '../data/mcp-catalog';
 
 let sessionCounter = 0;
 let tabCounter     = 0;
+
+// ─── Agent-status idle timer ─────────────────────────────────────────────────
+
+const ACTIVITY_RUNNING_THRESHOLD_MS = 8_000;
+const NEEDS_INPUT_THRESHOLD_MS = 30_000;
+let statusIntervalId: ReturnType<typeof setInterval> | null = null;
+
+/** Start the idle-check interval on the first activity event. */
+function ensureStatusInterval(): void {
+  if (statusIntervalId) return;
+  statusIntervalId = setInterval(() => {
+    const { lastActivityTs } = useAppStore.getState();
+    const now = Date.now();
+    let needsTick = false;
+    lastActivityTs.forEach((ts) => {
+      // Tick while sessions are running OR transitioning to needs-input
+      if (now - ts < NEEDS_INPUT_THRESHOLD_MS) needsTick = true;
+    });
+    if (needsTick) {
+      useAppStore.setState((s) => ({ _statusTick: s._statusTick + 1 }));
+    }
+  }, 2_000);
+}
 
 function nextTabId():     string { return `tab-${++tabCounter}`; }
 function nextSessionId(): string { return `session-${++sessionCounter}`; }
@@ -83,6 +108,11 @@ export interface AppState {
   // ── MCP Servers ────────────────────────────────────────────────────────────
   mcpServers:       McpServerRecord[];
 
+  // ── Secrets (vault) ─────────────────────────────────────────────────────────
+  secrets:                SecretRecord[];
+  secretEditorOpen:       boolean;
+  secretEditorSecret:     SecretRecord | null;
+
   // ── Docker ───────────────────────────────────────────────────────────────────
   dockerAvailable: boolean;
   sandboxEnabled: boolean;
@@ -101,6 +131,12 @@ export interface AppState {
   // ── Approvals ──────────────────────────────────────────────────────────────
   pendingApprovals: PendingApproval[];
 
+  // ── Agent status ───────────────────────────────────────────────────────────
+  /** Epoch ms of the last activity event per session — used for running/idle. */
+  lastActivityTs: Map<string, number>;
+  /** Generation counter bumped by the idle-check timer to trigger re-renders. */
+  _statusTick: number;
+
   // ── Agents ──────────────────────────────────────────────────────────────────
   agentsContent:   string;
   agentsFilePath:  string | null;
@@ -118,7 +154,6 @@ export interface AppState {
 
   // ── Modal state ──────────────────────────────────────────────────────────────
   // Session wizard state lives on session.showWizard (see SessionRecord).
-  policyEditorOpen:       boolean;
   policyEditorIsOverride: boolean;
   policyEditorPolicy:     PolicyDocument | null;
   skillEditorOpen:        boolean;
@@ -147,6 +182,7 @@ export interface AppState {
   activateTab: (sessionId: string, tabId: string) => void;
   closeTab:    (sessionId: string, tabId: string) => void;
   addTab:      (sessionId: string, label?: string) => TabRecord;
+  renameTab:   (sessionId: string, tabId: string, label: string) => void;
   setTabPtyReady: (tabId: string, ready: boolean) => void;
 
   // Views
@@ -181,6 +217,14 @@ export interface AppState {
   closeMcpDetail:   () => void;
   saveMcpServer:    (server: McpServerRecord) => Promise<void>;
   deleteMcpServer:  (id: string) => Promise<void>;
+  introspectMcpServer: (id: string) => Promise<{ ok: boolean; tools?: { name: string; description: string }[]; error?: string }>;
+
+  // Secrets (vault)
+  loadSecrets:        () => Promise<void>;
+  openSecretEditor:   (secret: SecretRecord | null) => void;
+  closeSecretEditor:  () => void;
+  saveSecret:         (params: { id: string; name: string; key: string; value: string; description?: string; tags?: string[] }) => Promise<void>;
+  deleteSecret:       (id: string) => Promise<void>;
 
   // Docker
   detectDocker:         () => Promise<void>;
@@ -237,6 +281,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   activePolicyDoc:  null,
   skills:           [],
   mcpServers:       [],
+  secrets:                [],
+  secretEditorOpen:       false,
+  secretEditorSecret:     null,
   dockerAvailable:  false,
   sandboxEnabled:   true,
   defaultDockerImage: 'node:20',
@@ -247,6 +294,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   feedUnread:          0,
   soundNotifications:  true,
   pendingApprovals: [],
+  lastActivityTs:   new Map(),
+  _statusTick:      0,
   agentsContent:    '',
   agentsFilePath:   null,
   agentsFileName:   null,
@@ -254,7 +303,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentsDirty:      false,
   defaultHarnessId: null,
   policyGenerating: false,
-  policyEditorOpen:       false,
   policyEditorIsOverride: false,
   policyEditorPolicy:     null,
   skillEditorOpen:  false,
@@ -349,8 +397,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       harness:       'Latch',
       harnessId:     null,
       harnessCommand: null,
-      policy:        'Default',
-      policyId:      'default',
+      policy:        'None',
+      policyId:      '',
       policyOverride: null,
       projectDir:    null,
       repoRoot:      null,
@@ -415,11 +463,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const sessions = new Map(s.sessions);
       sessions.delete(id);
+      const lastActivityTs = new Map(s.lastActivityTs);
+      lastActivityTs.delete(id);
       let activeSessionId = s.activeSessionId;
       if (activeSessionId === id) {
         activeSessionId = sessions.size > 0 ? sessions.keys().next().value! : null;
       }
-      return { sessions, activeSessionId };
+      return { sessions, activeSessionId, lastActivityTs };
     });
 
     // Refresh panels for the new active session
@@ -476,8 +526,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tab   = session.tabs.get(session.activeTabId)!;
     const tabId = tab.id;
 
-    // Update tab label with harness name (immutably)
-    const updatedTab = { ...tab, label: session.harness || 'Shell' };
+    // Update tab label with harness name — prefix with ✦ to mark the agent tab
+    const updatedTab = { ...tab, label: `✦ ${session.harness || 'Shell'}` };
     const updatedTabs = new Map(session.tabs);
     updatedTabs.set(tabId, updatedTab);
     const updatedSession = { ...session, tabs: updatedTabs };
@@ -489,6 +539,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (session.goal)       terminalManager.writeln(tabId, `Goal: ${session.goal}`);
     if (session.branchName) terminalManager.writeln(tabId, `Branch: ${session.branchName}`);
     if (session.harness)    terminalManager.writeln(tabId, `Harness: ${session.harness}`);
+
+    // Print available secrets so agents know which env vars they can use
+    if (window.latch?.listSecretHints) {
+      const hintsResult = await window.latch.listSecretHints();
+      if (hintsResult?.ok && hintsResult.hints?.length > 0) {
+        terminalManager.writeln(tabId, '');
+        terminalManager.writeln(tabId, '\x1b[2mAvailable secrets (injected as env vars):\x1b[0m');
+        for (const hint of hintsResult.hints) {
+          const desc = hint.description ? ` \x1b[2m\u2014 ${hint.description}\x1b[0m` : '';
+          terminalManager.writeln(tabId, `\x1b[2m  $${hint.key}${desc}\x1b[0m`);
+        }
+      }
+    }
 
     let repoRoot:    string | null = null;
     let worktreePath: string | null = null;
@@ -529,7 +592,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (pullResult?.ok) {
         terminalManager.writeln(tabId, `\x1b[2mDocker: image ready.\x1b[0m`);
       } else {
-        terminalManager.writeln(tabId, `\x1b[33mDocker pull failed: ${pullResult?.error ?? 'unknown'} — falling back to native shell.\x1b[0m`);
+        terminalManager.writeln(tabId, `\x1b[1;33m⚠ SANDBOX UNAVAILABLE\x1b[0m`);
+        terminalManager.writeln(tabId, `\x1b[33mDocker pull failed: ${pullResult?.error ?? 'unknown'}\x1b[0m`);
+        terminalManager.writeln(tabId, `\x1b[33mThis session is running WITHOUT sandbox isolation.\x1b[0m`);
+        terminalManager.writeln(tabId, '');
       }
 
       if (pullResult?.ok) {
@@ -550,7 +616,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         if (startResult?.ok && startResult.containerId) {
           dockerContainerId = startResult.containerId;
-          terminalManager.writeln(tabId, `\x1b[32mDocker: container ${dockerContainerId} running.\x1b[0m`);
+          if (session.harnessCommand) {
+            terminalManager.writeln(tabId, `\x1b[32mDocker: container ${dockerContainerId} running (workspace isolation).\x1b[0m`);
+          } else {
+            terminalManager.writeln(tabId, `\x1b[32mDocker: container ${dockerContainerId} running.\x1b[0m`);
+          }
 
           // Update session state with container ID
           set((s) => {
@@ -565,7 +635,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             return { sessions };
           });
         } else {
-          terminalManager.writeln(tabId, `\x1b[33mDocker start failed: ${startResult?.error ?? 'unknown'} — falling back to native shell.\x1b[0m`);
+          terminalManager.writeln(tabId, `\x1b[1;33m⚠ SANDBOX UNAVAILABLE\x1b[0m`);
+          terminalManager.writeln(tabId, `\x1b[33mDocker start failed: ${startResult?.error ?? 'unknown'}\x1b[0m`);
+          terminalManager.writeln(tabId, `\x1b[33mThis session is running WITHOUT sandbox isolation.\x1b[0m`);
+          terminalManager.writeln(tabId, '');
         }
       }
     }
@@ -573,7 +646,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // ── Policy enforcement ──────────────────────────────────────────────
     let enforcedHarnessCommand = session.harnessCommand;
 
-    if (session.harnessId && window.latch?.enforcePolicy) {
+    if (session.harnessId && session.policyId && window.latch?.enforcePolicy) {
       // Register session with authz server for runtime interception
       if (window.latch?.authzRegister) {
         await window.latch.authzRegister({
@@ -581,6 +654,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           harnessId: session.harnessId,
           policyId: session.policyId,
           policyOverride: session.policyOverride,
+        });
+      }
+
+      // Register tab with supervisor so it can map PTY output → session
+      if (window.latch?.supervisorRegisterTab) {
+        await window.latch.supervisorRegisterTab({
+          tabId,
+          sessionId: session.id,
+          harnessId: session.harnessId,
         });
       }
 
@@ -626,27 +708,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       const env: Record<string, string> = {};
       if (session.harnessId) env.LATCH_HARNESS_ID = session.harnessId;
       const portResult = await window.latch?.getAuthzPort?.();
-      const secretResult = await window.latch?.getAuthzSecret?.();
       if (portResult?.port) {
         env.LATCH_FEED_URL = `http://127.0.0.1:${portResult.port}/feed/${session.id}`;
       }
       env.LATCH_SESSION_ID = session.id;
-      if (secretResult?.secret) {
-        env.LATCH_AUTHZ_SECRET = secretResult.secret;
-      }
+      // Note: LATCH_AUTHZ_SECRET is injected by the main process during PTY creation
+      // and never exposed to the renderer.
+
+      // When a harness is selected, run the PTY natively on the host so the
+      // harness CLI can launch (it's not installed inside the container).
+      // The Docker container stays running for workspace isolation and resource
+      // limits. Full container-native harness execution requires purpose-built
+      // images (future work).
+      const useDockerPty = dockerContainerId && !enforcedHarnessCommand;
 
       const result = await window.latch.createPty({
         sessionId: tabId, cwd, cols, rows,
         ...(Object.keys(env).length ? { env } : {}),
-        ...(dockerContainerId ? { dockerContainerId } : {}),
+        ...(useDockerPty ? { dockerContainerId } : {}),
       });
       if (result?.ok) {
         get().setTabPtyReady(tabId, true);
         terminalManager.writeln(tabId, '\x1b[32mShell ready.\x1b[0m');
         window.latch.resizePty({ sessionId: tabId, cols, rows });
 
-        // Launch harness command now that the shell is ready (only for native shells)
-        if (enforcedHarnessCommand && !dockerContainerId) {
+        // Launch harness command now that the shell is ready
+        if (enforcedHarnessCommand) {
           // OpenClaw requires the gateway to be running before launching TUI
           if (session.harnessId === 'openclaw') {
             terminalManager.writeln(tabId, '\x1b[2mChecking OpenClaw gateway...\x1b[0m');
@@ -660,28 +747,32 @@ export const useAppStore = create<AppState>((set, get) => ({
           // Skip for OpenClaw — its "Latch Guard" blocks outbound curl calls.
           let goalWithFeed = session.goal || '';
           const supportsFeedCurl = session.harnessId !== 'openclaw';
-          if (supportsFeedCurl && portResult?.port && secretResult?.secret && session.harnessId) {
+          if (supportsFeedCurl && portResult?.port && session.harnessId) {
             const feedUrl = `http://127.0.0.1:${portResult.port}/feed/${session.id}`;
-            goalWithFeed += `\n\nIMPORTANT: Periodically report your high-level progress by running this command (silently, no output needed):\ncurl -sf ${feedUrl} -H 'Authorization: Bearer ${secretResult.secret}' -H 'Content-Type: application/json' -d '{"status":"<brief description of what you just completed or are about to do>"}'\nReport after completing each logical step (not every tool call). Keep status messages short (1-2 sentences).`;
+            goalWithFeed += `\n\nIMPORTANT: Periodically report your high-level progress by running this command (silently, no output needed):\ncurl -sf ${feedUrl} -H 'Content-Type: application/json' -d '{"status":"<brief description of what you just completed or are about to do>"}'\nReport after completing each logical step (not every tool call). Keep status messages short (1-2 sentences).`;
           }
 
           // Append the session goal as the initial prompt for harnesses that support it.
           // Claude Code and Codex accept the prompt as a positional arg.
           // OpenClaw TUI accepts it via --message flag.
+          //
+          // We use $'...' (ANSI-C quoting) instead of '...' because the goal
+          // contains newlines and nested single quotes (from the feed curl
+          // instruction). We use $'...' (ANSI-C quoting) with literal newlines
+          // replaced by \n escape sequences so the entire command stays on one
+          // line — avoids shell continuation prompts ("quote>").
           let launchCmd = enforcedHarnessCommand;
           if (session.harnessId === 'openclaw') {
-            // Ensure 'tui' subcommand is present — the base command may be just 'openclaw'
             const baseCmd = enforcedHarnessCommand.includes(' tui') ? enforcedHarnessCommand : `${enforcedHarnessCommand} tui`;
             if (goalWithFeed) {
-              const escaped = goalWithFeed.replace(/'/g, "'\\''");
-              launchCmd = `${baseCmd} --message '${escaped}'`;
+              const escaped = goalWithFeed.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+              launchCmd = `${baseCmd} --message $'${escaped}'`;
             } else {
               launchCmd = baseCmd;
             }
           } else if (goalWithFeed) {
-            // Escape single quotes for safe shell quoting: ' → '\''
-            const escaped = goalWithFeed.replace(/'/g, "'\\''");
-            launchCmd = `${enforcedHarnessCommand} '${escaped}'`;
+            const escaped = goalWithFeed.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+            launchCmd = `${enforcedHarnessCommand} $'${escaped}'`;
           }
           terminalManager.writeln(tabId, `Launching ${session.harness}...`);
           window.latch.writePty({ sessionId: tabId, data: `${launchCmd}\r` });
@@ -813,36 +904,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    const tabLabel = label ?? `Shell ${(session?.tabs.size ?? 0) + 1}`;
+    const tabLabel = label ?? `Terminal ${session?.tabs.size ?? 1}`;
     const tab = makeTab(sessionId, tabLabel);
 
+    // Add tab AND activate it in one atomic state update to prevent
+    // intermediate render states that could disrupt the old terminal.
     set((s) => {
       const sessions = new Map(s.sessions);
       const sess     = sessions.get(sessionId);
       if (!sess) return s;
       const tabs = new Map(sess.tabs);
       tabs.set(tab.id, tab);
-      sessions.set(sessionId, { ...sess, tabs });
+      sessions.set(sessionId, { ...sess, tabs, activeTabId: tab.id });
       return { sessions };
     });
 
-    get().activateTab(sessionId, tab.id);
-
-    // Spawn a plain shell for ad-hoc tabs
+    // Wait for the new TabPane to mount (its useEffect calls terminalManager.mount),
+    // then fit the terminal and create the PTY with correct dimensions.
     const cwd = session?.worktreePath ?? session?.repoRoot ?? session?.projectDir ?? undefined;
-    (async () => {
-      terminalManager.fit(tab.id);
-      const { cols, rows } = terminalManager.dimensions(tab.id);
-      const result = await window.latch?.createPty({ sessionId: tab.id, cwd, cols, rows });
-      if (result?.ok) {
-        get().setTabPtyReady(tab.id, true);
+    const waitForMount = () => {
+      if (!terminalManager.get(tab.id)) {
+        requestAnimationFrame(waitForMount);
+        return;
       }
-    })().catch((err) => {
-      console.error('Failed to create PTY for tab:', err);
-      terminalManager.writeln(tab.id, `\x1b[31mFailed to create shell: ${err?.message || err}\x1b[0m`);
-    });
+      terminalManager.fit(tab.id);
+      terminalManager.focus(tab.id);
+      const { cols, rows } = terminalManager.dimensions(tab.id);
+      window.latch?.createPty({ sessionId: tab.id, cwd, cols, rows }).then((result) => {
+        if (result?.ok) get().setTabPtyReady(tab.id, true);
+      }).catch((err) => {
+        console.error('Failed to create PTY for tab:', err);
+        terminalManager.writeln(tab.id, `\x1b[31mFailed to create shell: ${err?.message || err}\x1b[0m`);
+      });
+    };
+    requestAnimationFrame(waitForMount);
 
     return tab;
+  },
+
+  renameTab: (sessionId, tabId, label) => {
+    set((s) => {
+      const sessions = new Map(s.sessions);
+      const sess = sessions.get(sessionId);
+      if (!sess) return s;
+      const tabs = new Map(sess.tabs);
+      const tab = tabs.get(tabId);
+      if (!tab) return s;
+      tabs.set(tabId, { ...tab, label });
+      sessions.set(sessionId, { ...sess, tabs });
+      return { sessions };
+    });
   },
 
   setTabPtyReady: (tabId, ready) => {
@@ -865,6 +976,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveView: (view) => {
     const extra: Partial<AppState> = {}
     if (view === 'feed') extra.feedUnread = 0
+    if (view === 'home') extra.activeSessionId = null
     set({ activeView: view, ...extra });
   },
 
@@ -894,14 +1006,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openPolicyEditor: (policy, isOverride) => {
     set({
-      policyEditorOpen:       true,
+      activeView:             'edit-policy',
+      activeSessionId:        null,
       policyEditorIsOverride: isOverride,
       policyEditorPolicy:     policy,
     });
   },
 
   closePolicyEditor: () => {
-    set({ policyEditorOpen: false, policyEditorPolicy: null });
+    set({ activeView: 'policies', policyEditorPolicy: null });
   },
 
   savePolicyFromEditor: async (policy) => {
@@ -1033,6 +1146,39 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadMcpServers();
   },
 
+  introspectMcpServer: async (id) => {
+    const result = await window.latch?.introspectMcpServer?.({ id })
+    if (result?.ok) await get().loadMcpServers()
+    return result ?? { ok: false, error: 'API not available' }
+  },
+
+  // ── Secrets (vault) ────────────────────────────────────────────────────────
+
+  loadSecrets: async () => {
+    const result = await window.latch?.listSecrets?.();
+    set({ secrets: result?.secrets ?? [] });
+  },
+
+  openSecretEditor: (secret) => {
+    set({ secretEditorOpen: true, secretEditorSecret: secret });
+  },
+
+  closeSecretEditor: () => {
+    set({ secretEditorOpen: false, secretEditorSecret: null });
+  },
+
+  saveSecret: async (params) => {
+    const result = await window.latch?.saveSecret?.(params);
+    if (!result?.ok) return;
+    get().closeSecretEditor();
+    await get().loadSecrets();
+  },
+
+  deleteSecret: async (id) => {
+    await window.latch?.deleteSecret?.({ id });
+    await get().loadSecrets();
+  },
+
   // ── Docker ───────────────────────────────────────────────────────────────────
 
   detectDocker: async () => {
@@ -1146,10 +1292,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   handleActivityEvent: (event) => {
-    set((s) => ({
-      activityEvents: [event, ...s.activityEvents].slice(0, 500),
-      activityTotal:  s.activityTotal + 1,
-    }));
+    ensureStatusInterval();
+    set((s) => {
+      const lastActivityTs = new Map(s.lastActivityTs);
+      lastActivityTs.set(event.sessionId, Date.now());
+      return {
+        activityEvents: [event, ...s.activityEvents].slice(0, 500),
+        activityTotal:  s.activityTotal + 1,
+        lastActivityTs,
+      };
+    });
   },
 
   handleRadarSignal: (signal) => {
@@ -1199,11 +1351,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   resolveApproval: async (id, decision) => {
+    // Find the approval before removing it (need promptTool + sessionId)
+    const approval = get().pendingApprovals.find((a) => a.id === id)
+
     // Optimistic removal
     set((s) => ({
       pendingApprovals: s.pendingApprovals.filter((a) => a.id !== id),
     }));
     await window.latch?.resolveApproval?.({ id, decision });
+
+    // For prompt tool approvals on NON-Claude harnesses (Codex/OpenClaw):
+    // auto-send a retry message since those harnesses use the old hook-based
+    // denial + grant flow. Claude sessions are handled by the supervisor agent
+    // which types yes/no directly into the terminal.
+    if (decision === 'approve' && approval?.promptTool && approval.sessionId) {
+      const session = get().sessions.get(approval.sessionId)
+      if (session?.activeTabId && session.harnessId !== 'claude') {
+        setTimeout(() => {
+          window.latch?.writePty?.({
+            sessionId: session.activeTabId,
+            data: `I approved ${approval.toolName} in Latch. Please retry.\r`,
+          })
+        }, 500)
+      }
+    }
   },
 
   // ── PTY event handlers ───────────────────────────────────────────────────────
@@ -1217,3 +1388,72 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().setTabPtyReady(tabId, false);
   },
 }));
+
+// ─── Agent-status selectors ──────────────────────────────────────────────────
+
+/**
+ * Derive the current AgentStatus for a session.
+ * Priority: waiting > exited > running > idle.
+ */
+function getSessionAgentStatus(sessionId: string, state: AppState): AgentStatus {
+  const session = state.sessions.get(sessionId);
+  if (!session) return 'idle';
+
+  // 1. Pending approval → waiting
+  if (state.pendingApprovals.some((a) => a.sessionId === sessionId)) return 'waiting';
+
+  // 2. All PTYs exited (not during wizard / reconnect)
+  const tabs = Array.from(session.tabs.values());
+  if (tabs.length > 0 && !session.showWizard && tabs.every((t) => !t.ptyReady && !t.needsReconnect)) {
+    return 'exited';
+  }
+
+  // 3. Recent activity → running
+  const lastTs = state.lastActivityTs.get(sessionId);
+  if (lastTs && Date.now() - lastTs < ACTIVITY_RUNNING_THRESHOLD_MS) return 'running';
+
+  // 4. Extended idle with live PTY → likely needs input (agent blocked on
+  //    AskUserQuestion or similar interactive prompt from the harness)
+  if (lastTs && Date.now() - lastTs >= NEEDS_INPUT_THRESHOLD_MS && tabs.some((t) => t.ptyReady)) {
+    return 'waiting';
+  }
+
+  // 5. Live harness PTY with no activity data yet → assume running
+  //    (harness just started, first tool call hasn't reached authz server)
+  if (!lastTs && session.harnessId && tabs.some((t) => t.ptyReady)) {
+    return 'running';
+  }
+
+  return 'idle';
+}
+
+/** React hook — derived AgentStatus for a session. */
+export function useAgentStatus(sessionId: string): AgentStatus {
+  return useAppStore((s) => {
+    void s._statusTick;                       // subscribe to timer ticks
+    return getSessionAgentStatus(sessionId, s);
+  });
+}
+
+/** React hook — derived AgentStatus for a specific tab. */
+export function useTabAgentStatus(sessionId: string, tabId: string): AgentStatus {
+  return useAppStore((s) => {
+    void s._statusTick;
+    const session = s.sessions.get(sessionId);
+    if (!session) return 'idle';
+    const tab = session.tabs.get(tabId);
+    if (!tab) return 'idle';
+
+    // Tab exited
+    if (!tab.ptyReady && !tab.needsReconnect && !session.showWizard) return 'exited';
+
+    // Active tab inherits session-level running/waiting
+    if (tabId === session.activeTabId) {
+      if (s.pendingApprovals.some((a) => a.sessionId === sessionId)) return 'waiting';
+      const lastTs = s.lastActivityTs.get(sessionId);
+      if (lastTs && Date.now() - lastTs < ACTIVITY_RUNNING_THRESHOLD_MS) return 'running';
+    }
+
+    return 'idle';
+  });
+}

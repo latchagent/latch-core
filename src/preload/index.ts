@@ -130,6 +130,9 @@ contextBridge.exposeInMainWorld('latch', {
   syncMcpServers: (payload: { harnessId: string; targetDir?: string }) =>
     ipcRenderer.invoke('latch:mcp-sync', payload),
 
+  introspectMcpServer: (payload: { id: string }) =>
+    ipcRenderer.invoke('latch:mcp-introspect', payload),
+
   // ── Docker sandbox ────────────────────────────────────────────────────────
 
   dockerDetect: () => ipcRenderer.invoke('latch:docker-detect'),
@@ -173,8 +176,6 @@ contextBridge.exposeInMainWorld('latch', {
   authzUnregister: (payload: { sessionId: string }) =>
     ipcRenderer.invoke('latch:authz-unregister', payload),
 
-  getAuthzSecret: () => ipcRenderer.invoke('latch:authz-secret'),
-
   onActivityEvent: (callback: (event: any) => void) => {
     const handler = (_event: any, payload: any) => callback(payload)
     ipcRenderer.on('latch:activity-event', handler)
@@ -202,6 +203,17 @@ contextBridge.exposeInMainWorld('latch', {
     const handler = (_event: any, payload: any) => callback(payload)
     ipcRenderer.on('latch:approval-resolved', handler)
     return () => { ipcRenderer.removeListener('latch:approval-resolved', handler) }
+  },
+
+  // ── Supervisor ──────────────────────────────────────────────────────────
+
+  supervisorRegisterTab: (payload: { tabId: string; sessionId: string; harnessId: string }) =>
+    ipcRenderer.invoke('latch:supervisor-register-tab', payload),
+
+  onSupervisorAction: (callback: (action: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:supervisor-action', handler)
+    return () => { ipcRenderer.removeListener('latch:supervisor-action', handler) }
   },
 
   // ── Project stack detection ────────────────────────────────────────────
@@ -260,6 +272,26 @@ contextBridge.exposeInMainWorld('latch', {
 
   hasSetting: (payload: { key: string }) =>
     ipcRenderer.invoke('latch:settings-has', payload),
+
+  // ── Secrets (vault) ────────────────────────────────────────────────────
+
+  listSecrets: (payload?: { scope?: string }) =>
+    ipcRenderer.invoke('latch:secret-list', payload),
+
+  getSecret: (payload: { id: string }) =>
+    ipcRenderer.invoke('latch:secret-get', payload),
+
+  saveSecret: (params: { id: string; name: string; key: string; value: string; description?: string; scope?: string; tags?: string[] }) =>
+    ipcRenderer.invoke('latch:secret-save', params),
+
+  deleteSecret: (payload: { id: string }) =>
+    ipcRenderer.invoke('latch:secret-delete', payload),
+
+  validateSecretRefs: (payload: { env: Record<string, string> }) =>
+    ipcRenderer.invoke('latch:secret-validate', payload),
+
+  listSecretHints: () =>
+    ipcRenderer.invoke('latch:secret-hints'),
 
   // ── Feed (agent status updates) ────────────────────────────────────────
 

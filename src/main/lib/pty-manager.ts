@@ -11,20 +11,42 @@ interface PtyRecord {
 
 type SendFn = (channel: string, payload: unknown) => void
 type ExitCallback = (sessionId: string) => void
+type DataCallback = (sessionId: string, data: string) => void
 
 class PtyManager {
   private send: SendFn
   private sessions: Map<string, PtyRecord>
   private exitCallbacks: ExitCallback[] = []
+  private dataCallbacks: DataCallback[] = []
+  private redactionPatterns: Map<string, RegExp> = new Map()
 
   constructor(send: SendFn) {
     this.send     = send
     this.sessions = new Map()
   }
 
+  /** Load secret values for terminal redaction on a given session. */
+  setRedactionValues(sessionId: string, values: string[]): void {
+    // Filter trivially short values (< 4 chars) to avoid false positives
+    const escaped = values
+      .filter(v => v.length >= 4)
+      .sort((a, b) => b.length - a.length) // longest first to avoid partial matches
+      .map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    if (!escaped.length) {
+      this.redactionPatterns.delete(sessionId)
+      return
+    }
+    this.redactionPatterns.set(sessionId, new RegExp(escaped.join('|'), 'g'))
+  }
+
   /** Register a callback invoked when any PTY exits. */
   onExit(cb: ExitCallback): void {
     this.exitCallbacks.push(cb)
+  }
+
+  /** Register a callback invoked when any PTY emits data (after redaction). */
+  onData(cb: DataCallback): void {
+    this.dataCallbacks.push(cb)
   }
 
   private getShell(): string {
@@ -65,14 +87,20 @@ class PtyManager {
     })
 
     ptyProcess.onData((data: string) => {
-      this.send('latch:pty-data', { sessionId, data })
+      const pattern = this.redactionPatterns.get(sessionId)
+      const safeData = pattern ? data.replace(pattern, '[REDACTED]') : data
+      this.send('latch:pty-data', { sessionId, data: safeData })
+      for (const cb of this.dataCallbacks) {
+        try { cb(sessionId, safeData) } catch (err: any) { console.warn('[pty-manager] Data callback error:', err?.message) }
+      }
     })
 
     ptyProcess.onExit(() => {
       this.sessions.delete(sessionId)
+      this.redactionPatterns.delete(sessionId)
       this.send('latch:pty-exit', { sessionId })
       for (const cb of this.exitCallbacks) {
-        try { cb(sessionId) } catch {}
+        try { cb(sessionId) } catch (err: any) { console.warn('[pty-manager] Exit callback error:', err?.message) }
       }
     })
 

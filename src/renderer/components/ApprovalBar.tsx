@@ -106,6 +106,7 @@ export default function ApprovalBar() {
       <div className="approval-info">
         <span className={`approval-risk-badge is-${current.risk}`}>{current.risk}</span>
         <span className="approval-tool">{current.toolName}</span>
+        {current.reason && <span className="approval-reason">{current.reason}</span>}
         {summary && <span className="approval-summary">{summary}</span>}
       </div>
 

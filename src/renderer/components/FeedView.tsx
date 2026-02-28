@@ -23,6 +23,54 @@ function formatTime(ts: string): string {
   }
 }
 
+/** Inline approve/deny buttons for pending approvals in a session. */
+function SessionApprovalButtons({ sessionId }: { sessionId: string }) {
+  const pendingApprovals = useAppStore((s) => s.pendingApprovals)
+  const resolveApproval = useAppStore((s) => s.resolveApproval)
+
+  const sessionApprovals = pendingApprovals.filter((a) => a.sessionId === sessionId)
+  if (sessionApprovals.length === 0) return null
+
+  return (
+    <div className="feed-approval-section">
+      {sessionApprovals.map((approval) => {
+        const cmd = approval.toolInput?.command
+        const detail = cmd && typeof cmd === 'string'
+          ? (cmd.length > 120 ? cmd.slice(0, 117) + '...' : cmd)
+          : null
+        const filePath = !detail && (approval.toolInput?.file_path ?? approval.toolInput?.path)
+        const fileDetail = filePath && typeof filePath === 'string' ? filePath : null
+
+        return (
+        <div key={approval.id} className="feed-approval-card">
+          <div className="feed-approval-info">
+            <span className={`approval-risk-badge is-${approval.risk}`}>{approval.risk}</span>
+            <span className="feed-approval-tool">{approval.toolName}</span>
+            {(detail || fileDetail) && (
+              <code className="feed-approval-detail">{detail || fileDetail}</code>
+            )}
+          </div>
+          <div className="feed-approval-actions">
+            <button
+              className="feed-approval-btn is-deny"
+              onClick={() => resolveApproval(approval.id, 'deny')}
+            >
+              Deny
+            </button>
+            <button
+              className="feed-approval-btn is-approve"
+              onClick={() => resolveApproval(approval.id, 'approve')}
+            >
+              Approve
+            </button>
+          </div>
+        </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function FeedGroup({ sessionId, items }: { sessionId: string; items: FeedItem[] }) {
   const [expanded, setExpanded] = useState(false)
   const sessions = useAppStore((s) => s.sessions)
@@ -36,6 +84,9 @@ function FeedGroup({ sessionId, items }: { sessionId: string; items: FeedItem[] 
   return (
     <div className="feed-group">
       <div className="feed-group-header">{name}</div>
+
+      {/* Pending approvals for this session — always at top */}
+      <SessionApprovalButtons sessionId={sessionId} />
 
       {/* Latest item — always visible */}
       <div className="feed-item">

@@ -72,11 +72,11 @@ export default function ActivityPanel() {
           activityEvents.map((event) => (
             <div
               key={event.id}
-              className={`activity-event${event.decision === 'deny' ? ' is-denied' : ''}`}
+              className={`activity-event${event.decision === 'deny' ? ' is-denied' : ''}${event.decision === 'ask' ? ' is-ask' : ''}`}
             >
               <div className="activity-event-header">
                 <span className="activity-event-tool">{event.toolName}</span>
-                <span className={`activity-event-decision ${event.decision === 'deny' ? 'is-denied' : 'is-allowed'}`}>
+                <span className={`activity-event-decision ${event.decision === 'deny' ? 'is-denied' : event.decision === 'ask' ? 'is-ask' : 'is-allowed'}`}>
                   {event.decision.toUpperCase()}
                 </span>
               </div>

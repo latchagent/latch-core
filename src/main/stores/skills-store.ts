@@ -120,7 +120,7 @@ export class SkillsStore {
 
     // List existing dirs so we can remove uninstalled latch-managed ones
     let existingDirs: string[] = []
-    try { existingDirs = await fs.readdir(skillsDir) } catch { /* empty */ }
+    try { existingDirs = await fs.readdir(skillsDir) } catch { /* directory doesn't exist yet */ }
 
     const skillIds = new Set(skills.map((s: any) => s.id))
 
@@ -132,6 +132,7 @@ export class SkillsStore {
         '---',
         `name: ${skill.name}`,
         skill.description ? `description: ${skill.description}` : null,
+        'managed-by: latch',
         '---',
       ].filter(Boolean).join('\n')
 
@@ -139,16 +140,16 @@ export class SkillsStore {
       await fs.writeFile(path.join(skillDir, 'SKILL.md'), content, 'utf8')
     }
 
-    // Clean up dirs for skills that were uninstalled (only latch-managed ones that have a SKILL.md)
+    // Clean up dirs for skills that were uninstalled (only latch-managed ones with the marker)
     for (const dir of existingDirs) {
       if (skillIds.has(dir)) continue
       const skillMdPath = path.join(skillsDir, dir, 'SKILL.md')
       try {
-        await fs.access(skillMdPath)
-        // Has a SKILL.md — safe to remove (it's a latch-managed skill)
+        const content = await fs.readFile(skillMdPath, 'utf8')
+        if (!content.includes('managed-by: latch')) continue  // Not ours — leave it
         await fs.rm(path.join(skillsDir, dir), { recursive: true })
       } catch {
-        // No SKILL.md or symlink — not ours, leave it alone
+        // No SKILL.md or can't read — not ours, leave it alone
       }
     }
 

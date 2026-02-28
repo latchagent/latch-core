@@ -25,6 +25,7 @@ export class PolicyStore {
       );
     `)
 
+    // (No default policy seeded — users create policies explicitly.)
   }
 
   _upsert(policy: any): void {
@@ -46,8 +47,8 @@ export class PolicyStore {
     for (const row of rows) {
       try {
         policies.push({ ...JSON.parse(row.body), id: row.id, name: row.name, updatedAt: row.updated_at })
-      } catch {
-        // Skip rows with corrupt JSON body
+      } catch (err: any) {
+        console.warn('[PolicyStore] Skipping row with corrupt JSON body:', row.id, err?.message)
       }
     }
     return { ok: true, policies }
@@ -61,7 +62,8 @@ export class PolicyStore {
         ok: true,
         policy: { ...JSON.parse(row.body), id: row.id, name: row.name, updatedAt: row.updated_at }
       }
-    } catch {
+    } catch (err: any) {
+      console.warn('[PolicyStore] Corrupt policy data for id:', id, err?.message)
       return { ok: false, error: 'Corrupt policy data' }
     }
   }

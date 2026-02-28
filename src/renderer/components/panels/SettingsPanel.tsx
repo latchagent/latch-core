@@ -261,7 +261,7 @@ export default function SettingsPanel() {
             on={soundNotifications}
             onChange={handleSoundToggle}
             label="Sound notifications"
-            description="Play an audible beep when new feed items arrive."
+            description="Play an audible beep when a tool call needs approval."
           />
           <Toggle
             on={telemetry}
