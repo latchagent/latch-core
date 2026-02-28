@@ -580,7 +580,7 @@ export default function PolicyEditor() {
 
       {/* ── General tab ──────────────────────────────────────────── */}
       {activeTab === 'general' && (
-        <>
+        <div className="pe-tab-content">
           <div className="modal-field">
             <label className="modal-label" htmlFor="pe-name">Name</label>
             <input
@@ -657,12 +657,12 @@ export default function PolicyEditor() {
             <label className="modal-label">Shell command patterns matched against the full command string</label>
             <CommandRulesEditor rules={commandRules} onChange={setCommandRules} />
           </div>
-        </>
+        </div>
       )}
 
       {/* ── Claude Code tab ──────────────────────────────────────── */}
       {activeTab === 'claude' && (
-        <>
+        <div className="pe-tab-content">
           <div className="modal-field">
             <label className="modal-label">Tool rules</label>
             <ToolRulesEditor tools={CLAUDE_TOOLS} rules={claudeToolRules} onChange={setClaudeToolRules} />
@@ -679,12 +679,12 @@ export default function PolicyEditor() {
             <label className="modal-label">Custom tool rules</label>
             <CustomToolRules rules={claudeToolRules} builtinTools={CLAUDE_TOOLS} onChange={setClaudeToolRules} />
           </div>
-        </>
+        </div>
       )}
 
       {/* ── Codex tab ────────────────────────────────────────────── */}
       {activeTab === 'codex' && (
-        <>
+        <div className="pe-tab-content">
           <div className="modal-field">
             <label className="modal-label" htmlFor="pe-codex-approval">Approval mode</label>
             <select
@@ -725,12 +725,12 @@ export default function PolicyEditor() {
             <label className="modal-label">Custom tool rules</label>
             <CustomToolRules rules={codexToolRules} builtinTools={[]} onChange={setCodexToolRules} />
           </div>
-        </>
+        </div>
       )}
 
       {/* ── OpenClaw tab ─────────────────────────────────────────── */}
       {activeTab === 'openclaw' && (
-        <>
+        <div className="pe-tab-content">
           <div className="modal-field">
             <label className="modal-label">Tool rules</label>
             <ToolRulesEditor tools={OPENCLAW_TOOLS} rules={openclawToolRules} onChange={setOpenclawToolRules} />
@@ -747,7 +747,7 @@ export default function PolicyEditor() {
             <label className="modal-label">Custom tool rules</label>
             <CustomToolRules rules={openclawToolRules} builtinTools={OPENCLAW_TOOLS} onChange={setOpenclawToolRules} />
           </div>
-        </>
+        </div>
       )}
     </div>
   )

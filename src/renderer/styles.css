@@ -1513,6 +1513,7 @@ body {
 .modal-toggle-hint {
   width: 100%;
   font-size: 11px;
+  line-height: 1.4;
   color: var(--text-tertiary);
   margin-top: -4px;
   padding-left: 24px;
@@ -1624,7 +1625,19 @@ body {
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 24px;
+  margin-bottom: 0;
+}
+
+.pe-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 24px;
+}
+
+.pe-tab-content .view-section-label {
+  margin-top: 8px;
+  margin-bottom: -8px;
 }
 
 .pe-tab {
