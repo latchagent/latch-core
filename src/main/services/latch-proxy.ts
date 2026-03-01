@@ -21,6 +21,12 @@ import { IngressFilter } from './proxy/ingress-filter'
 import type { ServiceDefinition, DataTier, ProxyAuditEvent, ProxyFeedbackMessage } from '../../types'
 import type { AttestationStore } from '../stores/attestation-store'
 
+/** Maximum number of audit events retained in the in-memory ring buffer. */
+const AUDIT_LOG_CAP = 1000
+
+/** Ports allowed for CONNECT tunnels. */
+const ALLOWED_CONNECT_PORTS = new Set([443])
+
 export interface LatchProxyConfig {
   sessionId: string
   services: ServiceDefinition[]
@@ -104,8 +110,11 @@ export class LatchProxy {
     return { decision: 'allow', service, reason: null }
   }
 
-  /** Get all audit events for this session. */
+  /** Get audit events. Delegates to attestation store when available, falls back to in-memory ring buffer. */
   getAuditLog(): ProxyAuditEvent[] {
+    if (this.config.attestationStore) {
+      return this.config.attestationStore.listEvents(this.config.sessionId)
+    }
     return [...this.auditLog]
   }
 
@@ -137,6 +146,139 @@ export class LatchProxy {
 
   // -- Private ──────────────────────────────────────────────────────────────
 
+  /**
+   * H5: Shared helper — inject credentials into headers and de-tokenize body.
+   * Returns the processed body buffer and the de-tokenized string, or null
+   * if the request should be blocked (credential leak detected).
+   */
+  private _injectAndDetokenize(
+    req: http.IncomingMessage,
+    rawBody: Buffer,
+    service: ServiceDefinition,
+    domain: string,
+    method: string,
+    path: string,
+    res: http.ServerResponse,
+    isSecure: boolean,
+  ): { body: Buffer; detokenized: string } | null {
+    const creds = this.config.credentials.get(service.id)
+
+    // M2: Refuse credential injection over plaintext HTTP
+    if (creds && !isSecure) {
+      this.config.onFeedback?.({
+        type: 'block',
+        domain,
+        service: service.id,
+        detail: 'Credential injection refused over plaintext HTTP',
+      })
+      this._recordAudit(domain, method, path, service.id, 'deny', 'Credential injection refused over plaintext HTTP')
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Credential injection requires HTTPS' }))
+      return null
+    }
+
+    if (creds) {
+      const injected = this.egressFilter.injectHeaders(service, creds)
+      for (const [k, v] of Object.entries(injected)) {
+        req.headers[k.toLowerCase()] = v
+      }
+    }
+
+    const bodyStr = rawBody.toString('utf-8')
+    const detokenized = this.tokenMap.detokenizeString(bodyStr, service.id)
+    let body = rawBody
+    if (detokenized !== bodyStr) {
+      body = Buffer.from(detokenized, 'utf-8')
+    }
+
+    // Scan outbound body for credential leaks
+    if (creds) {
+      const leakCheck = this.egressFilter.scanForLeaks(service, detokenized)
+      if (!leakCheck.safe) {
+        this.config.onFeedback?.({
+          type: 'leak-detected',
+          domain,
+          service: service.id,
+          detail: `Credential leak detected in request body: ${leakCheck.leaked.join(', ')}`,
+        })
+        this._recordAudit(domain, method, path, service.id, 'deny', `Credential leak: ${leakCheck.leaked.join(', ')}`)
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Request blocked: credential leak detected' }))
+        return null
+      }
+    }
+
+    return { body, detokenized }
+  }
+
+  /**
+   * H5: Shared helper — scan response, apply tokenization, record audit, and
+   * send the response to the client.
+   */
+  private _scanAndRecord(
+    proxyRes: http.IncomingMessage,
+    clientRes: http.ServerResponse,
+    domain: string,
+    method: string,
+    path: string,
+    service: ServiceDefinition,
+    tlsInspected: boolean,
+  ): void {
+    const contentType = proxyRes.headers['content-type'] ?? null
+
+    if (!this.ingressFilter.isScannable(contentType)) {
+      this._recordAudit(domain, method, path, service.id, 'allow', null, {
+        contentType,
+        tlsInspected,
+      })
+      clientRes.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+      proxyRes.pipe(clientRes)
+      return
+    }
+
+    const resChunks: Buffer[] = []
+    proxyRes.on('data', (chunk: Buffer) => resChunks.push(chunk))
+
+    // ARCH-2: Handle upstream response stream errors
+    proxyRes.on('error', (err) => {
+      console.error(`[LatchProxy] Upstream response error for ${domain}${path}:`, err)
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(502)
+        clientRes.end('Bad Gateway')
+      } else {
+        clientRes.destroy()
+      }
+    })
+
+    proxyRes.on('end', () => {
+      const resBody = Buffer.concat(resChunks).toString('utf-8')
+      const scanResult = this.ingressFilter.scanResponse(contentType, resBody, service, path)
+
+      if (scanResult.tokenizationsApplied > 0) {
+        this.config.onFeedback?.({
+          type: 'tokenization',
+          domain,
+          service: service.id,
+          detail: `${scanResult.tokenizationsApplied} value(s) tokenized in response`,
+        })
+      }
+
+      this._recordAudit(domain, method, path, service.id, 'allow', null, {
+        contentType,
+        tlsInspected,
+        redactionsApplied: scanResult.redactionsApplied,
+        tokenizationsApplied: scanResult.tokenizationsApplied,
+      })
+
+      const responseBody = scanResult.processedBody ?? resBody
+      const headers = { ...proxyRes.headers }
+      headers['content-length'] = String(Buffer.byteLength(responseBody))
+      delete headers['transfer-encoding']
+      clientRes.writeHead(proxyRes.statusCode ?? 200, headers)
+      clientRes.end(responseBody)
+    })
+  }
+
   /** Handle regular HTTP requests (non-CONNECT) with response scanning. */
   private _handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
@@ -152,41 +294,24 @@ export class LatchProxy {
     }
 
     const service = evaluation.service!
-    const creds = this.config.credentials.get(service.id)
-    if (creds) {
-      const injected = this.egressFilter.injectHeaders(service, creds)
-      for (const [k, v] of Object.entries(injected)) {
-        req.headers[k.toLowerCase()] = v
-      }
-    }
 
-    // Buffer request body for de-tokenization
+    // ARCH-1: Handle client request stream errors
+    req.on('error', (err) => {
+      console.error(`[LatchProxy] Client request error for ${domain}${url.pathname}:`, err)
+      if (!res.headersSent) {
+        res.writeHead(502)
+        res.end('Bad Gateway')
+      }
+    })
+
     const reqChunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => reqChunks.push(chunk))
     req.on('end', () => {
-      let reqBody = Buffer.concat(reqChunks)
-      const bodyStr = reqBody.toString('utf-8')
-      const detokenized = this.tokenMap.detokenizeString(bodyStr, service.id)
-      if (detokenized !== bodyStr) {
-        reqBody = Buffer.from(detokenized, 'utf-8')
-      }
+      const rawBody = Buffer.concat(reqChunks)
 
-      // Scan outbound body for credential leaks
-      if (creds) {
-        const leakCheck = this.egressFilter.scanForLeaks(service, detokenized)
-        if (!leakCheck.safe) {
-          this.config.onFeedback?.({
-            type: 'leak-detected',
-            domain,
-            service: service.id,
-            detail: `Credential leak detected in request body: ${leakCheck.leaked.join(', ')}`,
-          })
-          this._recordAudit(domain, req.method ?? 'GET', url.pathname, service.id, 'deny', `Credential leak: ${leakCheck.leaked.join(', ')}`)
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Request blocked: credential leak detected' }))
-          return
-        }
-      }
+      // H5 + M2: Shared credential injection and de-tokenization (isSecure=false for HTTP)
+      const prepared = this._injectAndDetokenize(req, rawBody, service, domain, req.method ?? 'GET', url.pathname, res, false)
+      if (!prepared) return
 
       const proxyReq = http.request(
         {
@@ -194,59 +319,22 @@ export class LatchProxy {
           port: url.port || 80,
           path: url.pathname + url.search,
           method: req.method,
-          headers: { ...req.headers, 'content-length': String(reqBody.length) },
+          headers: { ...req.headers, 'content-length': String(prepared.body.length) },
         },
         (proxyRes) => {
-          const contentType = proxyRes.headers['content-type'] ?? null
-
-          if (!this.ingressFilter.isScannable(contentType)) {
-            // Binary — pass through without body scanning
-            this._recordAudit(domain, req.method ?? 'GET', url.pathname, service.id, 'allow', null, {
-              contentType,
-              tlsInspected: false,
-            })
-            res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
-            proxyRes.pipe(res)
-            return
-          }
-
-          // Buffer and scan scannable responses
-          const resChunks: Buffer[] = []
-          proxyRes.on('data', (chunk: Buffer) => resChunks.push(chunk))
-          proxyRes.on('end', () => {
-            const resBody = Buffer.concat(resChunks).toString('utf-8')
-            const scanResult = this.ingressFilter.scanResponse(contentType, resBody, service, url.pathname)
-
-            if (scanResult.tokenizationsApplied > 0) {
-              this.config.onFeedback?.({
-                type: 'tokenization',
-                domain,
-                service: service.id,
-                detail: `${scanResult.tokenizationsApplied} value(s) tokenized in response`,
-              })
-            }
-
-            this._recordAudit(domain, req.method ?? 'GET', url.pathname, service.id, 'allow', null, {
-              contentType,
-              tlsInspected: false,
-              redactionsApplied: scanResult.redactionsApplied,
-              tokenizationsApplied: scanResult.tokenizationsApplied,
-            })
-
-            const responseBody = scanResult.processedBody ?? resBody
-            const headers = { ...proxyRes.headers }
-            headers['content-length'] = String(Buffer.byteLength(responseBody))
-            delete headers['transfer-encoding']
-            res.writeHead(proxyRes.statusCode ?? 200, headers)
-            res.end(responseBody)
-          })
+          // H5: Shared response scanning and recording
+          this._scanAndRecord(proxyRes, res, domain, req.method ?? 'GET', url.pathname, service, false)
         },
       )
+      // M5: Generic error message — log details internally
       proxyReq.on('error', (err) => {
-        res.writeHead(502)
-        res.end(`Proxy error: ${err.message}`)
+        console.error(`[LatchProxy] Upstream request error for ${domain}${url.pathname}:`, err)
+        if (!res.headersSent) {
+          res.writeHead(502)
+          res.end('Bad Gateway')
+        }
       })
-      proxyReq.end(reqBody)
+      proxyReq.end(prepared.body)
     })
   }
 
@@ -258,6 +346,17 @@ export class LatchProxy {
   ): void {
     const [host, portStr] = (req.url ?? '').split(':')
     const port = parseInt(portStr, 10) || 443
+
+    // M4: Restrict CONNECT to allowed ports (default: 443 only)
+    if (!ALLOWED_CONNECT_PORTS.has(port)) {
+      this.config.onBlock?.(`CONNECT to ${host}:${port} blocked — port not allowed`)
+      this.config.onFeedback?.({ type: 'block', domain: host, service: null, detail: `CONNECT port ${port} not allowed` })
+      this._recordAudit(host, 'CONNECT', '/', null, 'deny', `CONNECT port ${port} not allowed`)
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n')
+      socket.end()
+      return
+    }
+
     const evaluation = this.evaluateRequest(host, 'CONNECT', '/')
 
     if (evaluation.decision === 'deny') {
@@ -337,6 +436,11 @@ export class LatchProxy {
       tlsSocket.destroy()
       mitmServer.close()
     })
+
+    // ARCH-3: Clean up MITM server when the TLS socket closes
+    tlsSocket.on('close', () => {
+      mitmServer.close()
+    })
   }
 
   /** Handle an intercepted (decrypted) HTTP request from the MITM tunnel. */
@@ -350,44 +454,23 @@ export class LatchProxy {
     const path = req.url ?? '/'
     const method = req.method ?? 'GET'
 
-    // Egress: inject credentials
-    const creds = this.config.credentials.get(service.id)
-    if (creds) {
-      const injected = this.egressFilter.injectHeaders(service, creds)
-      for (const [k, v] of Object.entries(injected)) {
-        req.headers[k.toLowerCase()] = v
+    // ARCH-1: Handle client request stream errors (MITM path)
+    req.on('error', (err) => {
+      console.error(`[LatchProxy] MITM client request error for ${host}${path}:`, err)
+      if (!res.headersSent) {
+        res.writeHead(502)
+        res.end('Bad Gateway')
       }
-    }
+    })
 
-    // Egress: de-tokenize request body (resolve tokens being sent to this service)
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
     req.on('end', () => {
-      let body = Buffer.concat(chunks)
+      const rawBody = Buffer.concat(chunks)
 
-      // De-tokenize if body contains tokens
-      const bodyStr = body.toString('utf-8')
-      const detokenized = this.tokenMap.detokenizeString(bodyStr, service.id)
-      if (detokenized !== bodyStr) {
-        body = Buffer.from(detokenized, 'utf-8')
-      }
-
-      // Scan outbound body for credential leaks
-      if (creds) {
-        const leakCheck = this.egressFilter.scanForLeaks(service, detokenized)
-        if (!leakCheck.safe) {
-          this.config.onFeedback?.({
-            type: 'leak-detected',
-            domain: host,
-            service: service.id,
-            detail: `Credential leak detected in request body: ${leakCheck.leaked.join(', ')}`,
-          })
-          this._recordAudit(host, method, path, service.id, 'deny', `Credential leak: ${leakCheck.leaked.join(', ')}`)
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Request blocked: credential leak detected' }))
-          return
-        }
-      }
+      // H5: Shared credential injection and de-tokenization (isSecure=true for MITM/HTTPS)
+      const prepared = this._injectAndDetokenize(req, rawBody, service, host, method, path, res, true)
+      if (!prepared) return
 
       // Forward to real upstream with TLS
       const upstreamReq = https.request(
@@ -396,81 +479,29 @@ export class LatchProxy {
           port,
           path,
           method,
-          headers: { ...req.headers, host, 'content-length': String(body.length) },
+          headers: { ...req.headers, host, 'content-length': String(prepared.body.length) },
           rejectUnauthorized: true,
         },
         (upstreamRes) => {
-          this._handleInterceptedResponse(upstreamRes, res, host, method, path, service)
+          // H5: Shared response scanning and recording
+          this._scanAndRecord(upstreamRes, res, host, method, path, service, true)
         },
       )
 
+      // M5: Generic error message — log details internally
       upstreamReq.on('error', (err) => {
-        res.writeHead(502)
-        res.end(`Proxy error: ${err.message}`)
+        console.error(`[LatchProxy] MITM upstream request error for ${host}${path}:`, err)
+        if (!res.headersSent) {
+          res.writeHead(502)
+          res.end('Bad Gateway')
+        }
       })
 
-      upstreamReq.end(body)
+      upstreamReq.end(prepared.body)
     })
   }
 
-  /** Handle an intercepted upstream response — scan body if content is scannable. */
-  private _handleInterceptedResponse(
-    upstreamRes: http.IncomingMessage,
-    clientRes: http.ServerResponse,
-    host: string,
-    method: string,
-    path: string,
-    service: ServiceDefinition,
-  ): void {
-    const contentType = upstreamRes.headers['content-type'] ?? null
-
-    if (!this.ingressFilter.isScannable(contentType)) {
-      // Binary or unknown — pass through without body scanning
-      this._recordAudit(host, method, path, service.id, 'allow', null, {
-        contentType,
-        tlsInspected: true,
-        redactionsApplied: 0,
-        tokenizationsApplied: 0,
-      })
-      clientRes.writeHead(upstreamRes.statusCode ?? 200, upstreamRes.headers)
-      upstreamRes.pipe(clientRes)
-      return
-    }
-
-    // Scannable content — buffer the entire response body
-    const chunks: Buffer[] = []
-    upstreamRes.on('data', (chunk: Buffer) => chunks.push(chunk))
-    upstreamRes.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf-8')
-      const scanResult = this.ingressFilter.scanResponse(contentType, body, service, path)
-
-      // Send feedback if tokenizations were applied
-      if (scanResult.tokenizationsApplied > 0) {
-        this.config.onFeedback?.({
-          type: 'tokenization',
-          domain: host,
-          service: service.id,
-          detail: `${scanResult.tokenizationsApplied} value(s) tokenized in response`,
-        })
-      }
-
-      this._recordAudit(host, method, path, service.id, 'allow', null, {
-        contentType,
-        tlsInspected: true,
-        redactionsApplied: scanResult.redactionsApplied,
-        tokenizationsApplied: scanResult.tokenizationsApplied,
-      })
-
-      const responseBody = scanResult.processedBody ?? body
-      const headers = { ...upstreamRes.headers }
-      headers['content-length'] = String(Buffer.byteLength(responseBody))
-      // Remove transfer-encoding since we're sending a known-length body
-      delete headers['transfer-encoding']
-      clientRes.writeHead(upstreamRes.statusCode ?? 200, headers)
-      clientRes.end(responseBody)
-    })
-  }
-
+  /** H9: Record audit event with ring buffer cap. */
   private _recordAudit(
     domain: string,
     method: string,
@@ -480,7 +511,7 @@ export class LatchProxy {
     reason: string | null,
     extras?: { contentType?: string; tlsInspected?: boolean; redactionsApplied?: number; tokenizationsApplied?: number },
   ): void {
-    this.auditLog.push({
+    const event: ProxyAuditEvent = {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       sessionId: this.config.sessionId,
@@ -495,7 +526,14 @@ export class LatchProxy {
       tlsInspected: extras?.tlsInspected ?? false,
       redactionsApplied: extras?.redactionsApplied ?? 0,
       tokenizationsApplied: extras?.tokenizationsApplied ?? 0,
-    })
-    this.config.attestationStore?.recordEvent(this.auditLog[this.auditLog.length - 1])
+    }
+
+    // Ring buffer: drop oldest when at capacity
+    if (this.auditLog.length >= AUDIT_LOG_CAP) {
+      this.auditLog.shift()
+    }
+    this.auditLog.push(event)
+
+    this.config.attestationStore?.recordEvent(event)
   }
 }

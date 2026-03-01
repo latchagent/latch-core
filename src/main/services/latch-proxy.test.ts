@@ -240,4 +240,160 @@ describe('LatchProxy', () => {
     expect(recorded[1].domain).toBe('evil.com')
     proxy2.stop()
   })
+
+  // -- H9: Ring buffer cap ──────────────────────────────────────────────────
+
+  it('caps in-memory audit log at 1000 entries', () => {
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-cap',
+      services: [MOCK_SERVICE],
+      credentials: new Map(),
+      maxDataTier: 'internal' as DataTier,
+    })
+
+    // Generate 1050 audit events
+    for (let i = 0; i < 1050; i++) {
+      proxy2.evaluateRequest('httpbin.org', 'GET', `/path-${i}`)
+    }
+
+    const events = proxy2.getAuditLog()
+    expect(events.length).toBe(1000)
+    // Oldest entries should have been dropped — first event should be path-50
+    expect(events[0].path).toBe('/path-50')
+    expect(events[999].path).toBe('/path-1049')
+    proxy2.stop()
+  })
+
+  it('delegates getAuditLog to attestation store when provided', () => {
+    const storeEvents: ProxyAuditEvent[] = [
+      { id: 'e1', timestamp: '', sessionId: 'test', service: null, domain: 'a.com', method: 'GET', path: '/', tier: null, decision: 'allow', reason: null, contentType: null, tlsInspected: false, redactionsApplied: 0, tokenizationsApplied: 0 },
+    ]
+    const mockStore = {
+      recordEvent: vi.fn(),
+      listEvents: vi.fn(() => storeEvents),
+    }
+
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-delegate',
+      services: [MOCK_SERVICE],
+      credentials: new Map(),
+      maxDataTier: 'internal' as DataTier,
+      attestationStore: mockStore as any,
+    })
+
+    const events = proxy2.getAuditLog()
+    expect(mockStore.listEvents).toHaveBeenCalledWith('test-delegate')
+    expect(events).toEqual(storeEvents)
+    proxy2.stop()
+  })
+
+  // -- M4: CONNECT port restriction ────────────────────────────────────────
+
+  it('blocks CONNECT to non-443 ports', async () => {
+    const feedback: any[] = []
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-port',
+      services: [MOCK_SERVICE],
+      credentials: new Map(),
+      maxDataTier: 'internal' as DataTier,
+      onFeedback: (msg) => feedback.push(msg),
+    })
+    const port = await proxy2.start()
+
+    // Attempt a CONNECT to port 8080
+    await new Promise<void>((resolve) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        method: 'CONNECT',
+        path: 'httpbin.org:8080',
+      })
+      req.on('connect', (res) => {
+        expect(res.statusCode).toBe(403)
+        res.socket?.destroy()
+        resolve()
+      })
+      req.on('error', () => resolve())
+      req.end()
+    })
+
+    expect(feedback.some(f => f.detail.includes('port 8080 not allowed'))).toBe(true)
+    proxy2.stop()
+  })
+
+  // -- M2: Block credential injection over HTTP ───────────────────────────
+
+  it('blocks credential injection over plaintext HTTP', async () => {
+    const feedback: any[] = []
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-http-creds',
+      services: [MOCK_SERVICE],
+      credentials: new Map([['httpbin', { token: 'secret' }]]),
+      maxDataTier: 'internal' as DataTier,
+      onFeedback: (msg) => feedback.push(msg),
+    })
+    const port = await proxy2.start()
+
+    const res = await new Promise<http.IncomingMessage>((resolve) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: 'http://httpbin.org/get',
+        headers: { Host: 'httpbin.org' },
+      }, resolve)
+      req.end()
+    })
+
+    expect(res.statusCode).toBe(403)
+    const body = await new Promise<string>((resolve) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => resolve(data))
+    })
+    expect(body).toContain('Credential injection requires HTTPS')
+    expect(feedback.some(f => f.detail.includes('plaintext HTTP'))).toBe(true)
+    proxy2.stop()
+  })
+
+  // -- M5: Generic error messages ─────────────────────────────────────────
+
+  it('returns generic error messages without internal details', async () => {
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-generic-error',
+      services: [{
+        ...MOCK_SERVICE,
+        injection: {
+          ...MOCK_SERVICE.injection,
+          proxy: { ...MOCK_SERVICE.injection.proxy, domains: ['nonexistent.invalid'] },
+        },
+      }],
+      credentials: new Map(),
+      maxDataTier: 'internal' as DataTier,
+    })
+    const port = await proxy2.start()
+
+    const res = await new Promise<http.IncomingMessage>((resolve) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: 'http://nonexistent.invalid/test',
+        headers: { Host: 'nonexistent.invalid' },
+      }, resolve)
+      req.end()
+    })
+
+    // Should get 502 with generic message
+    expect(res.statusCode).toBe(502)
+    const body = await new Promise<string>((resolve) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => resolve(data))
+    })
+    expect(body).toBe('Bad Gateway')
+    expect(body).not.toContain('ENOTFOUND')
+    expect(body).not.toContain('getaddrinfo')
+    proxy2.stop()
+  })
 })
