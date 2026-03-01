@@ -16,6 +16,8 @@ import type {
   SkillRecord,
   McpServerRecord,
   SecretRecord,
+  ServiceRecord,
+  ServiceDefinition,
   AgentStatus,
 
   RailPanel,
@@ -36,6 +38,35 @@ import type { CatalogMcpServer } from '../data/mcp-catalog';
 
 let sessionCounter = 0;
 let tabCounter     = 0;
+
+/** Apply theme class to document root and update terminal themes. */
+let systemThemeQuery: MediaQueryList | null = null;
+let systemThemeHandler: ((e: MediaQueryListEvent) => void) | null = null;
+
+function applyTheme(theme: 'dark' | 'light' | 'system'): void {
+  // Tear down previous system listener
+  if (systemThemeHandler && systemThemeQuery) {
+    systemThemeQuery.removeEventListener('change', systemThemeHandler);
+    systemThemeHandler = null;
+  }
+
+  const root = document.documentElement;
+  root.classList.remove('theme-dark', 'theme-light');
+  if (theme === 'system') {
+    systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = (prefersDark: boolean) => {
+      root.classList.remove('theme-dark', 'theme-light');
+      root.classList.add(prefersDark ? 'theme-dark' : 'theme-light');
+      terminalManager.updateTheme();
+    };
+    apply(systemThemeQuery.matches);
+    systemThemeHandler = (e) => apply(e.matches);
+    systemThemeQuery.addEventListener('change', systemThemeHandler);
+  } else {
+    root.classList.add(`theme-${theme}`);
+  }
+  terminalManager.updateTheme();
+}
 
 // ─── Agent-status idle timer ─────────────────────────────────────────────────
 
@@ -113,6 +144,11 @@ export interface AppState {
   secretEditorOpen:       boolean;
   secretEditorSecret:     SecretRecord | null;
 
+  // ── Services (enclave) ─────────────────────────────────────────────────────
+  services:         ServiceRecord[];
+  serviceCatalog:   ServiceDefinition[];
+  servicesLoaded:   boolean;
+
   // ── Docker ───────────────────────────────────────────────────────────────────
   dockerAvailable: boolean;
   sandboxEnabled: boolean;
@@ -127,6 +163,7 @@ export interface AppState {
   feedItems: FeedItem[];
   feedUnread: number;
   soundNotifications: boolean;
+  theme: 'dark' | 'light' | 'system';
 
   // ── Approvals ──────────────────────────────────────────────────────────────
   pendingApprovals: PendingApproval[];
@@ -226,6 +263,11 @@ export interface AppState {
   saveSecret:         (params: { id: string; name: string; key: string; value: string; description?: string; tags?: string[] }) => Promise<void>;
   deleteSecret:       (id: string) => Promise<void>;
 
+  // Services (enclave)
+  loadServices:   () => Promise<void>;
+  saveService:    (definition: ServiceDefinition, credentialValue?: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteService:  (id: string) => Promise<{ ok: boolean }>;
+
   // Docker
   detectDocker:         () => Promise<void>;
   handleDockerStatus:   (sessionId: string, status: DockerStatus) => void;
@@ -252,6 +294,8 @@ export interface AppState {
   handleFeedUpdate:  (item: FeedItem) => void;
   clearFeed:         () => Promise<void>;
   loadSoundSetting:  () => Promise<void>;
+  loadThemeSetting:  () => Promise<void>;
+  setTheme:          (theme: 'dark' | 'light' | 'system') => Promise<void>;
 
   // Approvals
   handleApprovalRequest:  (approval: PendingApproval) => void;
@@ -284,6 +328,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   secrets:                [],
   secretEditorOpen:       false,
   secretEditorSecret:     null,
+  services:               [],
+  serviceCatalog:         [],
+  servicesLoaded:         false,
   dockerAvailable:  false,
   sandboxEnabled:   true,
   defaultDockerImage: 'node:20',
@@ -293,6 +340,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   feedItems:           [],
   feedUnread:          0,
   soundNotifications:  true,
+  theme:               'dark',
   pendingApprovals: [],
   lastActivityTs:   new Map(),
   _statusTick:      0,
@@ -1179,6 +1227,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadSecrets();
   },
 
+  // ── Services (enclave) ─────────────────────────────────────────────────────
+
+  loadServices: async () => {
+    const [listResult, catalogResult] = await Promise.all([
+      window.latch?.listServices?.(),
+      window.latch?.getServiceCatalog?.(),
+    ]);
+    set({
+      services: listResult?.ok ? listResult.services : [],
+      serviceCatalog: catalogResult?.ok ? catalogResult.catalog : [],
+      servicesLoaded: true,
+    });
+  },
+
+  saveService: async (definition, credentialValue) => {
+    const result = await window.latch?.saveService?.({ definition, credentialValue });
+    if (result?.ok) await get().loadServices();
+    return result ?? { ok: false, error: 'API not available' };
+  },
+
+  deleteService: async (id) => {
+    const result = await window.latch?.deleteService?.({ id });
+    if (result?.ok) await get().loadServices();
+    return result ?? { ok: false };
+  },
+
   // ── Docker ───────────────────────────────────────────────────────────────────
 
   detectDocker: async () => {
@@ -1334,6 +1408,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (res?.ok && res.value !== null) {
       set({ soundNotifications: res.value !== 'false' });
     }
+  },
+
+  loadThemeSetting: async () => {
+    const res = await window.latch?.getSetting?.({ key: 'theme' });
+    if (res?.ok && res.value) {
+      const t = res.value as 'dark' | 'light' | 'system';
+      set({ theme: t });
+      applyTheme(t);
+    }
+  },
+
+  setTheme: async (theme) => {
+    set({ theme });
+    applyTheme(theme);
+    await window.latch?.setSetting?.({ key: 'theme', value: theme });
   },
 
   // ── Approvals ──────────────────────────────────────────────────────────────

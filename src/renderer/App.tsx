@@ -43,10 +43,10 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: 40, color: '#ff6b6b', fontFamily: 'monospace', background: '#000000', minHeight: '100vh' }}>
+        <div style={{ padding: 40, color: 'var(--error)', fontFamily: 'monospace', background: 'var(--bg-app)', minHeight: '100vh' }}>
           <h2>Something went wrong</h2>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#888' }}>{this.state.error.message}</pre>
-          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '8px 16px', background: '#1a1a1a', color: '#ccc', border: '1px solid #333', borderRadius: 4, cursor: 'pointer' }}>
+          <pre style={{ whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>{this.state.error.message}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '8px 16px', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 4, cursor: 'pointer' }}>
             Try Again
           </button>
         </div>
@@ -72,6 +72,7 @@ export default function App() {
     loadHarnesses,
     loadSessions,
     loadSoundSetting,
+    loadThemeSetting,
     detectDocker,
     appBooting,
     skillEditorOpen,
@@ -126,8 +127,10 @@ export default function App() {
       .then(() => useAppStore.setState({ appBooting: false }))
       .catch(() => useAppStore.setState({ appBooting: false }))
     loadSoundSetting()
+    loadThemeSetting()
     detectDocker()
     useAppStore.getState().loadSandboxSettings()
+    useAppStore.getState().loadServices()
 
     return () => {
       disposePtyData?.()
