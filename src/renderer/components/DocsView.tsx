@@ -34,14 +34,189 @@ function Details({ id, title, expanded, onToggle, children }: {
   )
 }
 
-// ─── Diagram wrapper ───────────────────────────────────────────────────────
+// ─── Diagram card wrapper ──────────────────────────────────────────────────
 
-function Diagram({ label, children }: { label: string; children: string }) {
+function DiagramCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="docs-diagram">
       <div className="docs-diagram-label">{label}</div>
-      <pre className="docs-diagram-pre">{children}</pre>
+      <div className="docs-diagram-canvas">{children}</div>
     </div>
+  )
+}
+
+// ─── SVG diagram: Architecture Overview ───────────────────────────────────
+
+function ArchitectureSvg() {
+  const services = [
+    ['Policy Engine', 'AuthZ Server', 'Supervisor'],
+    ['MCP Sync', 'Radar', 'Session Mgr'],
+    ['Secrets Vault', 'Activity Log', 'Docker Mgr'],
+  ]
+  const harnesses = ['Claude Code', 'Codex', 'OpenClaw']
+  return (
+    <svg viewBox="0 0 660 300" className="docs-svg" fill="none">
+      <rect x="290" y="10" width="80" height="28" rx="14" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-blue) / 0.08)', stroke: 'rgb(var(--d-blue) / 0.25)' }} />
+      <text x="330" y="28" textAnchor="middle" fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="600" style={{ fill: 'rgb(var(--d-neutral) / 0.85)' }}>You</text>
+      <line x1="330" y1="38" x2="330" y2="66" style={{ stroke: 'rgb(var(--d-neutral) / 0.1)' }} />
+      <circle cx="330" cy="66" r="2" style={{ fill: 'rgb(var(--d-blue) / 0.5)' }} />
+      <rect x="60" y="66" width="540" height="160" rx="8" style={{ fill: 'rgb(var(--d-neutral) / 0.02)', stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <text x="80" y="86" fontSize="9" fontFamily="'Geist Mono', monospace" letterSpacing="1.5" style={{ fill: 'rgb(var(--d-neutral) / 0.25)' }}>LATCH DESKTOP</text>
+      {services.map((row, ri) => row.map((name, ci) => (
+        <g key={name}>
+          <rect x={90 + ci * 170} y={96 + ri * 38} width="150" height="28" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-neutral) / 0.025)', stroke: 'rgb(var(--d-neutral) / 0.07)' }} />
+          <text x={165 + ci * 170} y={113 + ri * 38} textAnchor="middle" fontSize="10" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.5)' }}>{name}</text>
+        </g>
+      )))}
+      {[150, 330, 510].map((hx) => (
+        <g key={hx}>
+          <line x1="330" y1="226" x2={hx} y2="258" style={{ stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+          <circle cx={hx} cy="258" r="2" style={{ fill: 'rgb(var(--d-blue) / 0.5)' }} />
+        </g>
+      ))}
+      {harnesses.map((name, i) => {
+        const x = 150 + i * 180
+        return (
+          <g key={name}>
+            <rect x={x - 55} y="258" width="110" height="28" rx="6" style={{ fill: 'rgb(var(--d-neutral) / 0.02)', stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+            <text x={x} y="276" textAnchor="middle" fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="500" style={{ fill: 'rgb(var(--d-neutral) / 0.7)' }}>{name}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+// ─── SVG diagram: Process Model ───────────────────────────────────────────
+
+function ProcessModelSvg() {
+  return (
+    <svg viewBox="0 0 660 370" className="docs-svg" fill="none">
+      <rect x="40" y="10" width="580" height="100" rx="8" style={{ fill: 'rgb(var(--d-neutral) / 0.02)', stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <text x="58" y="28" fontSize="9" fontFamily="'Geist Mono', monospace" letterSpacing="1.5" style={{ fill: 'rgb(var(--d-neutral) / 0.25)' }}>RENDERER</text>
+      {['App', 'Sidebar', 'TerminalArea', 'Views', 'Modals'].map((n, i) => (
+        <g key={n}>
+          <rect x={58 + i * 110} y="38" width="96" height="22" rx="11" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-blue) / 0.06)', stroke: 'rgb(var(--d-blue) / 0.15)' }} />
+          <text x={106 + i * 110} y="52" textAnchor="middle" fontSize="10" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.5)' }}>{n}</text>
+        </g>
+      ))}
+      {['useAppStore', 'TerminalManager'].map((n, i) => (
+        <g key={n}>
+          <rect x={120 + i * 240} y="70" width="160" height="22" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-neutral) / 0.025)', stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+          <text x={200 + i * 240} y="84" textAnchor="middle" fontSize="9" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-neutral) / 0.35)' }}>{n}</text>
+        </g>
+      ))}
+      <line x1="120" y1="130" x2="540" y2="130" strokeDasharray="6 4" style={{ stroke: 'rgb(var(--d-blue) / 0.15)' }} />
+      <text x="330" y="126" textAnchor="middle" fontSize="9" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-blue) / 0.5)' }}>contextBridge · IPC</text>
+      <rect x="40" y="150" width="580" height="170" rx="8" style={{ fill: 'rgb(var(--d-neutral) / 0.02)', stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <text x="58" y="168" fontSize="9" fontFamily="'Geist Mono', monospace" letterSpacing="1.5" style={{ fill: 'rgb(var(--d-neutral) / 0.25)' }}>MAIN PROCESS</text>
+      <text x="58" y="188" fontSize="8" fontFamily="'Geist Mono', monospace" letterSpacing="1" style={{ fill: 'rgb(var(--d-neutral) / 0.2)' }}>SERVICES</text>
+      {['AuthZ', 'Enforcer', 'Radar', 'McpSync', 'Supervisor'].map((n, i) => (
+        <g key={n}>
+          <rect x={58 + i * 112} y="194" width="100" height="22" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-neutral) / 0.025)', stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+          <text x={108 + i * 112} y="208" textAnchor="middle" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.45)' }}>{n}</text>
+        </g>
+      ))}
+      <text x="58" y="232" fontSize="8" fontFamily="'Geist Mono', monospace" letterSpacing="1" style={{ fill: 'rgb(var(--d-neutral) / 0.2)' }}>STORES</text>
+      {['Session', 'Policy', 'Skills', 'MCP', 'Activity', 'Secret'].map((n, i) => (
+        <g key={n}>
+          <rect x={58 + i * 94} y="238" width="82" height="22" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-neutral) / 0.025)', stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+          <text x={99 + i * 94} y="252" textAnchor="middle" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.45)' }}>{n}</text>
+        </g>
+      ))}
+      <text x="58" y="276" fontSize="8" fontFamily="'Geist Mono', monospace" letterSpacing="1" style={{ fill: 'rgb(var(--d-neutral) / 0.2)' }}>INFRASTRUCTURE</text>
+      {['PTY Manager', 'Docker Mgr', 'Git Workspaces', 'Harnesses'].map((n, i) => (
+        <g key={n}>
+          <rect x={58 + i * 142} y="282" width="126" height="22" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-neutral) / 0.025)', stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+          <text x={121 + i * 142} y="296" textAnchor="middle" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.45)' }}>{n}</text>
+        </g>
+      ))}
+      <line x1="330" y1="320" x2="330" y2="340" style={{ stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <rect x="275" y="340" width="110" height="22" rx="11" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-green) / 0.06)', stroke: 'rgb(var(--d-green) / 0.15)' }} />
+      <text x="330" y="354" textAnchor="middle" fontSize="10" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-green) / 0.6)' }}>SQLite DB</text>
+    </svg>
+  )
+}
+
+// ─── SVG diagram: Authorization Flow ──────────────────────────────────────
+
+function AuthFlowSvg() {
+  const cascade = ['Rate limit', 'Classify', 'Tool rules', 'Cmd rules', 'MCP rules', 'Blocked globs', 'Permissions', 'LLM evaluator']
+  return (
+    <svg viewBox="0 0 660 390" className="docs-svg" fill="none">
+      <circle cx="80" cy="28" r="12" style={{ fill: 'rgb(var(--d-neutral) / 0.03)', stroke: 'rgb(var(--d-neutral) / 0.12)' }} />
+      <text x="80" y="32" textAnchor="middle" fontSize="10" fontWeight="600" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-neutral) / 0.5)' }}>1</text>
+      <text x="106" y="26" fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="500" style={{ fill: 'rgb(var(--d-neutral) / 0.7)' }}>Agent invokes tool</text>
+      <text x="106" y="40" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.3)' }}>Harness fires PreToolUse hook</text>
+      <line x1="80" y1="40" x2="80" y2="64" style={{ stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <circle cx="80" cy="76" r="12" style={{ fill: 'rgb(var(--d-blue) / 0.06)', stroke: 'rgb(var(--d-blue) / 0.2)' }} />
+      <text x="80" y="80" textAnchor="middle" fontSize="10" fontWeight="600" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-blue) / 0.7)' }}>2</text>
+      <text x="106" y="74" fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="500" style={{ fill: 'rgb(var(--d-neutral) / 0.7)' }}>POST /decide</text>
+      <text x="106" y="88" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.3)' }}>AuthZ Server on localhost</text>
+      <line x1="80" y1="88" x2="80" y2="112" style={{ stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <circle cx="80" cy="124" r="12" style={{ fill: 'rgb(var(--d-blue) / 0.06)', stroke: 'rgb(var(--d-blue) / 0.2)' }} />
+      <text x="80" y="128" textAnchor="middle" fontSize="10" fontWeight="600" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-blue) / 0.7)' }}>3</text>
+      <text x="106" y="126" fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="500" style={{ fill: 'rgb(var(--d-neutral) / 0.7)' }}>Evaluation cascade</text>
+      <rect x="106" y="138" width="510" height="90" rx="6" style={{ fill: 'rgb(var(--d-neutral) / 0.015)', stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+      {cascade.map((n, i) => {
+        const col = i % 4, row = Math.floor(i / 4)
+        return (
+          <g key={n}>
+            <rect x={120 + col * 124} y={150 + row * 32} width="110" height="22" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-neutral) / 0.025)', stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+            <text x={175 + col * 124} y={164 + row * 32} textAnchor="middle" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.45)' }}>{n}</text>
+          </g>
+        )
+      })}
+      <line x1="80" y1="136" x2="80" y2="248" style={{ stroke: 'rgb(var(--d-neutral) / 0.08)' }} />
+      <circle cx="80" cy="260" r="12" style={{ fill: 'rgb(var(--d-blue) / 0.06)', stroke: 'rgb(var(--d-blue) / 0.2)' }} />
+      <text x="80" y="264" textAnchor="middle" fontSize="10" fontWeight="600" fontFamily="'Geist Mono', monospace" style={{ fill: 'rgb(var(--d-blue) / 0.7)' }}>4</text>
+      <text x="106" y="262" fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="500" style={{ fill: 'rgb(var(--d-neutral) / 0.7)' }}>Decision</text>
+      <line x1="92" y1="272" x2="170" y2="310" style={{ stroke: 'rgb(var(--d-green) / 0.25)' }} />
+      <rect x="130" y="310" width="80" height="24" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-green) / 0.06)', stroke: 'rgb(var(--d-green) / 0.18)' }} />
+      <text x="170" y="326" textAnchor="middle" fontSize="10" fontFamily="'Geist Mono', monospace" fontWeight="600" style={{ fill: 'rgb(var(--d-green) / 0.8)' }}>ALLOW</text>
+      <text x="170" y="344" textAnchor="middle" fontSize="8" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.25)' }}>Tool executes</text>
+      <line x1="92" y1="272" x2="330" y2="310" style={{ stroke: 'rgb(var(--d-red) / 0.25)' }} />
+      <rect x="290" y="310" width="80" height="24" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-red) / 0.06)', stroke: 'rgb(var(--d-red) / 0.18)' }} />
+      <text x="330" y="326" textAnchor="middle" fontSize="10" fontFamily="'Geist Mono', monospace" fontWeight="600" style={{ fill: 'rgb(var(--d-red) / 0.8)' }}>DENY</text>
+      <text x="330" y="344" textAnchor="middle" fontSize="8" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.25)' }}>Tool blocked</text>
+      <line x1="92" y1="272" x2="490" y2="310" style={{ stroke: 'rgb(var(--d-yellow) / 0.25)' }} />
+      <rect x="450" y="310" width="80" height="24" rx="4" strokeWidth="0.5" style={{ fill: 'rgb(var(--d-yellow) / 0.06)', stroke: 'rgb(var(--d-yellow) / 0.18)' }} />
+      <text x="490" y="326" textAnchor="middle" fontSize="10" fontFamily="'Geist Mono', monospace" fontWeight="600" style={{ fill: 'rgb(var(--d-yellow) / 0.8)' }}>PROMPT</text>
+      <text x="490" y="344" textAnchor="middle" fontSize="8" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.25)' }}>Supervisor or UI</text>
+      <text x="80" y="380" fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.2)' }}>Then: 5. Supervisor handles  ·  6. Activity logged  ·  7. Radar analysis</text>
+    </svg>
+  )
+}
+
+// ─── SVG diagram: Session Lifecycle ───────────────────────────────────────
+
+function SessionFlowSvg() {
+  const steps: [string, string][] = [
+    ['Create Session', ''],
+    ['Session Wizard', 'Directory · Harness · Policy · Goal · Docker'],
+    ['Git Worktree', 'Isolated branch from HEAD'],
+    ['Policy Enforcement', 'Compile universal → harness-native config'],
+    ['AuthZ Registration', 'Bind policy + harness for runtime decisions'],
+    ['PTY Spawn', 'Shell process with injected env vars'],
+    ['Ready', 'Terminal live, all systems armed'],
+  ]
+  return (
+    <svg viewBox="0 0 660 320" className="docs-svg" fill="none">
+      <line x1="80" y1="24" x2="80" y2="300" style={{ stroke: 'rgb(var(--d-neutral) / 0.06)' }} />
+      {steps.map(([label, sub], i) => {
+        const y = 24 + i * 44
+        const isLast = i === steps.length - 1
+        const base = isLast ? '--d-green' : '--d-blue'
+        return (
+          <g key={label}>
+            <circle cx="80" cy={y} r="8" style={{ fill: `rgb(var(${base}) / 0.06)`, stroke: `rgb(var(${base}) / ${isLast ? 0.2 : 0.15})` }} />
+            <circle cx="80" cy={y} r="3" style={{ fill: `rgb(var(${base}) / 0.5)` }} />
+            <text x="100" y={y + 1} fontSize="11" fontFamily="'Geist', sans-serif" fontWeight="500" dominantBaseline="middle" style={{ fill: 'rgb(var(--d-neutral) / 0.7)' }}>{label}</text>
+            {sub && <text x="100" y={y + 14} fontSize="9" fontFamily="'Geist', sans-serif" style={{ fill: 'rgb(var(--d-neutral) / 0.28)' }}>{sub}</text>}
+          </g>
+        )
+      })}
+    </svg>
   )
 }
 
@@ -189,23 +364,7 @@ export default function DocsView() {
           </div>
         </div>
 
-        <Diagram label="Architecture Overview">{
-`┌─────────────────────────────────────────────────────────┐
-│                       Y O U                             │
-└────────────────────────┬────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│                  LATCH DESKTOP                          │
-│                                                         │
-│  Policy Engine ─── AuthZ Server ─── Supervisor          │
-│  MCP Sync ──────── Radar ────────── Session Manager     │
-│  Secrets Vault ─── Activity Log ─── Docker Manager      │
-└──────┬──────────────────┬──────────────────┬────────────┘
-       │                  │                  │
-       ▼                  ▼                  ▼
-  Claude Code          Codex            OpenClaw`
-        }</Diagram>
+        <DiagramCard label="Architecture Overview"><ArchitectureSvg /></DiagramCard>
       </section>
 
       {/* ── HOW ───────────────────────────────────────────────────────── */}
@@ -218,38 +377,7 @@ export default function DocsView() {
 
         {/* The Stack */}
         <h3 className="docs-subsection-title">The Stack</h3>
-        <Diagram label="Process Model">{
-`┌─────────────────────────────────────────────────────────┐
-│ Renderer Process (React 18 + Zustand)                   │
-│                                                         │
-│  App ── Sidebar ── TerminalArea ── Views ── Modals      │
-│  useAppStore (all state) │ TerminalManager (xterm.js)   │
-└────────────────┬────────────────────────────────────────┘
-                 │  contextBridge (window.latch)
-                 │  IPC: latch:<module>-<action>
-┌────────────────┴────────────────────────────────────────┐
-│ Main Process (Node.js + Electron)                       │
-│                                                         │
-│  Services:                                              │
-│    AuthZ Server ── Policy Enforcer ── Policy Generator   │
-│    MCP Sync ────── Radar ─────────── Telemetry          │
-│    Supervisor ──── Secret Resolver ── LLM Evaluator     │
-│                                                         │
-│  Stores (SQLite):                                       │
-│    SessionStore ── PolicyStore ── SkillsStore            │
-│    McpStore ────── ActivityStore ── FeedStore            │
-│    SettingsStore ── SecretStore                          │
-│                                                         │
-│  Infrastructure:                                        │
-│    PTY Manager (node-pty) ── Docker Manager              │
-│    Git Workspaces ────────── Harness Detection           │
-└────────────────┬────────────────────────────────────────┘
-                 │
-         ┌───────┴───────┐
-         │  SQLite DB     │
-         │  (userData/)   │
-         └───────────────┘`
-        }</Diagram>
+        <DiagramCard label="Process Model"><ProcessModelSvg /></DiagramCard>
 
         {/* The AuthZ Loop */}
         <h3 className="docs-subsection-title">The Authorization Loop</h3>
@@ -257,87 +385,11 @@ export default function DocsView() {
           This is the centerpiece of Latch's security model. Every tool call goes through
           a 7-step evaluation pipeline before it can execute.
         </p>
-        <Diagram label="Authorization Flow">{
-`1. Agent invokes tool
-   │  └─ Harness fires PreToolUse hook (Claude Code)
-   │     or event hook (Codex)
-   │
-   ▼
-2. POST /decide → AuthZ Server (localhost:{port})
-   │  Payload: { tool_name, tool_input, session_id, harness_id }
-   │
-   ▼
-3. Evaluation cascade
-   │
-   │  ┌─ Rate limit check (per-session, per-tool)
-   │  ├─ Tool classification (read / write / execute / send)
-   │  ├─ Tool rules (pattern match: "Bash", "mcp__github__*")
-   │  ├─ Command rules (regex: "rm -rf", "curl.*|sh")
-   │  ├─ MCP server rules (per-server allow/deny/prompt)
-   │  ├─ Blocked globs ("/etc/**", "~/.ssh/**")
-   │  ├─ Permission flags (allowBash, allowNetwork, allowFileWrite)
-   │  └─ LLM evaluator fallback (intent-based, configurable scope)
-   │
-   ▼
-4. Decision
-   │  ├─ ALLOW (200) → tool executes normally
-   │  ├─ DENY  (403) → tool blocked, reason returned to agent
-   │  └─ PROMPT       → escalate to supervisor or Latch UI
-   │
-   ▼
-5. Supervisor (if PROMPT)
-   │  └─ Watches terminal for permission prompt
-   │     Types "yes" (approve) or "no" (deny) automatically
-   │     Or escalates to Latch approval bar for human decision
-   │
-   ▼
-6. Activity logged
-   │  └─ tool_name, action_class, risk, decision, timestamp
-   │
-   ▼
-7. Radar analysis
-      └─ z-score anomaly detection across sliding windows
-         Volume spikes, error rates, novel tool patterns`
-        }</Diagram>
+        <DiagramCard label="Authorization Flow"><AuthFlowSvg /></DiagramCard>
 
         {/* Session Lifecycle */}
         <h3 className="docs-subsection-title">Session Lifecycle</h3>
-        <Diagram label="Session Creation Flow">{
-`Create Session
-   │
-   ▼
-Session Wizard (modal overlay)
-   │  ├─ Pick project directory
-   │  ├─ Select harness (Claude Code / Codex / OpenClaw)
-   │  ├─ Choose or create policy
-   │  ├─ Set goal description
-   │  └─ Configure Docker sandbox (optional)
-   │
-   ▼
-Git Worktree
-   │  └─ git worktree add ~/.latch/workspaces/<session>
-   │     Creates isolated branch from current HEAD
-   │
-   ▼
-Policy Enforcement
-   │  └─ Compile universal policy → harness-native config
-   │     Write hooks.json / config.toml / .rules to worktree
-   │
-   ▼
-AuthZ Registration
-   │  └─ Register session with AuthZ server
-   │     Bind policy + harness ID for runtime decisions
-   │
-   ▼
-PTY Spawn
-   │  └─ node-pty creates shell process
-   │     CWD = worktree path, ENV includes authz port
-   │     Harness command injected as first shell input
-   │
-   ▼
-Ready
-      └─ Terminal live, agent running, all systems armed`
-        }</Diagram>
+        <DiagramCard label="Session Creation Flow"><SessionFlowSvg /></DiagramCard>
       </section>
 
       {/* ── FEATURES ──────────────────────────────────────────────────── */}
@@ -513,6 +565,42 @@ Ready
               air-gapped sandbox. Volume mounts are configured to bind the workspace directory
               (read-write) and optionally mount additional paths (read-only). The PTY spawns
               inside the container via <code>docker exec</code> when sandbox mode is active.
+            </p>
+          </FeatureCard>
+
+          <FeatureCard
+            icon="⛊"
+            title="Enclave & Services"
+            summary="Secure service integration through a proxy architecture that injects credentials, enforces data-tier policies, and produces cryptographic attestation receipts."
+            detailId="enclave"
+            expanded={isExpanded('enclave')}
+            onToggle={toggle}
+          >
+            <p>
+              The Enclave proxy intercepts outbound requests from agent sessions and applies
+              per-service rules. Each <code>ServiceDefinition</code> declares allowed domains,
+              credential injection headers, data tier classification, and redaction patterns.
+              Credentials are resolved from the encrypted secrets vault at request time and
+              never exposed to the agent process.
+            </p>
+            <p>
+              Sandbox enforcement ensures agents can only reach services explicitly configured
+              in the active policy. Requests to unlisted domains are blocked by default. The
+              proxy logs every request as a <code>ProxyAuditEvent</code> with method, domain,
+              path, and allow/deny decision for full traceability.
+            </p>
+            <p>
+              At session end, the Enclave produces a <code>SessionReceipt</code> containing a
+              Merkle root over all audit events and a cryptographic signature. This receipt
+              can be attached to pull requests as a provenance annotation, proving which
+              external services were accessed and what policy was in effect.
+            </p>
+            <p>
+              Service definitions follow a declarative schema covering credential type
+              (token, keypair, OAuth, env-bundle), injection method (environment variables,
+              files, proxy headers), and data-tier redaction rules. A built-in catalog
+              provides pre-configured definitions for common services like GitHub, AWS, and
+              npm that can be customized before installation.
             </p>
           </FeatureCard>
 
