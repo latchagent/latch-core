@@ -6,7 +6,7 @@ description: LLM-assisted data classification for the Latch Enclave proxy. Cover
 # Data Classifier
 
 The data classifier provides LLM-assisted classification of API response bodies
-into sensitivity tiers. It is advisory only — classifications are proposals that
+into sensitivity tiers. It is advisory only -- classifications are proposals that
 the user must review before they are promoted to service definition patterns.
 
 **Design principle: propose only, never enforce.**
@@ -21,10 +21,10 @@ the user must review before they are promoted to service definition patterns.
 
 Builds the LLM prompt for classifying a response body.
 
-- **body** (`string`) — The raw response body to classify.
-- **serviceId** (`string`) — The service ID (e.g. `"github"`).
-- **contentType** (`string`) — The Content-Type header value (e.g. `"application/json"`).
-- **Returns** `string` — The full prompt text.
+- **body** (`string`) -- The raw response body to classify.
+- **serviceId** (`string`) -- The service ID (e.g. `"github"`).
+- **contentType** (`string`) -- The Content-Type header value (e.g. `"application/json"`).
+- **Returns** `string` -- The full prompt text.
 
 Key behavior:
 - Truncates the body at 4000 characters to stay within token limits.
@@ -35,8 +35,8 @@ Key behavior:
 
 Parses and validates the LLM's JSON response.
 
-- **response** (`string`) — Raw LLM output (expected to be JSON).
-- **Returns** `DataClassification | null` — Parsed classification, or `null` if invalid.
+- **response** (`string`) -- Raw LLM output (expected to be JSON).
+- **Returns** `DataClassification | null` -- Parsed classification, or `null` if invalid.
 
 Validation rules:
 - Must be valid JSON.
@@ -45,7 +45,7 @@ Validation rules:
 - `patterns` defaults to `[]` if not an array.
 - `reasoning` is coerced to string.
 
-Returns `null` for any validation failure — never throws.
+Returns `null` for any validation failure -- never throws.
 
 ### DataClassifier class
 
@@ -59,7 +59,7 @@ class DataClassifier {
 - Requires an OpenAI API key; returns `null` if no key is set.
 - Uses `gpt-4o-mini` with `temperature: 0.1` and `response_format: { type: 'json_object' }`.
 - 15-second request timeout via `AbortSignal.timeout`.
-- All errors are caught and return `null` — never throws.
+- All errors are caught and return `null` -- never throws.
 
 ---
 
@@ -92,6 +92,13 @@ interface DataClassification {
 - **Response**: `{ ok: boolean; classification?: DataClassification; error?: string }`
 - Registered in `src/main/index.ts`, exposed via preload as `window.latch.classifyData()`.
 
+The DataClassifier singleton is initialized in `app.whenReady()` with the OpenAI API key from settings:
+
+```typescript
+const openaiKey = settingsStore?.get('openai-api-key')
+dataClassifier = new DataClassifier(openaiKey?.value ?? null)
+```
+
 ---
 
 ## Testing
@@ -122,3 +129,12 @@ rather than on every proxied response. Typical usage:
 
 This keeps the proxy fast (no LLM latency in the request path) while still
 providing intelligent classification assistance.
+
+---
+
+## Custom Service Builder (`src/renderer/components/modals/ServiceEditor.tsx`)
+
+The ServiceEditor modal provides a UI for creating custom services. The data tier
+selection in the service editor can be informed by classification results. Users
+can classify sample data and use the suggested tier when configuring a new service's
+`dataTier.defaultTier`.

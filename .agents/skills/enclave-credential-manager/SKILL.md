@@ -13,17 +13,17 @@ The CredentialManager does NOT store credentials (that is SecretStore's job). In
 
 ### Core Responsibilities
 
-1. **Expiry detection** — checks `ServiceCredentialConfig.expiresAt` against the current time
-2. **Upstream validation** — sends a HEAD request to the service's first domain with injected headers to verify the credential is still accepted
-3. **Status tracking** — maintains an in-memory map of per-service credential status (valid, lastValidated, lastUsed, expired)
+1. **Expiry detection** -- checks `ServiceCredentialConfig.expiresAt` against the current time
+2. **Upstream validation** -- sends a HEAD request to the service's first domain with injected headers to verify the credential is still accepted
+3. **Status tracking** -- maintains an in-memory map of per-service credential status (valid, lastValidated, lastUsed, expired)
 
 ## Key API
 
-- `isExpired(service)` — Returns `true` if the service's `credential.expiresAt` is in the past. Returns `false` if no `expiresAt` is set (non-expiring credential).
-- `validateCredential(service, credentials)` — Makes a HEAD request to `https://<first-domain>/` with headers populated from the service's injection config. Returns `{ valid, status, error? }`. Status codes 200, 404, and 405 are considered valid (the credential works, the endpoint just may not support HEAD).
-- `recordValidation(serviceId, valid)` — Updates the in-memory status map with the validation result and timestamp.
-- `recordUsage(serviceId)` — Updates the `lastUsed` timestamp (called when credentials are injected into a proxied request).
-- `getStatus(serviceId)` — Returns the current `CredentialStatus` for a service, or a default status if not yet tracked.
+- `isExpired(service)` -- Returns `true` if the service's `credential.expiresAt` is in the past. Returns `false` if no `expiresAt` is set (non-expiring credential).
+- `validateCredential(service, credentials)` -- Makes a HEAD request to `https://<first-domain>/` with headers populated from the service's injection config. Returns `{ valid, status, error? }`. Status codes 200, 404, and 405 are considered valid (the credential works, the endpoint just may not support HEAD).
+- `recordValidation(serviceId, valid)` -- Updates the in-memory status map with the validation result and timestamp.
+- `recordUsage(serviceId)` -- Updates the `lastUsed` timestamp (called when credentials are injected into a proxied request).
+- `getStatus(serviceId)` -- Returns the current `CredentialStatus` for a service, or a default status if not yet tracked.
 
 ## Types
 
@@ -43,6 +43,22 @@ interface ValidationResult {
 }
 ```
 
+## Credential Lifecycle Fields (Phase 5)
+
+The `ServiceCredentialConfig` type in `src/types/index.ts` includes lifecycle fields:
+
+```typescript
+interface ServiceCredentialConfig {
+  type: 'token' | 'keypair' | 'oauth' | 'env-bundle'
+  fields: string[]
+  expiresAt?: string             // ISO 8601, null/undefined if non-expiring
+  refreshEndpoint?: string       // URL for token refresh (future use)
+  rotationPolicy?: 'manual' | 'auto'  // how rotation is handled (future use)
+}
+```
+
+The `expiresAt` field drives the `isExpired()` check. The `refreshEndpoint` and `rotationPolicy` fields are defined for future token refresh and rotation automation.
+
 ## Credential Injection for Validation
 
 The `validateCredential` method builds headers by replacing `${credential.<field>}` placeholders in the service's `injection.proxy.headers` with actual credential values. For example:
@@ -57,16 +73,20 @@ This mirrors the same injection logic used by the EgressFilter during proxy oper
 
 ## Dependencies
 
-- `ServiceDefinition` from `../../types` — provides `credential.expiresAt`, `injection.proxy.domains`, and `injection.proxy.headers`
-- `globalThis.fetch` — used for the HEAD validation request (5 second timeout via AbortSignal)
+- `ServiceDefinition` from `../../types` -- provides `credential.expiresAt`, `injection.proxy.domains`, and `injection.proxy.headers`
+- `globalThis.fetch` -- used for the HEAD validation request (5 second timeout via AbortSignal)
 
 ## Integration Points
 
 - **IPC handlers** in `src/main/index.ts`:
-  - `latch:credential-status` — returns expiry/validation status for a service
-  - `latch:credential-refresh` — triggers validation and returns the result
-- **LatchProxy** — can call `recordUsage()` when injecting credentials into proxied requests
-- **Renderer** — the ServicesPanel can poll credential status to show health indicators
+  - `latch:credential-status` -- returns expiry/validation status for a service
+  - `latch:credential-refresh` -- triggers validation and returns the result
+- **Preload** in `src/preload/index.ts`:
+  - `window.latch.getCredentialStatus({ serviceId })` -- renderer access to credential status
+  - `window.latch.refreshCredential({ serviceId })` -- renderer-initiated credential validation
+- **LatchProxy** -- can call `recordUsage()` when injecting credentials into proxied requests
+- **Renderer** -- the ServicesPanel can poll credential status to show health indicators
+- **Proxy feedback** -- the `credential-expired` feedback type (label: `CRED-EXPIRED`) is used when a credential is detected as expired during proxy operation
 
 ## Testing
 
