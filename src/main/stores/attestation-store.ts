@@ -76,8 +76,8 @@ export class AttestationStore {
       ? 'SELECT event_json FROM proxy_audit_log WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
       : 'SELECT event_json FROM proxy_audit_log WHERE session_id = ? ORDER BY created_at ASC'
     const rows = limit
-      ? this.db.prepare(sql).all(sessionId, limit) as any[]
-      : this.db.prepare(sql).all(sessionId) as any[]
+      ? this.db.prepare(sql).all(sessionId, limit) as { event_json: string }[]
+      : this.db.prepare(sql).all(sessionId) as { event_json: string }[]
     return rows.map(r => JSON.parse(r.event_json))
   }
 
@@ -122,7 +122,7 @@ export class AttestationStore {
 
   saveReceipt(receipt: SessionReceipt): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO session_receipts (session_id, receipt_json, created_at)
+      INSERT INTO session_receipts (session_id, receipt_json, created_at)
       VALUES (?, ?, ?)
     `).run(receipt.sessionId, JSON.stringify(receipt), new Date().toISOString())
   }

@@ -6,8 +6,10 @@
  * (typically per app lifecycle). Receipts are self-contained and verifiable.
  */
 
-import { createHash, generateKeyPairSync, sign, verify, createPublicKey } from 'node:crypto'
-import { verifyInclusionProof as verifyProof } from '../lib/merkle'
+import { createHash, generateKeyPairSync, sign, verify, createPublicKey, createPrivateKey, KeyObject } from 'node:crypto'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import { verifyInclusionProof } from '../lib/merkle'
 import type { AttestationStore } from '../stores/attestation-store'
 import type { PolicyDocument, SessionReceipt, DataTier, MerkleProof } from '../../types'
 
@@ -22,8 +24,12 @@ export interface ReceiptInput {
     blocked: number
     redactions: number
     tokenizations: number
+    toolCalls: number
+    toolDenials: number
+    approvalEscalations: number
   }
   sandboxType: 'docker' | 'seatbelt' | 'bubblewrap'
+  networkForced: boolean
   exitReason: 'normal' | 'timeout' | 'killed' | 'error'
   startTime: number
   endTime: number
@@ -31,14 +37,43 @@ export interface ReceiptInput {
 
 export class AttestationEngine {
   private store: AttestationStore
-  private privateKey: ReturnType<typeof generateKeyPairSync>['privateKey']
+  private privateKey: KeyObject
   private publicKeyPem: string
 
-  constructor(store: AttestationStore) {
+  constructor(store: AttestationStore, keyPath?: string) {
     this.store = store
-    const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+    const { privateKey, publicKeyPem } = AttestationEngine._loadOrGenerateKeys(keyPath)
     this.privateKey = privateKey
-    this.publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
+    this.publicKeyPem = publicKeyPem
+  }
+
+  /** Load an existing keypair from disk, or generate and persist a new one. */
+  private static _loadOrGenerateKeys(keyPath?: string): { privateKey: KeyObject; publicKeyPem: string } {
+    if (keyPath) {
+      try {
+        const keyData = fs.readFileSync(keyPath, 'utf-8')
+        const parsed = JSON.parse(keyData)
+        const privateKey = createPrivateKey({ key: Buffer.from(parsed.privateKey, 'base64'), format: 'der', type: 'pkcs8' })
+        return { privateKey, publicKeyPem: parsed.publicKey }
+      } catch {
+        // Key file missing or corrupt — generate new keys
+      }
+    }
+
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+    const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
+
+    if (keyPath) {
+      const dir = path.dirname(keyPath)
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      const keyData = JSON.stringify({
+        privateKey: (privateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer).toString('base64'),
+        publicKey: publicKeyPem,
+      })
+      fs.writeFileSync(keyPath, keyData, { mode: 0o600 })
+    }
+
+    return { privateKey, publicKeyPem }
   }
 
   /** Generate a signed session receipt and save it to the store. */
@@ -66,13 +101,13 @@ export class AttestationEngine {
         blockedRequests: input.activity.blocked,
         redactionsApplied: input.activity.redactions,
         tokenizationsApplied: input.activity.tokenizations,
-        toolCalls: 0,
-        toolDenials: 0,
-        approvalEscalations: 0,
+        toolCalls: input.activity.toolCalls,
+        toolDenials: input.activity.toolDenials,
+        approvalEscalations: input.activity.approvalEscalations,
       },
       enclave: {
         sandboxType: input.sandboxType,
-        networkForced: true,
+        networkForced: input.networkForced,
         startedAt: new Date(input.startTime).toISOString(),
         endedAt: new Date(input.endTime).toISOString(),
         exitReason: input.exitReason,
@@ -94,11 +129,11 @@ export class AttestationEngine {
     return receipt
   }
 
-  /** Verify a receipt's signature. */
-  verifyReceipt(receipt: SessionReceipt): boolean {
+  /** Verify a receipt's signature. If trustedPublicKey PEM is provided, verify against it instead of the embedded key. */
+  verifyReceipt(receipt: SessionReceipt, trustedPublicKey?: string): boolean {
     try {
       const payload = JSON.stringify({ ...receipt, proof: { ...receipt.proof, signature: '' } })
-      const pubKey = createPublicKey(receipt.proof.publicKey)
+      const pubKey = createPublicKey(trustedPublicKey ?? receipt.proof.publicKey)
       return verify(null, Buffer.from(payload), pubKey, Buffer.from(receipt.proof.signature, 'base64'))
     } catch {
       return false
@@ -112,6 +147,6 @@ export class AttestationEngine {
 
   /** Verify a Merkle inclusion proof. */
   verifyInclusionProof(proof: MerkleProof): boolean {
-    return verifyProof(proof)
+    return verifyInclusionProof(proof)
   }
 }
