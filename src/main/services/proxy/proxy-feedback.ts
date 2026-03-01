@@ -14,6 +14,9 @@ const LABELS: Record<ProxyFeedbackMessage['type'], string> = {
   redaction: 'REDACTED',
   tokenization: 'TOKENIZED',
   'tls-exception': 'TLS-EXCEPTION',
+  'scope-violation': 'SCOPE-DENIED',
+  'credential-expired': 'CRED-EXPIRED',
+  'leak-detected': 'LEAK-DETECTED',
 }
 
 /**

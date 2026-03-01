@@ -53,6 +53,45 @@ describe('ProxyFeedback', () => {
     expect(formatted).toContain('TLS-EXCEPTION')
   })
 
+  it('formats leak-detected messages', () => {
+    const msg: ProxyFeedbackMessage = {
+      type: 'leak-detected',
+      domain: 'api.github.com',
+      service: 'github',
+      detail: 'Credential leak detected in request body: token',
+    }
+    const formatted = formatFeedback(msg)
+    expect(formatted).toContain('[LATCH]')
+    expect(formatted).toContain('LEAK-DETECTED')
+    expect(formatted).toContain('api.github.com')
+    expect(formatted).toContain('github')
+    expect(formatted).toContain('Credential leak')
+  })
+
+  it('formats scope-violation messages', () => {
+    const msg: ProxyFeedbackMessage = {
+      type: 'scope-violation',
+      domain: 'api.github.com',
+      service: 'github',
+      detail: 'DELETE /repos/foo denied by path rule',
+    }
+    const formatted = formatFeedback(msg)
+    expect(formatted).toContain('[LATCH]')
+    expect(formatted).toContain('SCOPE-DENIED')
+  })
+
+  it('formats credential-expired messages', () => {
+    const msg: ProxyFeedbackMessage = {
+      type: 'credential-expired',
+      domain: 'api.github.com',
+      service: 'github',
+      detail: 'Token expired at 2026-01-01T00:00:00Z',
+    }
+    const formatted = formatFeedback(msg)
+    expect(formatted).toContain('[LATCH]')
+    expect(formatted).toContain('CRED-EXPIRED')
+  })
+
   it('createFeedbackSender calls send function with formatted message', () => {
     const sent: string[] = []
     const sender = createFeedbackSender((data: string) => sent.push(data))

@@ -158,6 +158,32 @@ describe('LatchProxy', () => {
     expect(events[0].contentType).toBeNull()
   })
 
+  it('detects credential leaks in outbound request bodies', () => {
+    const leakService: ServiceDefinition = {
+      ...MOCK_SERVICE,
+      dataTier: {
+        defaultTier: 'public',
+        redaction: {
+          patterns: ['secret-api-key-\\w+'],
+          fields: [],
+        },
+      },
+    }
+    const creds = new Map([['httpbin', { token: 'secret-api-key-12345' }]])
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-session',
+      services: [leakService],
+      credentials: creds,
+      maxDataTier: 'internal' as DataTier,
+    })
+
+    // The proxy's egress filter should detect 'secret-api-key-12345' in an outbound body
+    const result = proxy2['egressFilter'].scanForLeaks(leakService, 'sending secret-api-key-12345 in body')
+    expect(result.safe).toBe(false)
+    expect(result.leaked).toContain('secret-api-key-12345')
+    proxy2.stop()
+  })
+
   it('persists audit events to AttestationStore when provided', () => {
     const recorded: ProxyAuditEvent[] = []
     const mockStore = { recordEvent: vi.fn((e: ProxyAuditEvent) => recorded.push(e)) }

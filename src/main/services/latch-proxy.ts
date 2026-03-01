@@ -163,6 +163,23 @@ export class LatchProxy {
         reqBody = Buffer.from(detokenized, 'utf-8')
       }
 
+      // Scan outbound body for credential leaks
+      if (creds) {
+        const leakCheck = this.egressFilter.scanForLeaks(service, detokenized)
+        if (!leakCheck.safe) {
+          this.config.onFeedback?.({
+            type: 'leak-detected',
+            domain,
+            service: service.id,
+            detail: `Credential leak detected in request body: ${leakCheck.leaked.join(', ')}`,
+          })
+          this._recordAudit(domain, req.method ?? 'GET', url.pathname, service.id, 'deny', `Credential leak: ${leakCheck.leaked.join(', ')}`)
+          res.writeHead(403, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request blocked: credential leak detected' }))
+          return
+        }
+      }
+
       const proxyReq = http.request(
         {
           hostname: domain,
@@ -345,6 +362,23 @@ export class LatchProxy {
       const detokenized = this.tokenMap.detokenizeString(bodyStr, service.id)
       if (detokenized !== bodyStr) {
         body = Buffer.from(detokenized, 'utf-8')
+      }
+
+      // Scan outbound body for credential leaks
+      if (creds) {
+        const leakCheck = this.egressFilter.scanForLeaks(service, detokenized)
+        if (!leakCheck.safe) {
+          this.config.onFeedback?.({
+            type: 'leak-detected',
+            domain: host,
+            service: service.id,
+            detail: `Credential leak detected in request body: ${leakCheck.leaked.join(', ')}`,
+          })
+          this._recordAudit(host, method, path, service.id, 'deny', `Credential leak: ${leakCheck.leaked.join(', ')}`)
+          res.writeHead(403, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request blocked: credential leak detected' }))
+          return
+        }
       }
 
       // Forward to real upstream with TLS
