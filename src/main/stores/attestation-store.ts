@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { ProxyAuditEvent, SessionReceipt, MerkleProof } from '../../types'
 import { computeLeafHash, buildMerkleRoot, buildInclusionProof } from '../lib/merkle'
+import { canonicalJsonStringify } from '../lib/canonical-json'
 
 export class AttestationStore {
   private db: Database.Database
@@ -55,7 +56,7 @@ export class AttestationStore {
     ).get(event.sessionId) as { hash: string } | undefined
     const prevHash = prevRow?.hash ?? ''
 
-    const eventJson = JSON.stringify(event)
+    const eventJson = canonicalJsonStringify(event)
     const hash = createHash('sha256').update(prevHash + eventJson).digest('hex')
 
     // Compute leaf_index as next sequential index for this session
