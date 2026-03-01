@@ -57,6 +57,8 @@ import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdate
 import { initDebugLog, closeDebugLog } from './services/debug-log'
 import { ServiceStore }                          from './stores/service-store'
 import { AttestationStore }                      from './stores/attestation-store'
+import { AttestationEngine }                     from './services/attestation'
+import { annotatePR }                            from './services/pr-annotator'
 import { SERVICE_CATALOG }                       from './lib/service-catalog'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ let settingsStore: SettingsStore | null = null
 let secretStore: SecretStore | null = null
 let serviceStore: ServiceStore | null = null
 let attestationStore: AttestationStore | null = null
+let attestationEngine: AttestationEngine | null = null
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
@@ -193,6 +196,7 @@ app.whenReady().then(() => {
     secretStore   = SecretStore.open(db)
     serviceStore  = ServiceStore.open(db)
     attestationStore = AttestationStore.open(db)
+    attestationEngine = new AttestationEngine(attestationStore)
 
     // Bind telemetry to settings store (SDK already initialised above)
     bindTelemetrySettings((k) => settingsStore!.get(k))
@@ -589,6 +593,25 @@ app.whenReady().then(() => {
   ipcMain.handle('latch:attestation-audit-log', async (_event: any, { sessionId, limit }: any) => {
     if (!attestationStore) return { ok: false, events: [] }
     return { ok: true, events: attestationStore.listEvents(sessionId, limit) }
+  })
+
+  ipcMain.handle('latch:attestation-inclusion-proof', async (_event: any, { sessionId, eventId }: any) => {
+    if (!attestationEngine) return { ok: false, error: 'AttestationEngine unavailable' }
+    const proof = attestationEngine.generateInclusionProof(sessionId, eventId)
+    if (!proof) return { ok: false, error: 'Event not found or no audit log' }
+    return { ok: true, proof }
+  })
+
+  ipcMain.handle('latch:attestation-annotate-pr', async (_event: any, { sessionId, prUrl }: any) => {
+    if (!attestationStore) return { ok: false, error: 'AttestationStore unavailable' }
+    const receipt = attestationStore.getReceipt(sessionId)
+    if (!receipt) return { ok: false, error: 'No receipt for this session' }
+
+    // Get GitHub token from secrets store
+    const token = secretStore?.resolve('service:github')
+    if (!token) return { ok: false, error: 'No GitHub credential configured' }
+
+    return annotatePR(receipt, prUrl, token)
   })
 
   // ── Skills handlers ─────────────────────────────────────────────────────

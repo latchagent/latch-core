@@ -323,6 +323,12 @@ contextBridge.exposeInMainWorld('latch', {
   listProxyAudit: (payload: { sessionId: string; limit?: number }) =>
     ipcRenderer.invoke('latch:attestation-audit-log', payload),
 
+  getInclusionProof: (payload: { sessionId: string; eventId: string }) =>
+    ipcRenderer.invoke('latch:attestation-inclusion-proof', payload),
+
+  annotateGitHubPR: (payload: { sessionId: string; prUrl: string }) =>
+    ipcRenderer.invoke('latch:attestation-annotate-pr', payload),
+
   // ── Feed (agent status updates) ────────────────────────────────────────
 
   listFeed: (payload?: { sessionId?: string; limit?: number }) =>
