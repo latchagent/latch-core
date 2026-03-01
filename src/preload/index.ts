@@ -155,6 +155,13 @@ contextBridge.exposeInMainWorld('latch', {
     return () => { ipcRenderer.removeListener('latch:docker-status', handler) }
   },
 
+  // ── Sandbox ────────────────────────────────────────────────────────────────
+
+  sandboxDetect: () => ipcRenderer.invoke('latch:sandbox-detect'),
+
+  sandboxStatus: (payload: { sessionId: string }) =>
+    ipcRenderer.invoke('latch:sandbox-status', payload),
+
   // ── Activity / Authz ──────────────────────────────────────────────────────
 
   listActivity: (payload?: { sessionId?: string; limit?: number; offset?: number }) =>

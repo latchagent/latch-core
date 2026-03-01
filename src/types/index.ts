@@ -570,6 +570,10 @@ export interface LatchAPI {
   dockerStatus(payload: { sessionId: string }): Promise<{ ok: boolean; status: DockerStatus | null; containerId: string | null }>;
   onDockerStatus(callback: (payload: { sessionId: string; status: DockerStatus }) => void): () => void;
 
+  // Sandbox
+  sandboxDetect(): Promise<{ ok: boolean; backends: Record<string, { available: boolean; version?: string; reason?: string }>; best: string | null }>;
+  sandboxStatus(payload: { sessionId: string }): Promise<{ ok: boolean; status: string | null; backend: string | null; processId: string | null }>;
+
   // Activity / Authz
   listActivity(payload?: { sessionId?: string; limit?: number; offset?: number }): Promise<{ ok: boolean; events: ActivityEvent[]; total: number }>;
   clearActivity(payload?: { sessionId?: string }): Promise<{ ok: boolean }>;

@@ -35,6 +35,7 @@ import { introspectMcpServer }                   from './services/mcp-introspect
 
 import PtyManager                                from './lib/pty-manager'
 import DockerManager                             from './lib/docker-manager'
+import { SandboxManager }                        from './lib/sandbox/sandbox-manager'
 import { AuthzServer }                           from './services/authz-server'
 import { Supervisor }                            from './services/supervisor'
 import { ActivityStore }                         from './stores/activity-store'
@@ -64,6 +65,7 @@ let mainWindow: BrowserWindow
 // Initialised in app.whenReady() — always available inside IPC handlers.
 let ptyManager!: PtyManager
 let dockerManager!: DockerManager
+let sandboxManager!: SandboxManager
 let sessionStore!: SessionStore
 let policyStore!: PolicyStore
 let skillsStore!: SkillsStore
@@ -169,6 +171,9 @@ app.whenReady().then(() => {
 
   // Docker manager — forwards container status events to the renderer.
   dockerManager = new DockerManager(sendToRenderer)
+
+  // Sandbox manager — unified sandbox backend selection and lifecycle.
+  sandboxManager = new SandboxManager(sendToRenderer)
 
   // Open (or create) the SQLite database shared by all stores.
   try {
@@ -766,6 +771,23 @@ app.whenReady().then(() => {
     return { ok: true, ...status }
   })
 
+  // ── Sandbox handlers ───────────────────────────────────────────────────
+
+  ipcMain.handle('latch:sandbox-detect', async () => {
+    try {
+      const backends = await sandboxManager.getAvailableBackends()
+      const best = await sandboxManager.detectBestBackend()
+      return { ok: true, backends, best: best.backend }
+    } catch (err: any) {
+      return { ok: false, error: err?.message, backends: {}, best: null }
+    }
+  })
+
+  ipcMain.handle('latch:sandbox-status', async (_event: any, { sessionId }: any) => {
+    const status = sandboxManager.getSessionStatus(sessionId)
+    return { ok: true, ...status }
+  })
+
   // ── Project stack detection ────────────────────────────────────────────
 
   ipcMain.handle('latch:detect-project-stack', async (_event: any, { cwd }: any) => {
@@ -881,6 +903,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   ptyManager?.disposeAll()
   dockerManager?.disposeAll()
+  sandboxManager?.disposeAll()
   authzServer?.stop()
   radar?.stop()
   db?.close()
