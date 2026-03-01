@@ -5,6 +5,11 @@
  */
 
 import type { ServiceDefinition, DataTier } from '../../../types'
+import { safeRegexMatch, safeRegexTest } from '../../lib/safe-regex'
+import { interpolateCredentialHeaders } from '../../lib/credential-utils'
+
+/** Valid hostname characters — rejects whitespace, newlines, and non-hostname chars. */
+const VALID_DOMAIN_RE = /^[a-zA-Z0-9.*-]+$/
 
 const TIER_LEVELS: Record<DataTier, number> = {
   public: 0,
@@ -22,6 +27,7 @@ export class EgressFilter {
     this.domainRules = []
     for (const svc of services) {
       for (const domain of svc.injection.proxy.domains) {
+        if (!VALID_DOMAIN_RE.test(domain)) continue // L2: reject invalid domain chars
         const pattern = domain.replace(/\./g, '\\.').replace(/\*/g, '[^.]+')
         this.domainRules.push({
           regex: new RegExp(`^${pattern}$`, 'i'),
@@ -47,15 +53,7 @@ export class EgressFilter {
     service: ServiceDefinition,
     credentials: Record<string, string>,
   ): Record<string, string> {
-    const result: Record<string, string> = {}
-    for (const [key, template] of Object.entries(service.injection.proxy.headers)) {
-      let value = template
-      for (const [field, fieldValue] of Object.entries(credentials)) {
-        value = value.replace(`\${credential.${field}}`, fieldValue)
-      }
-      result[key] = value
-    }
-    return result
+    return interpolateCredentialHeaders(service.injection.proxy.headers, credentials)
   }
 
   scanForLeaks(
@@ -64,13 +62,8 @@ export class EgressFilter {
   ): { safe: boolean; leaked: string[] } {
     const leaked: string[] = []
     for (const pattern of service.dataTier.redaction.patterns) {
-      try {
-        const regex = new RegExp(pattern, 'g')
-        const matches = body.match(regex)
-        if (matches) leaked.push(...matches)
-      } catch {
-        // Invalid regex — skip
-      }
+      const matches = safeRegexMatch(pattern, 'g', body)
+      if (matches) leaked.push(...matches)
     }
     return { safe: leaked.length === 0, leaked }
   }
@@ -106,8 +99,8 @@ export class EgressFilter {
       }
     }
 
-    // Allow rules exist but none matched — allow by default (deny must be explicit)
-    return { allowed: true }
+    // C3: Allow rules exist but none matched — deny (allowlist semantics)
+    return { allowed: false, reason: 'No matching allow rule' }
   }
 
   private _methodMatches(methods: string[], method: string): boolean {
@@ -116,10 +109,8 @@ export class EgressFilter {
 
   private _pathMatches(patterns: string[], path: string): boolean {
     return patterns.some(pattern => {
-      const regex = new RegExp(
-        '^' + pattern.replace(/\*\*/g, '.*').replace(/(?<!\.)(\*)/g, '[^/]*') + '$'
-      )
-      return regex.test(path)
+      const escaped = '^' + pattern.replace(/\*\*/g, '.*').replace(/(?<!\.)(\*)/g, '[^/]*') + '$'
+      return safeRegexTest(escaped, '', path)
     })
   }
 }

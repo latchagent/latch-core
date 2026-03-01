@@ -10,23 +10,30 @@
 import { randomBytes } from 'node:crypto'
 import type { TokenEntry, DataTier } from '../../../types'
 
-const TOKEN_RE = /tok_[a-f0-9]{8}/g
+const TOKEN_RE = /tok_[a-f0-9]{32}/g
 
 export class TokenMap {
   private tokens = new Map<string, TokenEntry>()
+  /** Secondary index: "value\0serviceId" -> tokenId for O(1) dedup lookup. */
+  private valueIndex = new Map<string, string>()
+
+  private _dedupKey(value: string, serviceId: string): string {
+    return `${value}\0${serviceId}`
+  }
 
   tokenize(
     value: string,
     origin: { service: string; tier: DataTier; endpoint: string },
   ): TokenEntry {
-    // Check if this exact value+service is already tokenized
-    for (const entry of this.tokens.values()) {
-      if (entry.value === value && entry.origin.service === origin.service) {
-        return entry
-      }
+    // O(1) dedup check via secondary index
+    const dedupKey = this._dedupKey(value, origin.service)
+    const existingId = this.valueIndex.get(dedupKey)
+    if (existingId) {
+      const existing = this.tokens.get(existingId)
+      if (existing) return existing
     }
 
-    const id = `tok_${randomBytes(4).toString('hex')}`
+    const id = `tok_${randomBytes(16).toString('hex')}`
     const entry: TokenEntry = {
       id,
       value,
@@ -35,6 +42,7 @@ export class TokenMap {
       createdAt: new Date().toISOString(),
     }
     this.tokens.set(id, entry)
+    this.valueIndex.set(dedupKey, id)
     return entry
   }
 
@@ -68,5 +76,6 @@ export class TokenMap {
 
   clear(): void {
     this.tokens.clear()
+    this.valueIndex.clear()
   }
 }

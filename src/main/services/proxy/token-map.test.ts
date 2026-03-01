@@ -9,7 +9,7 @@ describe('TokenMap', () => {
       tier: 'internal',
       endpoint: 'api.github.com/repos/foo/pulls',
     })
-    expect(entry.id).toMatch(/^tok_[a-f0-9]{8}$/)
+    expect(entry.id).toMatch(/^tok_[a-f0-9]{32}$/)
     expect(entry.value).toBe('user@corp.com')
     expect(entry.origin.service).toBe('github')
     expect(entry.validDestinations).toEqual(['github'])
@@ -49,7 +49,7 @@ describe('TokenMap', () => {
       endpoint: 'api.github.com/user',
     })
     expect(result).not.toContain('user@corp.com')
-    expect(result).toMatch(/tok_[a-f0-9]{8}/)
+    expect(result).toMatch(/tok_[a-f0-9]{32}/)
   })
 
   it('de-tokenizes tokens in a string for allowed service', () => {

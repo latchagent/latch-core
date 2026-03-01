@@ -5174,9 +5174,21 @@ textarea:focus-visible,
 }
 
 .enclave-panel h3 {
-  margin: 0 0 12px 0;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
+}
+
+.enclave-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.enclave-error {
+  color: var(--error);
+  font-size: 12px;
 }
 
 .enclave-section {

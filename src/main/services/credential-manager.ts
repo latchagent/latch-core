@@ -8,6 +8,7 @@
  */
 
 import type { ServiceDefinition } from '../../types'
+import { interpolateCredentialHeaders } from '../lib/credential-utils'
 
 export interface CredentialStatus {
   serviceId: string
@@ -46,14 +47,7 @@ export class CredentialManager {
 
     try {
       // Build headers with credential injection
-      const headers: Record<string, string> = {}
-      for (const [key, template] of Object.entries(service.injection.proxy.headers)) {
-        let value = template
-        for (const [field, fieldValue] of Object.entries(credentials)) {
-          value = value.replace(`\${credential.${field}}`, fieldValue)
-        }
-        headers[key] = value
-      }
+      const headers = interpolateCredentialHeaders(service.injection.proxy.headers, credentials)
 
       const response = await fetch(`https://${domain}/`, {
         method: 'HEAD',
@@ -64,8 +58,8 @@ export class CredentialManager {
       const valid = response.ok || response.status === 404 || response.status === 405
       this.recordValidation(service.id, valid)
       return { valid, status: response.status }
-    } catch (err: any) {
-      return { valid: false, status: null, error: err.message }
+    } catch (err: unknown) {
+      return { valid: false, status: null, error: err instanceof Error ? err.message : String(err) }
     }
   }
 

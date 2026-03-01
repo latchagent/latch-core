@@ -10,7 +10,6 @@
 import crypto from 'node:crypto'
 import http from 'node:http'
 import os from 'node:os'
-import vm from 'node:vm'
 import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule, SupervisorAction } from '../../types'
 import type { PolicyStore } from '../stores/policy-store'
 import { resolvePolicy, computeStrictestBaseline } from './policy-enforcer'
@@ -19,28 +18,13 @@ import type { Radar } from './radar'
 import type { FeedStore } from '../stores/feed-store'
 import type { SettingsStore } from '../stores/settings-store'
 import { evaluateWithLlm, shouldEvaluate } from './llm-evaluator'
+import { safeRegexTest } from '../lib/safe-regex'
 
 const MAX_BODY_BYTES = 64 * 1024 // 64 KB max request body
 const APPROVAL_TIMEOUT_MS = 120_000 // 120 seconds for interactive approval
-const REGEX_TIMEOUT_MS = 50 // Max time for a single regex test
 const RATE_LIMIT_WINDOW_MS = 10_000 // 10-second sliding window
 const RATE_LIMIT_MAX_REQUESTS = 100 // Max requests per window per session
 const PROMPT_GRANT_TTL_MS = 60_000 // 60-second grant after user approves a "prompt" tool
-
-/** Execute a regex test with a timeout to prevent ReDoS attacks. */
-function safeRegexTest(pattern: string, flags: string, input: string): boolean {
-  try {
-    const sandbox = { result: false, pattern, flags, input }
-    vm.runInNewContext(
-      'result = new RegExp(pattern, flags).test(input)',
-      sandbox,
-      { timeout: REGEX_TIMEOUT_MS },
-    )
-    return sandbox.result
-  } catch {
-    return false // timeout or invalid regex — treat as no match
-  }
-}
 
 // ─── Tool classification ─────────────────────────────────────────────────────
 

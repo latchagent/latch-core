@@ -120,7 +120,7 @@ describe('EgressFilter', () => {
     it('matches glob patterns with **', () => {
       const filter = new EgressFilter([scopedService])
       expect(filter.checkPathScope(scopedService, 'GET', '/repos/a/b/c').allowed).toBe(true)
-      expect(filter.checkPathScope(scopedService, 'GET', '/other/path').allowed).toBe(true) // no matching deny rule
+      expect(filter.checkPathScope(scopedService, 'GET', '/other/path').allowed).toBe(false) // C3: no matching allow rule
     })
 
     it('deny rules take precedence over allow rules for same path', () => {

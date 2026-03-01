@@ -9,9 +9,13 @@
  * Matched values are tokenized via the session's TokenMap with same-origin
  * metadata so they can only be de-tokenized when sent back to the
  * originating service.
+ *
+ * Note: This filter only tokenizes — it does not redact (remove) content.
+ * The `redactionsApplied` field is always 0 and exists for interface compatibility.
  */
 
 import { TokenMap } from './token-map'
+import { safeRegexMatch } from '../../lib/safe-regex'
 import type { ServiceDefinition, IngressScanResult } from '../../../types'
 
 /** Content types that are safe to scan as text. */
@@ -58,36 +62,30 @@ export class IngressFilter {
 
     let processedBody = body
     let tokenizationsApplied = 0
-    const redactionsApplied = 0
 
     // Apply each redaction pattern from the service definition
     for (const pattern of service.dataTier.redaction.patterns) {
-      try {
-        const regex = new RegExp(pattern, 'g')
-        const matches = processedBody.match(regex)
-        if (matches) {
-          for (const match of matches) {
-            processedBody = this.tokenMap.tokenizeInString(
-              processedBody,
-              match,
-              {
-                service: service.id,
-                tier: service.dataTier.defaultTier,
-                endpoint,
-              },
-            )
-            tokenizationsApplied++
-          }
+      const matches = safeRegexMatch(pattern, 'g', processedBody)
+      if (matches) {
+        for (const match of matches) {
+          processedBody = this.tokenMap.tokenizeInString(
+            processedBody,
+            match,
+            {
+              service: service.id,
+              tier: service.dataTier.defaultTier,
+              endpoint,
+            },
+          )
+          tokenizationsApplied++
         }
-      } catch {
-        // Invalid regex — skip silently
       }
     }
 
     return {
       scanned: true,
       contentType,
-      redactionsApplied,
+      redactionsApplied: 0, // This filter only tokenizes, not redacts
       tokenizationsApplied,
       processedBody,
     }

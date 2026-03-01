@@ -9,16 +9,30 @@ export default function EnclavePanel() {
   const [prUrl, setPrUrl] = useState('')
   const [annotating, setAnnotating] = useState(false)
   const [annotationResult, setAnnotationResult] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const fetchData = async (sessionId: string) => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const [attestRes, auditRes] = await Promise.all([
+        window.latch.getAttestation({ sessionId }),
+        window.latch.listProxyAudit({ sessionId, limit: 100 }),
+      ])
+      setReceipt(attestRes.ok ? (attestRes.receipt ?? null) : null)
+      setEvents(auditRes.ok ? auditRes.events : [])
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load enclave data')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!activeSessionId) return
-    window.latch.getAttestation({ sessionId: activeSessionId }).then(res => {
-      setReceipt(res.ok ? (res.receipt ?? null) : null)
-    })
-    window.latch.listProxyAudit({ sessionId: activeSessionId, limit: 100 }).then(res => {
-      setEvents(res.ok ? res.events : [])
-    })
-  }, [activeSessionId])
+    fetchData(activeSessionId)
+  }, [activeSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAnnotatePR = async () => {
     if (!activeSessionId || !prUrl.trim()) return
@@ -33,11 +47,24 @@ export default function EnclavePanel() {
     return <div className="enclave-panel"><p className="enclave-muted">No active session</p></div>
   }
 
+  const handleRefresh = () => {
+    if (activeSessionId) fetchData(activeSessionId)
+  }
+
   return (
     <div className="enclave-panel">
-      <h3>Enclave Attestation</h3>
+      <div className="enclave-header-row">
+        <h3>Enclave Attestation</h3>
+        <button className="panel-action" onClick={handleRefresh} disabled={isLoading}>
+          {isLoading ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
 
-      {receipt ? (
+      {isLoading ? (
+        <p className="enclave-muted">Loading enclave data...</p>
+      ) : loadError ? (
+        <p className="enclave-error">{loadError}</p>
+      ) : receipt ? (
         <>
           <section className="enclave-section">
             <h4>Policy</h4>
