@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { formatReceiptComment, parsePrUrl } from './pr-annotator'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { formatReceiptComment, parsePrUrl, annotatePR } from './pr-annotator'
 import type { SessionReceipt } from '../../types'
 
 const mockReceipt: SessionReceipt = {
@@ -23,6 +23,10 @@ const mockReceipt: SessionReceipt = {
 }
 
 describe('PR Annotator', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('parsePrUrl extracts owner, repo, and PR number', () => {
     const result = parsePrUrl('https://github.com/acme/repo/pull/42')
     expect(result).toEqual({ owner: 'acme', repo: 'repo', prNumber: 42 })
@@ -52,5 +56,46 @@ describe('PR Annotator', () => {
   it('formatReceiptComment includes sandbox type', () => {
     const comment = formatReceiptComment(mockReceipt)
     expect(comment).toContain('docker')
+  })
+
+  it('annotatePR returns ok:true on successful API response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ html_url: 'https://github.com/acme/repo/pull/42#issuecomment-1' }),
+    }))
+
+    const result = await annotatePR(mockReceipt, 'https://github.com/acme/repo/pull/42', 'ghp_test')
+    expect(result.ok).toBe(true)
+    expect(result.commentUrl).toBe('https://github.com/acme/repo/pull/42#issuecomment-1')
+
+    // Verify the correct GitHub API URL was called
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(fetchCall[0]).toBe('https://api.github.com/repos/acme/repo/issues/42/comments')
+  })
+
+  it('annotatePR returns ok:false on non-200 API response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: () => Promise.resolve('Forbidden'),
+    }))
+
+    const result = await annotatePR(mockReceipt, 'https://github.com/acme/repo/pull/42', 'ghp_bad')
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('403')
+  })
+
+  it('annotatePR returns ok:false on network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('DNS resolution failed')))
+
+    const result = await annotatePR(mockReceipt, 'https://github.com/acme/repo/pull/42', 'ghp_test')
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('DNS resolution failed')
+  })
+
+  it('annotatePR returns ok:false for invalid PR URL', async () => {
+    const result = await annotatePR(mockReceipt, 'https://example.com/not-a-pr', 'ghp_test')
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Invalid GitHub PR URL')
   })
 })
