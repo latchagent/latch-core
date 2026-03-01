@@ -19,6 +19,7 @@ import { TokenMap } from './proxy/token-map'
 import { TlsInterceptor } from './proxy/tls-interceptor'
 import { IngressFilter } from './proxy/ingress-filter'
 import type { ServiceDefinition, DataTier, ProxyAuditEvent, ProxyFeedbackMessage } from '../../types'
+import type { AttestationStore } from '../stores/attestation-store'
 
 export interface LatchProxyConfig {
   sessionId: string
@@ -28,6 +29,7 @@ export interface LatchProxyConfig {
   onBlock?: (message: string) => void
   onFeedback?: (message: ProxyFeedbackMessage) => void
   enableTls?: boolean  // default false for backward compat
+  attestationStore?: AttestationStore
 }
 
 export interface RequestEvaluation {
@@ -452,5 +454,6 @@ export class LatchProxy {
       redactionsApplied: extras?.redactionsApplied ?? 0,
       tokenizationsApplied: extras?.tokenizationsApplied ?? 0,
     })
+    this.config.attestationStore?.recordEvent(this.auditLog[this.auditLog.length - 1])
   }
 }

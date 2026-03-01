@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import http from 'node:http'
 import { LatchProxy } from './latch-proxy'
 import { TlsInterceptor } from './proxy/tls-interceptor'
-import type { ServiceDefinition, DataTier } from '../../types'
+import type { ServiceDefinition, DataTier, ProxyAuditEvent } from '../../types'
 
 const MOCK_SERVICE: ServiceDefinition = {
   id: 'httpbin',
@@ -156,5 +156,28 @@ describe('LatchProxy', () => {
     const events = proxy.getAuditLog()
     expect(events[0].tlsInspected).toBe(false)
     expect(events[0].contentType).toBeNull()
+  })
+
+  it('persists audit events to AttestationStore when provided', () => {
+    const recorded: ProxyAuditEvent[] = []
+    const mockStore = { recordEvent: vi.fn((e: ProxyAuditEvent) => recorded.push(e)) }
+
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-persist',
+      services: [MOCK_SERVICE],
+      credentials: new Map(),
+      maxDataTier: 'internal' as DataTier,
+      attestationStore: mockStore as any,
+    })
+
+    proxy2.evaluateRequest('httpbin.org', 'GET', '/get')
+    proxy2.evaluateRequest('evil.com', 'POST', '/exfil')
+
+    expect(mockStore.recordEvent).toHaveBeenCalledTimes(2)
+    expect(recorded[0].decision).toBe('allow')
+    expect(recorded[0].domain).toBe('httpbin.org')
+    expect(recorded[1].decision).toBe('deny')
+    expect(recorded[1].domain).toBe('evil.com')
+    proxy2.stop()
   })
 })
