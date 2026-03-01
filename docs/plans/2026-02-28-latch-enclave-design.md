@@ -1,7 +1,7 @@
 # Latch Enclave: Zero-Trust Infrastructure for AI Agents
 
 **Date**: 2026-02-28
-**Status**: Approved
+**Status**: Approved (v2 — refined after external review)
 **Supersedes**: Partial overlap with `2026-02-26-secrets-zerotrust-design.md` (network proxy, sandbox sections)
 
 ---
@@ -27,7 +27,7 @@ Every agent session runs inside a **sandboxed enclave** with a single network ex
 ║  Policy Engine ────┘     ├─ Egress: inject creds, block unauth   ║
 ║                          ├─ Ingress: redact, tokenize, classify  ║
 ║                          ├─ TLS interception (ephemeral CA)      ║
-║                          └─ Audit log → Merkle tree → Receipt    ║
+║                          └─ Audit log → signed Session Receipt    ║
 ║                               │                                  ║
 ║  Attestation Engine ◀─────────┘                                  ║
 ║  AuthZ Server (enhanced) ◀────────────────────┐                  ║
@@ -48,6 +48,18 @@ No sandbox = no session. Zero trust means the enclave is mandatory.
 
 ---
 
+## Design Principles
+
+1. **Capabilities, not credentials** — agents can "use GitHub" without seeing a token.
+2. **No sandbox = no session** — the enclave is mandatory, not optional.
+3. **LLMs never allow** — LLMs may propose policies, explain blocks, classify data, and suggest fixes. They never participate in enforcement decisions with an allow outcome. Enforcement is deterministic (rules + static evaluation). Conservative deny is the only LLM-reachable enforcement outcome.
+4. **Token same-origin** — tokenized values carry origin labels and can only be de-tokenized when sent back to the originating service.
+5. **Influence is a known limitation** — data tiers control information boundaries (ingress/egress/storage), not agent cognition. Once data enters an LLM's context, we cannot control how it influences reasoning. Tiers prevent data from crossing boundaries, not from being "thought about."
+6. **Content-type-aware scanning** — the proxy scans text-based responses (`application/json`, `text/*`). Binary payloads (`application/octet-stream`, git packfiles, images, archives) are passed through without body inspection. Domain/service gating still applies.
+7. **TLS interception is a capability, not a constant** — some services or tools may require exceptions (cert pinning, custom TLS stacks). The proxy falls back to domain-level gating + credential injection without body inspection when interception isn't possible.
+
+---
+
 ## Core Concepts
 
 ### 1. Service Model
@@ -59,11 +71,17 @@ interface ServiceDefinition {
   id: string                    // "github"
   name: string                  // "GitHub"
   category: ServiceCategory     // "vcs" | "cloud" | "comms" | "ci" | "registry" | "custom"
+  protocol: ServiceProtocol     // "http" | "ssh" | "db" | "grpc" | "custom"
 
   credential: {
     type: "token" | "keypair" | "oauth" | "env-bundle"
     fields: string[]            // what the user provides, e.g. ["token"]
     // stored encrypted in vault via safeStorage — never on disk in plaintext
+    expiresAt?: string          // ISO 8601 — null if non-expiring
+    refreshToken?: string       // for OAuth flows (v2+)
+    lastUsed?: string           // updated on each proxy injection
+    lastValidated?: string      // updated on successful auth response
+    createdBy?: string          // provenance: who added this credential
   }
 
   injection: {
@@ -72,6 +90,8 @@ interface ServiceDefinition {
     proxy: {
       domains: string[]                   // e.g. ["api.github.com", "*.githubusercontent.com"]
       headers: Record<string, string>     // e.g. { "Authorization": "Bearer ${credential.token}" }
+      tlsExceptions?: string[]            // domains where TLS interception is skipped
+                                          // (cert pinning, custom TLS) — still gated by domain
     }
   }
 
@@ -91,7 +111,10 @@ interface ServiceDefinition {
 }
 
 type ServiceCategory = "vcs" | "cloud" | "comms" | "ci" | "registry" | "custom"
+type ServiceProtocol = "http" | "ssh" | "db" | "grpc" | "custom"
 ```
+
+**Note on protocol scope**: v1 focuses exclusively on HTTP-protocol services (which covers ~99% of agent CLI activity — `gh`, `aws`, `npm`, `curl`, `git` over HTTPS all use HTTP under the hood). The `protocol` field exists in the type system so the service catalog can categorize SSH/DB/gRPC services, but proxy enforcement for non-HTTP protocols is deferred to v2+.
 
 **Key property**: the service definition IS the security policy for that service — injection, redaction, tier, and agent awareness bundled together.
 
@@ -122,6 +145,31 @@ Two modes for handling sensitive data in proxy responses:
 - **Tokenize**: Replace with a stable placeholder like `tok_a3f8b2`. Agent can reference tokens in subsequent commands and the proxy de-tokenizes on egress. For data the agent needs to reference but shouldn't see raw (user IDs, emails).
 
 Per-session token map, destroyed when session ends.
+
+#### Token Same-Origin Policy
+
+Tokens carry origin metadata and enforce destination constraints. A token created from a GitHub response cannot be de-tokenized when sent to Slack. This prevents tokenization from becoming an exfiltration channel.
+
+```typescript
+interface TokenEntry {
+  id: string              // "tok_a3f8b2"
+  value: string           // the actual sensitive value
+  origin: {
+    service: string       // "github" — which service produced this value
+    tier: DataTier        // "internal" — tier at time of tokenization
+    endpoint: string      // "api.github.com/repos/..." — source endpoint
+  }
+  validDestinations: string[]  // service IDs where de-tokenization is allowed
+                               // default: [origin.service] (same-origin only)
+  createdAt: string
+}
+```
+
+De-tokenization rules:
+- By default, tokens can only be de-tokenized when sent back to the originating service (same-origin)
+- Cross-service de-tokenization requires explicit policy grant (rare, audited)
+- Tokens are never de-tokenized for unknown/unauthorized destinations
+- Token ordering and selection patterns are not meaningful — IDs are random, not sequential
 
 ---
 
@@ -162,14 +210,25 @@ The proxy is the enforcement spine. Every network request passes through it.
 4. Forward to destination
 
 5. INGRESS PROCESSING
-   ├→ Scan response body for sensitive patterns
+   ├→ Check Content-Type:
+   │    text/*, application/json → scan body
+   │    binary (octet-stream, images, archives, git packfiles) → skip body scan
+   ├→ Scan scannable response bodies for sensitive patterns
    ├→ Apply tier-appropriate redaction/tokenization
+   ├→ Enforce token same-origin: new tokens tagged with source service
    ├→ Store new token mappings in session token map
    └→ Return processed response to agent
 
-6. AUDIT
-   └→ Append event to Merkle log
-       { timestamp, domain, method, path, service, tier, decision, redactions[] }
+6. TLS EXCEPTION HANDLING
+   └→ If domain is in service's tlsExceptions list:
+       → Skip TLS interception (no body inspection)
+       → Still enforce: domain gating, credential injection, audit logging
+       → Log: { ..., tlsInspected: false }
+
+7. AUDIT
+   └→ Append event to audit log
+       { timestamp, domain, method, path, service, tier, decision,
+         redactions[], tlsInspected, contentType }
 ```
 
 ### CLI Compatibility
@@ -210,8 +269,8 @@ No sandbox = no session. This is non-negotiable for zero trust.
 
 **Network Isolation**
 - All outbound traffic forced through proxy (iptables DROP / pf block for direct)
-- DNS resolved by proxy (prevents DNS exfiltration)
-- Loopback allowed only for proxy + authz server ports
+- DNS: block UDP/53 entirely, all DNS resolved by proxy (prevents DNS exfiltration)
+- Loopback: allow ONLY the specific proxy port and authz server port on 127.0.0.1 — all other localhost ports blocked (prevents local relay/side-channel attacks)
 
 **Filesystem Isolation**
 - Workspace: mounted at `/workspace`, scoped by policy
@@ -225,6 +284,9 @@ No sandbox = no session. This is non-negotiable for zero trust.
 - `--security-opt=no-new-privileges`
 - PID namespace isolation
 - Resource limits (memory, CPU, PIDs)
+- `/proc/self/environ` blocked (prevents credential extraction from process env)
+- No shell history (`HISTFILE=/dev/null`)
+- Minimal process visibility (PID namespace prevents seeing host processes)
 
 **Environment**
 - `HTTP_PROXY` / `HTTPS_PROXY` → proxy address
@@ -250,16 +312,13 @@ Two modes, prefer proxy:
 
 Cryptographic proof that policy was enforced during a session.
 
-### Merkle Log
+### Audit Log
 
-Every proxy request, redaction, policy decision, and tool call is appended to an append-only Merkle log. Same structure as Certificate Transparency — simple hash chaining, powerful for audit.
+Every proxy request, redaction, policy decision, and tool call is appended to an append-only audit log per session. Events are stored in SQLite with a running SHA-256 hash chain for tamper evidence.
 
-Provides:
-- **Inclusion proof**: A specific event was part of the session log
-- **Consistency proof**: The log wasn't modified after the fact
-- **Periodic checkpoints**: Root hash snapshots every N events
+### Session Receipt (v1: signed JSON)
 
-### Session Receipt
+v1 ships signed receipts without full Merkle proofs. The receipt is a JSON document signed with an ephemeral Ed25519 key. This provides tamper evidence and internal audit value. Full Merkle log with inclusion/consistency proofs is a v2 hardening layer.
 
 ```typescript
 interface SessionReceipt {
@@ -278,6 +337,7 @@ interface SessionReceipt {
     networkRequests: number
     blockedRequests: number
     redactionsApplied: number
+    tokenizationsApplied: number
     toolCalls: number
     toolDenials: number
     approvalEscalations: number
@@ -292,13 +352,22 @@ interface SessionReceipt {
   }
 
   proof: {
-    merkleRoot: string
-    eventCount: number
-    checkpoints: string[]
+    auditEventCount: number
+    auditHashChain: string    // final hash in the chain
     signature: string         // Ed25519 over receipt
     publicKey: string         // session ephemeral pubkey
   }
 }
+```
+
+### Trust Root
+
+v1: The user trusts their own machine. The signing key is ephemeral, receipts are stored locally. Useful for audit trails and team review.
+
+Future hardening paths (not v1):
+- **Remote verifier / transparency log**: Receipts uploaded to Latch Cloud for centralized verification
+- **TEE-backed signing** (Nitro/SEV/SGX): Hardware attestation for third-party verifiable claims
+- **Shared team key**: Team-wide signing key for cross-machine receipt verification
 ```
 
 ### Use Cases
@@ -413,36 +482,55 @@ When the proxy blocks or redacts, it writes to the session PTY:
 
 ---
 
+## Known Limitations & Threat Model Boundaries
+
+1. **Semantic influence is not controllable.** Once data enters an LLM's context window, we cannot control how it influences reasoning. Data tiers prevent sensitive data from crossing ingress/egress/storage boundaries, but a "public tier" agent could still be influenced by confidential data present in filenames, error messages, or token placeholders. This is a fundamental property of LLMs, not a design gap.
+
+2. **v1 domain scoping, not path/method scoping.** Services are gated by domain in v1. An agent with GitHub access can hit any GitHub API endpoint. Path/method scoping (e.g., allow GET but block DELETE) is a v5 refinement.
+
+3. **Binary content is not inspected.** The proxy skips body scanning for binary content types (images, archives, git packfiles). Domain-level gating and credential injection still apply, but sensitive data embedded in binary payloads won't be detected.
+
+4. **v1 trust root is local.** Session receipts are signed by ephemeral keys on the user's machine. A compromised host could forge receipts. Third-party verifiable attestation requires a remote verifier or TEE-backed signing (future).
+
+5. **Non-HTTP protocols are gated but not inspected in v1.** SSH, database, and gRPC connections are blocked or allowed at the domain/port level, but the proxy cannot inject credentials or inspect payloads for non-HTTP protocols until v5.
+
+---
+
 ## Phasing
 
-### Phase 1: Foundation
+### Phase 1: Foundation (shippable, already valuable)
 - Service model types + ServiceStore + ServiceCatalog (5-10 built-in services)
 - EnclaveManager with Docker backend
-- Basic proxy (domain blocking/allowing, no TLS interception yet)
-- Credential injection (env + proxy header injection)
+- Deny-by-default egress proxy (domain/service gating, no TLS interception yet)
+- Credential injection (proxy-first header injection, env fallback with redaction)
 - Skill generation (enclave + service skills)
+- Audit log + signed session receipts (hash-chained, Ed25519 signed)
+- Sandbox requirement enforced (no sandbox = no session)
+- Localhost port restriction, DNS blocking, /proc hardening
 
-### Phase 2: Full Proxy
-- TLS interception with ephemeral CA
-- Ingress filtering (response scanning, PII detection)
-- Tokenization engine (tokenize/de-tokenize with per-session map)
+### Phase 2: Full Proxy (hardening)
+- TLS interception with ephemeral CA + degraded mode for pinned services
+- `tlsExceptions` support per service
+- Content-type-aware ingress scanning (text/json only, skip binary)
+- Tokenization engine with same-origin policy
 - Data tier enforcement at proxy level
 - Agent feedback (PTY messages for blocks/redactions)
 
-### Phase 3: Attestation
-- Merkle log accumulator
-- Session receipt generation + Ed25519 signing
-- AttestationStore for receipt persistence
-- Attestation viewer UI
-
-### Phase 4: Native Sandboxes
+### Phase 3: Native Sandboxes
 - SeatbeltEnclave (macOS sandbox-exec + pf)
 - BubblewrapEnclave (Linux bwrap + iptables)
-- OS-level network forcing (transparent proxy via pf/iptables)
+- OS-level transparent proxy forcing (pf/iptables rules)
+
+### Phase 4: Attestation Hardening
+- Merkle log with inclusion/consistency proofs
+- PR attestation annotations (via GitHub API)
+- Attestation viewer UI in Latch
 
 ### Phase 5: Advanced
-- LLM-assisted data classification
+- Credential lifecycle (OAuth refresh, rotation, expiry, reauth flows)
+- Path/method scoping per service (GET allowed, DELETE blocked)
+- Non-HTTP protocol support (SSH, database, gRPC)
+- LLM-assisted data classification (propose only, never enforce)
 - Custom service builder UI
-- PR attestation annotations (via GitHub API)
 - Team/enterprise: shared service registry, policy inheritance
-- Latch Cloud: centralized receipt verification
+- Latch Cloud: remote verifier, transparency log, centralized receipts
