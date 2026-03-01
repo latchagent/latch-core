@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeLeafHash, buildMerkleRoot, buildInclusionProof, verifyInclusionProof, buildConsistencyProof } from './merkle'
+import { computeLeafHash, buildMerkleRoot, buildInclusionProof, verifyInclusionProof } from './merkle'
 
 describe('Merkle tree', () => {
   const leaves = ['event-a', 'event-b', 'event-c', 'event-d']
@@ -23,9 +23,11 @@ describe('Merkle tree', () => {
     expect(buildMerkleRoot([])).toBeNull()
   })
 
-  it('buildMerkleRoot returns leaf hash for single leaf', () => {
+  it('buildMerkleRoot hashes single leaf through nodeHash', () => {
     const root = buildMerkleRoot([leafHashes[0]])
-    expect(root).toBe(leafHashes[0])
+    expect(root).toHaveLength(64)
+    // Single leaf root should NOT be the raw leaf hash (M7: hash through nodeHash)
+    expect(root).not.toBe(leafHashes[0])
   })
 
   it('buildMerkleRoot returns 64-char hex for multiple leaves', () => {
@@ -80,14 +82,12 @@ describe('Merkle tree', () => {
     expect(verifyInclusionProof(proof)).toBe(true)
   })
 
-  it('buildConsistencyProof returns proof between two sizes', () => {
-    const first3 = leafHashes.slice(0, 3)
-    const all4 = leafHashes
-    const proof = buildConsistencyProof(first3, all4)
+  it('single leaf inclusion proof is verifiable', () => {
+    const singleLeaf = [leafHashes[0]]
+    const proof = buildInclusionProof(singleLeaf, 0)
     expect(proof).not.toBeNull()
-    expect(proof!.fromSize).toBe(3)
-    expect(proof!.toSize).toBe(4)
-    expect(proof!.fromRoot).toBe(buildMerkleRoot(first3))
-    expect(proof!.toRoot).toBe(buildMerkleRoot(all4))
+    expect(proof!.leafIndex).toBe(0)
+    expect(proof!.root).toBe(buildMerkleRoot(singleLeaf))
+    expect(verifyInclusionProof(proof!)).toBe(true)
   })
 })
