@@ -220,6 +220,32 @@ export interface ProxyAuditEvent {
   decision: 'allow' | 'deny'
   reason: string | null
   contentType: string | null
+  tlsInspected: boolean
+  redactionsApplied: number
+  tokenizationsApplied: number
+}
+
+/** TLS certificate pair for ephemeral CA or leaf certs. */
+export interface TlsCertPair {
+  cert: string   // PEM-encoded certificate
+  key: string    // PEM-encoded private key
+}
+
+/** Result of scanning a response body for sensitive content. */
+export interface IngressScanResult {
+  scanned: boolean
+  contentType: string | null
+  redactionsApplied: number
+  tokenizationsApplied: number
+  processedBody: string | null  // null if not scanned (binary passthrough)
+}
+
+/** Message sent to agent terminal about proxy enforcement. */
+export interface ProxyFeedbackMessage {
+  type: 'block' | 'redaction' | 'tokenization' | 'tls-exception'
+  domain: string
+  service: string | null
+  detail: string
 }
 
 /** Signed session receipt. */

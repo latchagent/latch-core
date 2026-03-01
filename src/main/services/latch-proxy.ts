@@ -17,7 +17,7 @@ import type { Duplex } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { EgressFilter } from './proxy/egress-filter'
 import { TokenMap } from './proxy/token-map'
-import type { ServiceDefinition, DataTier, ProxyAuditEvent } from '../../types'
+import type { ServiceDefinition, DataTier, ProxyAuditEvent, ProxyFeedbackMessage } from '../../types'
 
 export interface LatchProxyConfig {
   sessionId: string
@@ -192,6 +192,7 @@ export class LatchProxy {
     service: string | null,
     decision: 'allow' | 'deny',
     reason: string | null,
+    extras?: { contentType?: string; tlsInspected?: boolean; redactionsApplied?: number; tokenizationsApplied?: number },
   ): void {
     this.auditLog.push({
       id: randomUUID(),
@@ -204,7 +205,10 @@ export class LatchProxy {
       tier: null,
       decision,
       reason,
-      contentType: null,
+      contentType: extras?.contentType ?? null,
+      tlsInspected: extras?.tlsInspected ?? false,
+      redactionsApplied: extras?.redactionsApplied ?? 0,
+      tokenizationsApplied: extras?.tokenizationsApplied ?? 0,
     })
   }
 }

@@ -16,6 +16,9 @@ function makeEvent(overrides: Partial<ProxyAuditEvent> = {}): ProxyAuditEvent {
     decision: 'allow',
     reason: null,
     contentType: 'application/json',
+    tlsInspected: false,
+    redactionsApplied: 0,
+    tokenizationsApplied: 0,
     ...overrides,
   }
 }
