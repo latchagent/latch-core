@@ -10,11 +10,11 @@ describe('TlsInterceptor', () => {
     interceptor?.destroy()
   })
 
-  it('generates a valid CA certificate', () => {
+  it('returns CA certificate PEM without exposing private key', () => {
     interceptor = new TlsInterceptor()
-    const ca = interceptor.getCaCert()
-    expect(ca.cert).toContain('BEGIN CERTIFICATE')
-    expect(ca.key).toContain('BEGIN RSA PRIVATE KEY')
+    const certPem = interceptor.getCaCertPem()
+    expect(certPem).toContain('BEGIN CERTIFICATE')
+    expect(certPem).not.toContain('PRIVATE KEY')
   })
 
   it('generates leaf certs signed by the CA', () => {

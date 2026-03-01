@@ -189,9 +189,7 @@ block drop out quick proto udp from any to any port 53 user ${opts.uid}
   destroy(): void {
     if (this.profileDir) {
       try {
-        const files = fs.readdirSync(this.profileDir)
-        for (const f of files) fs.unlinkSync(path.join(this.profileDir!, f))
-        fs.rmdirSync(this.profileDir)
+        fs.rmSync(this.profileDir, { recursive: true })
       } catch { /* best-effort */ }
       this.profileDir = null
     }

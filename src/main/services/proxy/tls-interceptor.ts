@@ -11,6 +11,7 @@
  */
 
 import * as forge from 'node-forge'
+import { randomBytes } from 'node:crypto'
 import * as tls from 'node:tls'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -33,7 +34,7 @@ export class TlsInterceptor {
     // Create self-signed CA certificate
     this.caCert = forge.pki.createCertificate()
     this.caCert.publicKey = caKeys.publicKey
-    this.caCert.serialNumber = '01'
+    this.caCert.serialNumber = randomBytes(8).toString('hex')
     this.caCert.validity.notBefore = new Date()
     this.caCert.validity.notAfter = new Date()
     this.caCert.validity.notAfter.setFullYear(this.caCert.validity.notAfter.getFullYear() + 1)
@@ -59,9 +60,9 @@ export class TlsInterceptor {
     fs.writeFileSync(this.caCertPath, this.caCertPem)
   }
 
-  /** Get the CA certificate and key as PEM strings. */
-  getCaCert(): TlsCertPair {
-    return { cert: this.caCertPem, key: this.caKeyPem }
+  /** Get the CA certificate PEM string. Private key is kept internal. */
+  getCaCertPem(): string {
+    return this.caCertPem
   }
 
   /** Get the path to the CA cert temp file (for NODE_EXTRA_CA_CERTS). */
@@ -113,8 +114,7 @@ export class TlsInterceptor {
     this.leafCache.clear()
     try {
       if (fs.existsSync(this.caCertPath)) {
-        fs.unlinkSync(this.caCertPath)
-        fs.rmdirSync(path.dirname(this.caCertPath))
+        fs.rmSync(path.dirname(this.caCertPath), { recursive: true })
       }
     } catch {
       // Best-effort cleanup
