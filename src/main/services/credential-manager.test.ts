@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { CredentialManager } from './credential-manager'
 import type { ServiceDefinition } from '../../types'
 
@@ -18,6 +18,10 @@ const mockService: ServiceDefinition = {
 }
 
 describe('CredentialManager', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('detects expired credentials', () => {
     const mgr = new CredentialManager()
     expect(mgr.isExpired(mockService)).toBe(true)
@@ -37,26 +41,19 @@ describe('CredentialManager', () => {
 
   it('validates credential against upstream (mock)', async () => {
     const mgr = new CredentialManager()
-    // Mock fetch to simulate a 200 OK
-    const origFetch = globalThis.fetch
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }))
 
     const result = await mgr.validateCredential(mockService, { token: 'test-token' })
     expect(result.valid).toBe(true)
-
-    globalThis.fetch = origFetch
   })
 
   it('detects invalid credential via 401', async () => {
     const mgr = new CredentialManager()
-    const origFetch = globalThis.fetch
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401 })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }))
 
     const result = await mgr.validateCredential(mockService, { token: 'bad-token' })
     expect(result.valid).toBe(false)
     expect(result.status).toBe(401)
-
-    globalThis.fetch = origFetch
   })
 
   it('tracks credential status per service', () => {
