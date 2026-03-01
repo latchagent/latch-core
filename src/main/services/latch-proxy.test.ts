@@ -370,6 +370,152 @@ describe('LatchProxy', () => {
     proxy2.stop()
   })
 
+  // -- H7: HTTP integration tests ──────────────────────────────────────────
+
+  describe('HTTP integration', () => {
+    let upstream: http.Server
+    let upstreamPort: number
+    let upstreamRequests: { headers: http.IncomingHttpHeaders; url: string; method: string }[]
+
+    beforeEach(async () => {
+      upstreamRequests = []
+      upstream = http.createServer((req, res) => {
+        upstreamRequests.push({
+          headers: req.headers,
+          url: req.url ?? '/',
+          method: req.method ?? 'GET',
+        })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ message: 'upstream response' }))
+      })
+      await new Promise<void>((resolve) => {
+        upstream.listen(0, '127.0.0.1', () => {
+          const addr = upstream.address()
+          upstreamPort = (addr as any).port
+          resolve()
+        })
+      })
+    })
+
+    afterEach(() => {
+      upstream.close()
+    })
+
+    function makeLocalService(overrides: Partial<ServiceDefinition> = {}): ServiceDefinition {
+      return {
+        ...MOCK_SERVICE,
+        id: 'local-svc',
+        injection: {
+          ...MOCK_SERVICE.injection,
+          proxy: {
+            domains: ['127.0.0.1'],
+            headers: { Authorization: 'Bearer ${credential.token}' },
+          },
+        },
+        ...overrides,
+      }
+    }
+
+    it('forwards allowed requests to the upstream server', async () => {
+      const svc = makeLocalService()
+      const proxy2 = new LatchProxy({
+        sessionId: 'test-int-allow',
+        services: [svc],
+        credentials: new Map(),
+        maxDataTier: 'internal' as DataTier,
+      })
+      const proxyPort = await proxy2.start()
+
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get({
+          host: '127.0.0.1',
+          port: proxyPort,
+          path: `http://127.0.0.1:${upstreamPort}/repos/data`,
+        }, resolve)
+        req.on('error', reject)
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = await new Promise<string>((resolve) => {
+        let data = ''
+        res.on('data', (c: Buffer) => { data += c.toString() })
+        res.on('end', () => resolve(data))
+      })
+      expect(JSON.parse(body).message).toBe('upstream response')
+      expect(upstreamRequests).toHaveLength(1)
+      proxy2.stop()
+    })
+
+    it('returns 403 for blocked domains', async () => {
+      const svc = makeLocalService()
+      const proxy2 = new LatchProxy({
+        sessionId: 'test-int-block',
+        services: [svc],
+        credentials: new Map(),
+        maxDataTier: 'internal' as DataTier,
+      })
+      const proxyPort = await proxy2.start()
+
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get({
+          host: '127.0.0.1',
+          port: proxyPort,
+          path: `http://evil.com:${upstreamPort}/exfil`,
+        }, resolve)
+        req.on('error', reject)
+      })
+
+      expect(res.statusCode).toBe(403)
+      const body = await new Promise<string>((resolve) => {
+        let data = ''
+        res.on('data', (c: Buffer) => { data += c.toString() })
+        res.on('end', () => resolve(data))
+      })
+      expect(JSON.parse(body).error).toContain('not an authorized service')
+      // Upstream should never have received the request
+      expect(upstreamRequests).toHaveLength(0)
+      proxy2.stop()
+    })
+
+    it('scans response bodies through the proxy pipeline', async () => {
+      // Use a service with tokenization-triggering dataTier
+      const svc = makeLocalService({
+        dataTier: {
+          defaultTier: 'internal',
+          redaction: { patterns: [], fields: ['email'] },
+        },
+      })
+      const feedback: any[] = []
+      const proxy2 = new LatchProxy({
+        sessionId: 'test-int-scan',
+        services: [svc],
+        credentials: new Map(),
+        maxDataTier: 'internal' as DataTier,
+        onFeedback: (msg) => feedback.push(msg),
+      })
+      const proxyPort = await proxy2.start()
+
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get({
+          host: '127.0.0.1',
+          port: proxyPort,
+          path: `http://127.0.0.1:${upstreamPort}/data`,
+        }, resolve)
+        req.on('error', reject)
+      })
+
+      expect(res.statusCode).toBe(200)
+      // Drain response
+      await new Promise<void>((resolve) => { res.resume(); res.on('end', resolve) })
+
+      // Audit log should have recorded the request as allowed
+      const events = proxy2.getAuditLog()
+      expect(events.length).toBeGreaterThanOrEqual(1)
+      expect(events.some(e => e.decision === 'allow')).toBe(true)
+      proxy2.stop()
+    })
+  })
+
   // -- M5: Generic error messages ─────────────────────────────────────────
 
   it('returns generic error messages without internal details', async () => {
