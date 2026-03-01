@@ -60,6 +60,8 @@ import { AttestationStore }                      from './stores/attestation-stor
 import { AttestationEngine }                     from './services/attestation'
 import { annotatePR }                            from './services/pr-annotator'
 import { SERVICE_CATALOG }                       from './lib/service-catalog'
+import { DataClassifier }                        from './services/data-classifier'
+import { CredentialManager }                     from './services/credential-manager'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -85,6 +87,8 @@ let secretStore: SecretStore | null = null
 let serviceStore: ServiceStore | null = null
 let attestationStore: AttestationStore | null = null
 let attestationEngine: AttestationEngine | null = null
+let dataClassifier: DataClassifier | null = null
+let credentialManager: CredentialManager | null = null
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
@@ -197,6 +201,10 @@ app.whenReady().then(() => {
     serviceStore  = ServiceStore.open(db)
     attestationStore = AttestationStore.open(db)
     attestationEngine = new AttestationEngine(attestationStore)
+
+    credentialManager = new CredentialManager()
+    const openaiKey = settingsStore?.get('openai-api-key') ?? null
+    dataClassifier = new DataClassifier(openaiKey)
 
     // Bind telemetry to settings store (SDK already initialised above)
     bindTelemetrySettings((k) => settingsStore!.get(k))
@@ -612,6 +620,34 @@ app.whenReady().then(() => {
     if (!token) return { ok: false, error: 'No GitHub credential configured' }
 
     return annotatePR(receipt, prUrl, token)
+  })
+
+  // ── Data classification & credential lifecycle ────────────────────────
+
+  ipcMain.handle('latch:data-classify', async (_event: any, { body, service, contentType }: any) => {
+    if (!dataClassifier) return { ok: false, error: 'DataClassifier unavailable' }
+    const classification = await dataClassifier.classify(body, service, contentType)
+    if (!classification) return { ok: false, error: 'Classification failed or no API key' }
+    return { ok: true, classification }
+  })
+
+  ipcMain.handle('latch:credential-refresh', async (_event: any, { serviceId }: any) => {
+    if (!credentialManager || !serviceStore) return { ok: false, error: 'Unavailable' }
+    const result = serviceStore.get(serviceId)
+    if (!result.ok || !result.service) return { ok: false, error: 'Service not found' }
+    if (!secretStore) return { ok: false, error: 'SecretStore unavailable' }
+    const credValue = secretStore.resolve(`service:${serviceId}`)
+    if (!credValue) return { ok: false, error: 'No credential stored' }
+    let creds: Record<string, string>
+    try { creds = JSON.parse(credValue) } catch { return { ok: false, error: 'Invalid credential format' } }
+    const validation = await credentialManager.validateCredential(result.service.definition, creds)
+    return { ok: true, valid: validation.valid, status: validation.status }
+  })
+
+  ipcMain.handle('latch:credential-status', async (_event: any, { serviceId }: any) => {
+    if (!credentialManager) return { ok: false, expired: false, expiresAt: null, lastValidated: null }
+    const status = credentialManager.getStatus(serviceId)
+    return { ok: true, expired: status.expired, expiresAt: null, lastValidated: status.lastValidated }
   })
 
   // ── Skills handlers ─────────────────────────────────────────────────────

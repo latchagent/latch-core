@@ -329,6 +329,17 @@ contextBridge.exposeInMainWorld('latch', {
   annotateGitHubPR: (payload: { sessionId: string; prUrl: string }) =>
     ipcRenderer.invoke('latch:attestation-annotate-pr', payload),
 
+  // ── Data classification & credential lifecycle ────────────────────────
+
+  classifyData: (payload: { body: string; service: string; contentType: string }) =>
+    ipcRenderer.invoke('latch:data-classify', payload),
+
+  refreshCredential: (payload: { serviceId: string }) =>
+    ipcRenderer.invoke('latch:credential-refresh', payload),
+
+  getCredentialStatus: (payload: { serviceId: string }) =>
+    ipcRenderer.invoke('latch:credential-status', payload),
+
   // ── Feed (agent status updates) ────────────────────────────────────────
 
   listFeed: (payload?: { sessionId?: string; limit?: number }) =>
