@@ -54,7 +54,7 @@ class PtyManager {
     return process.env.SHELL || '/bin/zsh'
   }
 
-  create(sessionId: string, options: { cwd?: string; cols?: number; rows?: number; env?: Record<string, string>; dockerContainerId?: string } = {}): PtyRecord {
+  create(sessionId: string, options: { cwd?: string; cols?: number; rows?: number; env?: Record<string, string>; dockerContainerId?: string; sandboxCommand?: string; sandboxArgs?: string[] } = {}): PtyRecord {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
 
@@ -67,6 +67,9 @@ class PtyManager {
     if (options.dockerContainerId) {
       command = 'docker'
       args = ['exec', '-it', options.dockerContainerId, '/bin/sh']
+    } else if (options.sandboxCommand && options.sandboxArgs) {
+      command = options.sandboxCommand
+      args = options.sandboxArgs
     } else {
       command = this.getShell()
       args = []
