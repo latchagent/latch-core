@@ -3,10 +3,12 @@ import { useAppStore } from '../store/useAppStore'
 import type { RailPanel } from '../../types'
 import PolicyPanel   from './panels/PolicyPanel'
 import ActivityPanel from './panels/ActivityPanel'
+import ServicesPanel from './panels/ServicesPanel'
 
 const TABS: { id: RailPanel; label: string }[] = [
   { id: 'activity', label: 'Activity' },
   { id: 'policy',   label: 'Policy'   },
+  { id: 'services', label: 'Services' },
 ]
 
 export default function Rail() {
@@ -28,6 +30,7 @@ export default function Rail() {
 
       {activeRailPanel === 'activity' && <ActivityPanel />}
       {activeRailPanel === 'policy'   && <PolicyPanel />}
+      {activeRailPanel === 'services' && <ServicesPanel />}
     </aside>
   )
 }
