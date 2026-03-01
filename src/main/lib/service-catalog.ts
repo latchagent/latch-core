@@ -22,6 +22,11 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
       proxy: {
         domains: ['api.github.com', '*.githubusercontent.com', 'github.com'],
         headers: { Authorization: 'Bearer ${credential.token}' },
+        pathRules: [
+          { methods: ['DELETE'], paths: ['/repos/*/collaborators/*'], decision: 'deny' },
+          { methods: ['DELETE'], paths: ['/repos/*/*'], decision: 'deny' },
+          { methods: ['PUT'], paths: ['/repos/*/topics'], decision: 'deny' },
+        ],
       },
     },
     dataTier: {
@@ -169,6 +174,10 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
       proxy: {
         domains: ['*.amazonaws.com', '*.aws.amazon.com'],
         headers: {},
+        pathRules: [
+          { methods: ['*'], paths: ['/iam/**'], decision: 'deny' },
+          { methods: ['DELETE'], paths: ['/**'], decision: 'deny' },
+        ],
       },
     },
     dataTier: {

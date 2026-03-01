@@ -92,6 +92,14 @@ export class LatchProxy {
       return { decision: 'deny', service, reason }
     }
 
+    // Path/method scope check
+    const scopeCheck = this.egressFilter.checkPathScope(service, method, path)
+    if (!scopeCheck.allowed) {
+      const reason = scopeCheck.reason ?? `${method} ${path} not allowed for service "${service.name}"`
+      this._recordAudit(domain, method, path, service.id, 'deny', reason)
+      return { decision: 'deny', service, reason }
+    }
+
     this._recordAudit(domain, method, path, service.id, 'allow', null)
     return { decision: 'allow', service, reason: null }
   }

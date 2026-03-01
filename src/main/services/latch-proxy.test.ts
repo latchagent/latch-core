@@ -184,6 +184,40 @@ describe('LatchProxy', () => {
     proxy2.stop()
   })
 
+  it('blocks request when path scope is violated', async () => {
+    const scopedService = {
+      ...MOCK_SERVICE,
+      injection: {
+        ...MOCK_SERVICE.injection,
+        proxy: {
+          ...MOCK_SERVICE.injection.proxy,
+          pathRules: [
+            { methods: ['DELETE'], paths: ['/repos/**'], decision: 'deny' as const },
+          ],
+        },
+      },
+    }
+
+    const proxy2 = new LatchProxy({
+      sessionId: 'test-session',
+      services: [scopedService],
+      credentials: new Map(),
+      maxDataTier: 'internal' as const,
+    })
+    await proxy2.start()
+
+    // GET should still be allowed
+    const allow = proxy2.evaluateRequest(MOCK_SERVICE.injection.proxy.domains[0], 'GET', '/repos/foo')
+    expect(allow.decision).toBe('allow')
+
+    // DELETE should be blocked
+    const deny = proxy2.evaluateRequest(MOCK_SERVICE.injection.proxy.domains[0], 'DELETE', '/repos/foo')
+    expect(deny.decision).toBe('deny')
+    expect(deny.reason).toContain('denied by path rule')
+
+    proxy2.stop()
+  })
+
   it('persists audit events to AttestationStore when provided', () => {
     const recorded: ProxyAuditEvent[] = []
     const mockStore = { recordEvent: vi.fn((e: ProxyAuditEvent) => recorded.push(e)) }
