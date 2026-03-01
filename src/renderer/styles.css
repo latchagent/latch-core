@@ -5157,3 +5157,85 @@ textarea:focus-visible,
   cursor: pointer;
 }
 .catalog-item:hover { background: var(--bg-elevated); }
+
+/* ─── Enclave Panel ──────────────────────────────────────────────────────── */
+
+.enclave-panel {
+  padding: 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.enclave-panel h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.enclave-section {
+  margin-bottom: 12px;
+}
+
+.enclave-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.enclave-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.enclave-muted {
+  color: var(--text-secondary);
+}
+
+.enclave-mono {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.enclave-pr-row {
+  display: flex;
+  gap: 8px;
+}
+
+.enclave-pr-input {
+  flex: 1;
+}
+
+.enclave-annotation-result {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.enclave-audit-list {
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+.enclave-audit-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.enclave-audit-row.is-denied {
+  color: var(--error);
+}
+
+.enclave-audit-row .enclave-mono {
+  min-width: 60px;
+}
+
+.enclave-badge-allow { color: var(--success); }
+.enclave-badge-deny  { color: var(--error); }
