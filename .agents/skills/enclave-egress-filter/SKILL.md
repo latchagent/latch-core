@@ -21,12 +21,20 @@ The EgressFilter class lives at `src/main/services/proxy/egress-filter.ts` and h
 - `injectHeaders(service, credentials)` — Returns headers with credential placeholders resolved
 - `scanForLeaks(service, body)` — Returns `{ safe, leaked }` indicating if body contains credential patterns
 
+## Phase 2: TLS MITM Usage
+
+In Phase 2, the EgressFilter is also invoked during TLS MITM for intercepted (decrypted) HTTPS requests. When TLS interception is enabled, the proxy terminates the client's TLS, decrypts the HTTP request, and passes it through the EgressFilter for:
+- **Credential injection** — `injectHeaders()` is called on the decrypted request before it is re-encrypted and forwarded upstream
+- **Leak detection** — `scanForLeaks()` can be applied to decrypted request bodies
+
+This means the EgressFilter operates on both plain HTTP requests and decrypted HTTPS requests identically.
+
 ## Architecture Notes
 
 - Constructor pre-compiles wildcard domain patterns into RegExp for fast matching
 - Domain matching is case-insensitive
 - Wildcard `*` matches a single DNS label (e.g., `*.github.com` matches `raw.github.com` but not `a.b.github.com`)
-- Used by LatchProxy (`src/main/services/latch-proxy.ts`) for every outbound request
+- Used by LatchProxy (`src/main/services/latch-proxy.ts`) for every outbound request (both HTTP and decrypted HTTPS)
 
 ## Testing
 

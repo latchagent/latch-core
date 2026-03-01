@@ -16,6 +16,10 @@ Constructs the full environment variable set for an enclave session:
 - **NO_PROXY**: Explicitly set to empty string to prevent bypass
 - **Latch metadata**: `LATCH_ENCLAVE=true`, `LATCH_SESSION_ID`
 - **Security hardening**: `HISTFILE=/dev/null` to prevent shell history leaks
+- **CA cert trust (Phase 2)**: When `caCertPath` is provided in `EnclaveEnvInput`, sets three environment variables so the sandbox trusts the session's ephemeral CA for TLS interception:
+  - `NODE_EXTRA_CA_CERTS` — trusted by Node.js processes
+  - `SSL_CERT_FILE` — trusted by OpenSSL-based tools (curl, Python requests, etc.)
+  - `GIT_SSL_CAINFO` — trusted by git for HTTPS operations
 - **Service env vars**: Resolves `${credential.fieldName}` placeholders with actual credential values from the credentials map
 - Only sets env vars where ALL credential placeholders were resolved
 
@@ -34,6 +38,7 @@ Detects available sandbox backends:
 - Static methods (no instance state) — used as utilities during session setup
 - Credential substitution handles multi-field credentials (e.g., AWS with accessKeyId + secretAccessKey)
 - Proxy port is dynamic (assigned at runtime by LatchProxy)
+- `EnclaveEnvInput` accepts an optional `caCertPath` parameter (from `LatchProxy.getCaCertPath()`) for TLS interception support
 - EnclaveManager does NOT start the sandbox — that's handled by docker-manager.ts
 
 ## Testing
