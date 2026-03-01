@@ -28,6 +28,42 @@ function Toggle({ on, onChange, label, description }: {
   )
 }
 
+// ─── Appearance section ──────────────────────────────────────────────────────
+
+function AppearanceSection() {
+  const theme = useAppStore((s) => s.theme)
+  const setTheme = useAppStore((s) => s.setTheme)
+
+  const options: { value: 'dark' | 'light' | 'system'; label: string; desc: string }[] = [
+    { value: 'dark',   label: 'Dark',   desc: 'Always use dark theme' },
+    { value: 'light',  label: 'Light',  desc: 'Always use light theme' },
+    { value: 'system', label: 'System', desc: 'Follow OS preference' },
+  ]
+
+  return (
+    <div className="panel-card">
+      <div className="appearance-options">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            className={`appearance-option${theme === opt.value ? ' is-active' : ''}`}
+            onClick={() => setTheme(opt.value)}
+          >
+            <div className={`appearance-preview ${opt.value}`}>
+              <div className="appearance-preview-sidebar" />
+              <div className="appearance-preview-main">
+                <div className="appearance-preview-line" />
+                <div className="appearance-preview-line short" />
+              </div>
+            </div>
+            <span className="appearance-label">{opt.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── API key section ─────────────────────────────────────────────────────────
 
 type KeyStatus = 'loading' | 'none' | 'saved' | 'removed' | 'error'
@@ -140,7 +176,7 @@ function SandboxSection() {
 
   return (
     <>
-      <div className="section-label" style={{ marginTop: 20, marginBottom: 8 }}>Sandbox</div>
+      <div className="view-section-label">Sandbox</div>
       <div className="panel-card">
         <div className="settings-toggles">
           <Toggle
@@ -234,15 +270,19 @@ export default function SettingsPanel() {
         </div>
       </div>
 
+      {/* ── Appearance ──────────────────────────────────────────── */}
+      <div className="view-section-label">Appearance</div>
+      <AppearanceSection />
+
       {/* ── Model Providers ─────────────────────────────────────── */}
-      <div className="section-label" style={{ marginBottom: 8 }}>Model Providers</div>
+      <div className="view-section-label">Model Providers</div>
       <ApiKeySection />
 
       {/* ── Sandbox ──────────────────────────────────────────────── */}
       <SandboxSection />
 
       {/* ── General ─────────────────────────────────────────────── */}
-      <div className="section-label" style={{ marginTop: 20, marginBottom: 8 }}>General</div>
+      <div className="view-section-label">General</div>
       <div className="panel-card">
         <div className="settings-toggles">
           <Toggle

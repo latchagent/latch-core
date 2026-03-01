@@ -406,6 +406,7 @@ function McpToolPicker({ rules, onChange, serverRules }: {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const CLAUDE_TOOLS   = ['Read', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch', 'Task', 'NotebookEdit']
+const CODEX_TOOLS    = ['shell', 'read', 'write', 'apply_patch', 'web_search']
 const OPENCLAW_TOOLS = ['read', 'write', 'exec', 'web_search', 'web_fetch', 'browser']
 
 type PeTab = 'general' | 'claude' | 'codex' | 'openclaw'
@@ -714,6 +715,10 @@ export default function PolicyEditor() {
             </select>
           </div>
           <div className="modal-field">
+            <label className="modal-label">Tool rules</label>
+            <ToolRulesEditor tools={CODEX_TOOLS} rules={codexToolRules} onChange={setCodexToolRules} />
+          </div>
+          <div className="modal-field">
             <label className="modal-label">MCP server rules</label>
             <McpServerRulesEditor rules={codexMcpRules} onChange={setCodexMcpRules} />
           </div>
@@ -723,7 +728,7 @@ export default function PolicyEditor() {
           </div>
           <div className="modal-field">
             <label className="modal-label">Custom tool rules</label>
-            <CustomToolRules rules={codexToolRules} builtinTools={[]} onChange={setCodexToolRules} />
+            <CustomToolRules rules={codexToolRules} builtinTools={CODEX_TOOLS} onChange={setCodexToolRules} />
           </div>
         </div>
       )}

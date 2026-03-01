@@ -12,7 +12,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
-const TERMINAL_THEME = {
+const DARK_THEME = {
   background:  '#000000',
   foreground:  '#ffffff',
   cursor:      '#ffffff',
@@ -26,6 +26,26 @@ const TERMINAL_THEME = {
   cyan:        '#888888',
   white:       '#ffffff',
 };
+
+const LIGHT_THEME = {
+  background:  '#ffffff',
+  foreground:  '#111111',
+  cursor:      '#111111',
+  selection:   '#d0d0d0',
+  black:       '#000000',
+  red:         '#dc2626',
+  green:       '#16a34a',
+  yellow:      '#d97706',
+  blue:        '#555555',
+  magenta:     '#555555',
+  cyan:        '#555555',
+  white:       '#ffffff',
+};
+
+function getTerminalTheme(): typeof DARK_THEME {
+  const isLight = document.documentElement.classList.contains('theme-light');
+  return isLight ? LIGHT_THEME : DARK_THEME;
+}
 
 interface TermInstance {
   term: Terminal;
@@ -61,7 +81,7 @@ class TerminalManager {
     }
 
     const term = new Terminal({
-      theme:       TERMINAL_THEME,
+      theme:       getTerminalTheme(),
       fontFamily:  '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize:    12,
       cursorBlink: true,
@@ -131,6 +151,14 @@ class TerminalManager {
   dimensions(tabId: string): { cols: number; rows: number } {
     const term = this.instances.get(tabId)?.term;
     return { cols: term?.cols ?? 100, rows: term?.rows ?? 32 };
+  }
+
+  /** Update theme on all terminal instances. */
+  updateTheme(): void {
+    const theme = getTerminalTheme();
+    this.instances.forEach((instance) => {
+      instance.term.options.theme = theme;
+    });
   }
 
   /** Dispose all terminal instances (called on app teardown). */

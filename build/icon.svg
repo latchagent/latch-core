@@ -2,53 +2,222 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <!-- Top-to-bottom gradient matching the welcome screen ASCII title -->
-    <linearGradient id="glyph-fill" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0.55"/>
     </linearGradient>
 
-    <!-- Soft blur for ambient glow layer -->
-    <filter id="ambient-glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="16"/>
+    <!-- Ambient glow behind the text -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="18"/>
     </filter>
+
+    <!-- Rounded-corner clip (Apple squircle) -->
+    <clipPath id="r">
+      <rect x="80" y="80" width="864" height="864" rx="190" ry="190"/>
+    </clipPath>
   </defs>
 
-  <!-- Background: pure black -->
-  <rect width="1024" height="1024" fill="#000000"/>
+  <g clip-path="url(#r)">
+    <!-- Background -->
+    <rect x="80" y="80" width="864" height="864" fill="#000000"/>
 
-  <!--
-    Latch glyph: left bracket [ with a downward catch/hook at the top-right.
+    <!-- Glow layer -->
+    <g opacity="0.07" filter="url(#glow)">
+    <rect x="164" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="181" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="317" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="334" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="351" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="368" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="385" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="436" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="453" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="470" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="487" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="504" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="521" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="538" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="555" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="606" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="623" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="640" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="657" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="674" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="691" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="725" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="742" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="810" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="827" y="427" width="17" height="25" fill="#ffffff"/>
+    <rect x="164" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="181" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="300" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="317" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="385" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="402" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="487" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="504" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="589" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="606" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="725" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="742" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="810" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="827" y="456" width="17" height="25" fill="#ffffff"/>
+    <rect x="164" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="181" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="300" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="317" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="334" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="351" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="368" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="385" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="402" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="487" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="504" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="589" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="606" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="725" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="742" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="759" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="776" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="793" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="810" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="827" y="485" width="17" height="25" fill="#ffffff"/>
+    <rect x="164" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="181" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="300" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="317" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="385" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="402" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="487" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="504" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="589" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="606" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="725" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="742" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="810" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="827" y="514" width="17" height="25" fill="#ffffff"/>
+    <rect x="164" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="181" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="198" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="215" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="232" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="249" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="266" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="300" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="317" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="385" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="402" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="487" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="504" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="606" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="623" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="640" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="657" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="674" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="691" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="725" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="742" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="810" y="543" width="17" height="25" fill="#ffffff"/>
+    <rect x="827" y="543" width="17" height="25" fill="#ffffff"/>
+    </g>
 
-    Geometry (all coordinates in px, 1024×1024 canvas):
-      Vertical bar:  x=292  y=232  w=72  h=560
-      Top bar:       x=292  y=232  w=440 h=72
-      Bottom bar:    x=292  y=720  w=440 h=72
-      Catch/hook:    x=660  y=304  w=72  h=128
-
-    Path traces the outer boundary of the filled shape clockwise:
-      (292,232) top-left
-      (732,232) top-right of top bar
-      (732,432) bottom of hook (outer)
-      (660,432) bottom of hook (inner)
-      (660,304) inner top-right (where hook meets top bar)
-      (364,304) inner top-left
-      (364,720) inner bottom-left
-      (732,720) inner bottom-right
-      (732,792) outer bottom-right of bottom bar
-      (292,792) outer bottom-left
-  -->
-
-  <!-- Glow layer: faint white halo behind the glyph -->
-  <path
-    d="M 292,232 L 732,232 L 732,432 L 660,432 L 660,304 L 364,304 L 364,720 L 732,720 L 732,792 L 292,792 Z"
-    fill="#ffffff"
-    opacity="0.08"
-    filter="url(#ambient-glow)"
-  />
-
-  <!-- Main glyph -->
-  <path
-    d="M 292,232 L 732,232 L 732,432 L 660,432 L 660,304 L 364,304 L 364,720 L 732,720 L 732,792 L 292,792 Z"
-    fill="url(#glyph-fill)"
-  />
+    <!-- Text pixels -->
+    <rect x="164" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="181" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="317" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="334" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="351" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="368" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="385" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="436" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="453" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="470" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="487" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="504" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="521" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="538" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="555" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="606" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="623" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="640" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="657" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="674" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="691" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="725" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="742" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="810" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="827" y="427" width="17" height="25" fill="url(#g)"/>
+    <rect x="164" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="181" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="300" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="317" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="385" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="402" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="487" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="504" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="589" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="606" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="725" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="742" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="810" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="827" y="456" width="17" height="25" fill="url(#g)"/>
+    <rect x="164" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="181" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="300" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="317" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="334" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="351" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="368" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="385" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="402" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="487" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="504" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="589" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="606" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="725" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="742" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="759" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="776" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="793" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="810" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="827" y="485" width="17" height="25" fill="url(#g)"/>
+    <rect x="164" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="181" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="300" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="317" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="385" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="402" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="487" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="504" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="589" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="606" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="725" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="742" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="810" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="827" y="514" width="17" height="25" fill="url(#g)"/>
+    <rect x="164" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="181" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="198" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="215" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="232" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="249" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="266" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="300" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="317" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="385" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="402" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="487" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="504" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="606" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="623" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="640" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="657" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="674" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="691" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="725" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="742" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="810" y="543" width="17" height="25" fill="url(#g)"/>
+    <rect x="827" y="543" width="17" height="25" fill="url(#g)"/>
+  </g>
 </svg>

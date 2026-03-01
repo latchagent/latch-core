@@ -1,5 +1,5 @@
 import React from 'react'
-import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Key, Gear, ShieldWarning, BookOpenText } from '@phosphor-icons/react'
+import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Key, Gear, ShieldWarning, BookOpenText, Target } from '@phosphor-icons/react'
 import { useAppStore, useAgentStatus } from '../store/useAppStore'
 import StatusDot from './StatusDot'
 import type { SessionRecord, AppView } from '../../types'
@@ -131,7 +131,7 @@ export default function Sidebar() {
           className={`sidebar-nav-item${activeView === 'radar' ? ' is-active' : ''}`}
           onClick={() => setActiveView('radar')}
         >
-          <ShieldWarning className="sidebar-nav-icon" weight="light" />
+          <Target className="sidebar-nav-icon" weight="light" />
           Radar
           {radarSignals.length > 0 && (
             <span className={`sidebar-badge${radarSignals.some((s) => s.level === 'high') ? ' is-alert' : ''}`}>
@@ -139,6 +139,22 @@ export default function Sidebar() {
             </span>
           )}
         </button>
+      </nav>
+
+      <div className="sidebar-section sidebar-sessions" id="session-list">
+        {sessionList.map((session) => (
+          <SessionItem
+            key={session.id}
+            session={session}
+            isActive={session.id === activeSessionId}
+            onClick={() => activateSession(session.id)}
+            onDelete={() => handleDelete(session.id, session.name)}
+          />
+        ))}
+      </div>
+
+      {/* ── Bottom nav (Docs, Settings) ──────────────────────── */}
+      <nav className="sidebar-nav sidebar-nav-bottom">
         <button
           className={`sidebar-nav-item${activeView === 'docs' ? ' is-active' : ''}`}
           onClick={() => setActiveView('docs')}
@@ -154,18 +170,6 @@ export default function Sidebar() {
           Settings
         </button>
       </nav>
-
-      <div className="sidebar-section sidebar-sessions" id="session-list">
-        {sessionList.map((session) => (
-          <SessionItem
-            key={session.id}
-            session={session}
-            isActive={session.id === activeSessionId}
-            onClick={() => activateSession(session.id)}
-            onDelete={() => handleDelete(session.id, session.name)}
-          />
-        ))}
-      </div>
 
     </aside>
   )
