@@ -11,6 +11,7 @@
  * Wraps backend-specific operations behind a unified interface.
  */
 
+import { execSync } from 'node:child_process'
 import DockerManager from '../docker-manager'
 import { SeatbeltEnclave } from './seatbelt-enclave'
 import { BubblewrapEnclave } from './bubblewrap-enclave'
@@ -22,6 +23,8 @@ interface SessionRecord {
   sessionId: string
   backend: SandboxBackend
   processId: string
+  uid?: number
+  proxyPort?: number
 }
 
 interface BackendDetections {
@@ -103,9 +106,9 @@ export class SandboxManager {
     return this.bubblewrapEnclave
   }
 
-  /** Register an active sandbox session. */
-  registerSession(sessionId: string, backend: SandboxBackend, processId: string): void {
-    this.sessions.set(sessionId, { sessionId, backend, processId })
+  /** Register an active sandbox session. For bubblewrap sessions, uid and proxyPort are needed for iptables cleanup. */
+  registerSession(sessionId: string, backend: SandboxBackend, processId: string, opts?: { uid?: number; proxyPort?: number }): void {
+    this.sessions.set(sessionId, { sessionId, backend, processId, uid: opts?.uid, proxyPort: opts?.proxyPort })
   }
 
   /** Unregister a sandbox session (on stop/exit). */
@@ -120,9 +123,20 @@ export class SandboxManager {
     return { status: 'running', processId: record.processId, backend: record.backend }
   }
 
-  /** Clean up all active sessions. */
+  /** Clean up all active sessions, including iptables rules for bubblewrap. */
   disposeAll(): void {
     this.dockerManager.disposeAll()
+    // Clean up iptables rules for bubblewrap sessions
+    for (const record of this.sessions.values()) {
+      if (record.backend === 'bubblewrap' && record.uid != null && record.proxyPort != null) {
+        const cleanup = this.bubblewrapEnclave.generateIptablesCleanup({ uid: record.uid, proxyPort: record.proxyPort })
+        try {
+          execSync(cleanup, { stdio: 'ignore' })
+        } catch {
+          // Best-effort cleanup — rules may already be removed
+        }
+      }
+    }
     // Seatbelt and Bubblewrap processes die with parent (--die-with-parent / SIGTERM)
     this.sessions.clear()
   }

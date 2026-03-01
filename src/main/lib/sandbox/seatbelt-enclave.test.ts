@@ -76,6 +76,26 @@ describe('SeatbeltEnclave', () => {
     expect(args.args).toContain('/bin/zsh')
   })
 
+  it('rejects workspacePath containing parentheses', () => {
+    const enclave = new SeatbeltEnclave()
+    expect(() => enclave.generateProfile({
+      workspacePath: '/tmp/ws(evil)',
+      proxyPort: 8080,
+      authzPort: 9090,
+      shell: '/bin/sh',
+    })).toThrow('Invalid workspacePath')
+  })
+
+  it('rejects shell containing quotes', () => {
+    const enclave = new SeatbeltEnclave()
+    expect(() => enclave.generateProfile({
+      workspacePath: '/tmp/ws',
+      proxyPort: 8080,
+      authzPort: 9090,
+      shell: '/bin/sh"',
+    })).toThrow('Invalid shell')
+  })
+
   it('detects sandbox-exec availability', async () => {
     const { execFile } = await import('node:child_process')
     const mockExecFile = vi.mocked(execFile)

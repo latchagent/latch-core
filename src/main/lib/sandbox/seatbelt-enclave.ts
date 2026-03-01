@@ -38,6 +38,20 @@ export class SeatbeltEnclave {
   private profileDir: string | null = null
 
   /**
+   * Validate inputs that will be interpolated into the profile string.
+   * Rejects paths/shell containing parentheses or quotes to prevent template injection.
+   */
+  private _validateProfileInputs(opts: ProfileOptions): void {
+    const dangerous = /[()'"]/
+    if (dangerous.test(opts.workspacePath)) {
+      throw new Error(`Invalid workspacePath: must not contain parentheses or quotes`)
+    }
+    if (dangerous.test(opts.shell)) {
+      throw new Error(`Invalid shell: must not contain parentheses or quotes`)
+    }
+  }
+
+  /**
    * Generate a Seatbelt sandbox profile (.sb file).
    * The profile uses deny-by-default with explicit allows for:
    * - Workspace filesystem access (read/write)
@@ -46,6 +60,7 @@ export class SeatbeltEnclave {
    * - Loopback network to proxy and authz ports only
    */
   generateProfile(opts: ProfileOptions): string {
+    this._validateProfileInputs(opts)
     return `(version 1)
 (deny default)
 
