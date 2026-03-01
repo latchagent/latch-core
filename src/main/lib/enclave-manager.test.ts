@@ -93,4 +93,14 @@ describe('EnclaveManager', () => {
     expect(env.SSL_CERT_FILE).toBeUndefined()
     expect(env.GIT_SSL_CAINFO).toBeUndefined()
   })
+
+  it('detectBackend returns a SandboxBackend or null', async () => {
+    const result = await EnclaveManager.detectBackend()
+    // Result depends on the test environment
+    if (result !== null) {
+      expect(['docker', 'seatbelt', 'bubblewrap']).toContain(result)
+    } else {
+      expect(result).toBeNull()
+    }
+  })
 })

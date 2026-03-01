@@ -2,7 +2,7 @@
  * @module enclave-manager
  * @description Manages sandbox lifecycle for enclave sessions.
  *
- * Phase 1: Docker backend only. Seatbelt (macOS) and bubblewrap (Linux) are Phase 3.
+ * Selection cascade: Docker → Seatbelt (macOS) → Bubblewrap (Linux) → null.
  * No sandbox = no session — the enclave is mandatory.
  */
 
@@ -66,9 +66,10 @@ export class EnclaveManager {
 
   /**
    * Detect which sandbox backend is available.
-   * Phase 1: Docker only.
+   * Selection cascade: Docker → Seatbelt (macOS) → Bubblewrap (Linux) → null.
    */
   static async detectBackend(): Promise<SandboxBackend | null> {
+    // 1. Docker
     try {
       const { execSync } = await import('node:child_process')
       execSync('docker info', { stdio: 'ignore', timeout: 5000 })
@@ -77,7 +78,28 @@ export class EnclaveManager {
       // Docker not available
     }
 
-    // Phase 3: check seatbelt (macOS) and bubblewrap (Linux)
+    // 2. Seatbelt (macOS)
+    if (process.platform === 'darwin') {
+      try {
+        const { execSync } = await import('node:child_process')
+        execSync('which sandbox-exec', { stdio: 'ignore', timeout: 5000 })
+        return 'seatbelt'
+      } catch {
+        // sandbox-exec not available
+      }
+    }
+
+    // 3. Bubblewrap (Linux)
+    if (process.platform === 'linux') {
+      try {
+        const { execSync } = await import('node:child_process')
+        execSync('which bwrap', { stdio: 'ignore', timeout: 5000 })
+        return 'bubblewrap'
+      } catch {
+        // bwrap not available
+      }
+    }
+
     return null
   }
 }
