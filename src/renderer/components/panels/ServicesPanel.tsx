@@ -1,18 +1,42 @@
 import { useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import ServiceEditor from '../modals/ServiceEditor'
+import type { ServiceDefinition } from '../../../types'
 
 export default function ServicesPanel() {
   const services = useAppStore(s => s.services)
   const serviceCatalog = useAppStore(s => s.serviceCatalog)
   const servicesLoaded = useAppStore(s => s.servicesLoaded)
   const loadServices = useAppStore(s => s.loadServices)
-  const [showServiceEditor, setShowServiceEditor] = useState(false)
+  const deleteService = useAppStore(s => s.deleteService)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editingService, setEditingService] = useState<ServiceDefinition | null>(null)
 
   if (!servicesLoaded) return <div className="panel-empty">Loading services...</div>
 
+  const handleNewService = () => {
+    setEditingService(null)
+    setEditorOpen(true)
+  }
+
+  const handleEditService = (definition: ServiceDefinition) => {
+    setEditingService(definition)
+    setEditorOpen(true)
+  }
+
+  const handleDeleteService = async (id: string, name: string) => {
+    if (!window.confirm(`Delete service "${name}"? This cannot be undone.`)) return
+    await deleteService(id)
+  }
+
+  const handleCatalogClick = (catalog: ServiceDefinition) => {
+    setEditingService({ ...catalog, id: `custom-${Date.now()}` })
+    setEditorOpen(true)
+  }
+
   const handleEditorClose = () => {
-    setShowServiceEditor(false)
+    setEditorOpen(false)
+    setEditingService(null)
     loadServices()
   }
 
@@ -25,7 +49,7 @@ export default function ServicesPanel() {
       <button
         className="panel-action is-primary"
         style={{ marginBottom: 12 }}
-        onClick={() => setShowServiceEditor(true)}
+        onClick={handleNewService}
       >
         + Create Service
       </button>
@@ -38,7 +62,11 @@ export default function ServicesPanel() {
       ) : (
         <div className="services-list">
           {services.map(svc => (
-            <div key={svc.id} className="service-item">
+            <div
+              key={svc.id}
+              className="service-item"
+              onClick={() => handleEditService(svc.definition)}
+            >
               <div className="service-item-header">
                 <span className="service-name">{svc.name}</span>
                 <span className={`service-badge ${svc.hasCredential ? 'badge-ok' : 'badge-warn'}`}>
@@ -47,6 +75,17 @@ export default function ServicesPanel() {
               </div>
               <div className="service-item-meta">
                 <span className="text-muted">{svc.category} · {svc.definition.dataTier.defaultTier}</span>
+              </div>
+              <div className="service-item-actions">
+                <button
+                  className="panel-action is-danger"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeleteService(svc.id, svc.name)
+                  }}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}
@@ -60,7 +99,11 @@ export default function ServicesPanel() {
             {serviceCatalog
               .filter(cat => !services.some(s => s.definitionId === cat.id))
               .map(cat => (
-                <div key={cat.id} className="catalog-item">
+                <div
+                  key={cat.id}
+                  className="catalog-item"
+                  onClick={() => handleCatalogClick(cat)}
+                >
                   <span className="service-name">{cat.name}</span>
                   <span className="text-muted">{cat.category}</span>
                 </div>
@@ -69,8 +112,8 @@ export default function ServicesPanel() {
         </div>
       )}
 
-      {showServiceEditor && (
-        <ServiceEditor onClose={handleEditorClose} />
+      {editorOpen && (
+        <ServiceEditor onClose={handleEditorClose} initial={editingService} />
       )}
     </div>
   )

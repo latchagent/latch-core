@@ -5140,6 +5140,21 @@ textarea:focus-visible,
   background: var(--bg-elevated);
   border-radius: 6px;
   padding: 10px 12px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.service-item:hover {
+  background: var(--bg-card-hover);
+}
+
+.service-item-actions {
+  display: none;
+  margin-top: 8px;
+}
+
+.service-item:hover .service-item-actions {
+  display: flex;
 }
 .service-item-header {
   display: flex;
