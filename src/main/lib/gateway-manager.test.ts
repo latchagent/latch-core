@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EnclaveManager } from './enclave-manager'
+import { GatewayManager } from './gateway-manager'
 import type { ServiceDefinition } from '../../types'
 
 const GITHUB: ServiceDefinition = {
@@ -17,9 +17,9 @@ const GITHUB: ServiceDefinition = {
   skill: { description: '', capabilities: [], constraints: [] },
 }
 
-describe('EnclaveManager', () => {
-  it('builds enclave environment with proxy vars', () => {
-    const env = EnclaveManager.buildEnclaveEnv({
+describe('GatewayManager', () => {
+  it('builds gateway environment with proxy vars', () => {
+    const env = GatewayManager.buildGatewayEnv({
       proxyPort: 9801,
       authzPort: 9901,
       sessionId: 'session-1',
@@ -30,14 +30,14 @@ describe('EnclaveManager', () => {
     expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:9801')
     expect(env.HTTP_PROXY).toBe('http://127.0.0.1:9801')
     expect(env.NO_PROXY).toBe('')
-    expect(env.LATCH_ENCLAVE).toBe('true')
+    expect(env.LATCH_GATEWAY).toBe('true')
     expect(env.LATCH_SESSION_ID).toBe('session-1')
     expect(env.GH_TOKEN).toBe('ghp_secret')
     expect(env.HISTFILE).toBe('/dev/null')
   })
 
   it('resolves credential placeholders in env vars', () => {
-    const env = EnclaveManager.buildEnclaveEnv({
+    const env = GatewayManager.buildGatewayEnv({
       proxyPort: 9801,
       authzPort: 9901,
       sessionId: 'session-1',
@@ -53,7 +53,7 @@ describe('EnclaveManager', () => {
       id: 'npm',
       injection: { env: { NPM_TOKEN: '${credential.token}' }, files: {}, proxy: { domains: [], headers: {} } },
     }
-    const env = EnclaveManager.buildEnclaveEnv({
+    const env = GatewayManager.buildGatewayEnv({
       proxyPort: 9801,
       authzPort: 9901,
       sessionId: 'session-1',
@@ -68,7 +68,7 @@ describe('EnclaveManager', () => {
   })
 
   it('injects CA cert env vars when caCertPath is provided', () => {
-    const env = EnclaveManager.buildEnclaveEnv({
+    const env = GatewayManager.buildGatewayEnv({
       proxyPort: 8080,
       authzPort: 9090,
       sessionId: 'test',
@@ -82,7 +82,7 @@ describe('EnclaveManager', () => {
   })
 
   it('omits CA cert env vars when caCertPath is not provided', () => {
-    const env = EnclaveManager.buildEnclaveEnv({
+    const env = GatewayManager.buildGatewayEnv({
       proxyPort: 8080,
       authzPort: 9090,
       sessionId: 'test',
@@ -95,7 +95,7 @@ describe('EnclaveManager', () => {
   })
 
   it('detectBackend returns a SandboxBackend or null', async () => {
-    const result = await EnclaveManager.detectBackend()
+    const result = await GatewayManager.detectBackend()
     // Result depends on the test environment
     if (result !== null) {
       expect(['docker', 'seatbelt', 'bubblewrap']).toContain(result)

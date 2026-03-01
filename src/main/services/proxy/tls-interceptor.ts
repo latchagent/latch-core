@@ -40,7 +40,7 @@ export class TlsInterceptor {
     this.caCert.validity.notAfter.setFullYear(this.caCert.validity.notAfter.getFullYear() + 1)
 
     const caAttrs = [
-      { name: 'commonName', value: 'Latch Enclave Session CA' },
+      { name: 'commonName', value: 'Latch Gateway Session CA' },
       { name: 'organizationName', value: 'Latch' },
     ]
     this.caCert.setSubject(caAttrs)

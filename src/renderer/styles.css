@@ -681,10 +681,10 @@ body {
 /* ── Tagline ─────────────────────────────────────────────────────────────── */
 
 .welcome-tagline {
-  font-size: 14px;
+  font-size: 20px;
   color: var(--text-secondary);
   margin: 14px 0 0 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-pixel-square);
   letter-spacing: 0.02em;
   animation: welcome-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   animation-delay: 0.2s;
@@ -2724,8 +2724,8 @@ textarea:focus-visible,
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
-  font-family: var(--font-sans);
-  font-weight: 500;
+  font-family: var(--font-pixel-square);
+  font-weight: 400;
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease;
   text-align: left;
@@ -2797,10 +2797,11 @@ textarea:focus-visible,
 }
 
 .view-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-family: var(--font-pixel-square);
+  font-size: 36px;
+  font-weight: 400;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.02em;
   margin: 0;
 }
 
@@ -3846,10 +3847,11 @@ textarea:focus-visible,
 }
 
 .cp-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-family: var(--font-pixel-square);
+  font-size: 20px;
+  font-weight: 400;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.02em;
   margin: 0 0 6px 0;
 }
 
@@ -4373,9 +4375,9 @@ textarea:focus-visible,
 }
 
 .radar-stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 400;
+  font-family: var(--font-pixel-square);
   color: var(--text-primary);
   line-height: 1.2;
 }
@@ -4648,82 +4650,7 @@ textarea:focus-visible,
   line-height: 1.5;
 }
 
-/* ── Vault panel ─────────────────────────────────────────────────────────────── */
-
-.vault-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.vault-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-
-.vault-key {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-.vault-tags {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.vault-tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--bg-card-hover);
-  color: var(--text-secondary);
-}
-
-.vault-empty {
-  color: var(--text-tertiary);
-  font-size: 13px;
-  padding: 8px 0;
-}
-
-.vault-hint {
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  line-height: 1.5;
-}
-
-.vault-hint code {
-  font-family: var(--font-mono);
-  background: var(--bg-card-hover);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-/* ── Vault view (full-page) ─────────────────────────────────────────────────── */
-
-.vault-view-key {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-  display: block;
-}
-
-.vault-view-desc {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-  line-height: 1.4;
-}
-
-/* ── Secret editor modal helpers ─────────────────────────────────────────────── */
+/* ── Modal helpers ────────────────────────────────────────────────────────────── */
 
 .modal-hint {
   font-size: 12px;
@@ -4764,26 +4691,6 @@ textarea:focus-visible,
   flex-shrink: 0;
 }
 
-.kv-secret-select {
-  background: var(--bg-card-hover);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 11px;
-  cursor: pointer;
-  flex-shrink: 0;
-  max-width: 100px;
-}
-
-.kv-secret-select:hover {
-  border-color: var(--border-active);
-}
-
-.kv-secret-select option {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
 
 /* ══════════════════════════════════════════════════════════════════════════════
    Docs View
@@ -4817,9 +4724,10 @@ textarea:focus-visible,
 }
 
 .docs-hero-tagline {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-family: var(--font-pixel-square);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
   color: var(--text-primary);
   margin: 0 0 10px;
 }
@@ -4839,9 +4747,10 @@ textarea:focus-visible,
 }
 
 .docs-section-title {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font-pixel-square);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
   color: var(--text-primary);
   margin: 0 0 8px;
 }
@@ -5189,37 +5098,37 @@ textarea:focus-visible,
 }
 .catalog-item:hover { background: var(--bg-elevated); }
 
-/* ─── Enclave Panel ──────────────────────────────────────────────────────── */
+/* ─── Gateway Panel ──────────────────────────────────────────────────────── */
 
-.enclave-panel {
+.gateway-panel {
   padding: 12px;
   overflow-y: auto;
   height: 100%;
 }
 
-.enclave-panel h3 {
+.gateway-panel h3 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
 }
 
-.enclave-header-row {
+.gateway-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
 }
 
-.enclave-error {
+.gateway-error {
   color: var(--error);
   font-size: 12px;
 }
 
-.enclave-section {
+.gateway-section {
   margin-bottom: 12px;
 }
 
-.enclave-section h4 {
+.gateway-section h4 {
   margin: 0 0 8px 0;
   font-size: 12px;
   font-weight: 500;
@@ -5228,60 +5137,60 @@ textarea:focus-visible,
   letter-spacing: 0.05em;
 }
 
-.enclave-grid {
+.gateway-grid {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 4px 12px;
   font-size: 12px;
 }
 
-.enclave-muted {
+.gateway-muted {
   color: var(--text-secondary);
 }
 
-.enclave-mono {
+.gateway-mono {
   font-family: var(--font-mono);
   font-size: 11px;
 }
 
-.enclave-pr-row {
+.gateway-pr-row {
   display: flex;
   gap: 8px;
 }
 
-.enclave-pr-input {
+.gateway-pr-input {
   flex: 1;
 }
 
-.enclave-annotation-result {
+.gateway-annotation-result {
   margin-top: 4px;
   font-size: 11px;
   color: var(--text-secondary);
 }
 
-.enclave-audit-list {
+.gateway-audit-list {
   max-height: 300px;
   overflow-y: auto;
   font-size: 11px;
 }
 
-.enclave-audit-row {
+.gateway-audit-row {
   display: flex;
   gap: 8px;
   padding: 2px 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.enclave-audit-row.is-denied {
+.gateway-audit-row.is-denied {
   color: var(--error);
 }
 
-.enclave-audit-row .enclave-mono {
+.gateway-audit-row .gateway-mono {
   min-width: 60px;
 }
 
-.enclave-badge-allow { color: var(--success); }
-.enclave-badge-deny  { color: var(--error); }
+.gateway-badge-allow { color: var(--success); }
+.gateway-badge-deny  { color: var(--error); }
 
 /* ─── Service Editor ─────────────────────────────────────────────────────── */
 

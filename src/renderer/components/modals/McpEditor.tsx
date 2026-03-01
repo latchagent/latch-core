@@ -10,7 +10,7 @@ import type { McpServerRecord, McpTransport } from '../../../types'
 const SECRET_REF_RE = /^\$\{secret:[^}]+\}$/
 
 export default function McpEditor() {
-  const { mcpEditorServer, closeMcpEditor, saveMcpServer, secrets, loadSecrets, introspectMcpServer } = useAppStore()
+  const { mcpEditorServer, closeMcpEditor, saveMcpServer, introspectMcpServer } = useAppStore()
 
   const base = mcpEditorServer
   const [name,      setName]      = useState(base?.name        ?? '')
@@ -45,7 +45,6 @@ export default function McpEditor() {
   })
 
   useEffect(() => {
-    loadSecrets()
     setName(base?.name        ?? '')
     setDesc(base?.description ?? '')
     setTransport(base?.transport ?? 'stdio')
@@ -274,28 +273,13 @@ export default function McpEditor() {
                     onChange={(e) => updateEnvRow(i, 0, e.target.value)}
                   />
                   <div className="kv-value-wrap">
-                    {SECRET_REF_RE.test(v) && <span className="kv-secret-icon" title="Using vault secret">&#x1f512;</span>}
+                    {SECRET_REF_RE.test(v) && <span className="kv-secret-icon" title="Secret reference">&#x1f512;</span>}
                     <input
                       className={`modal-input kv-value${SECRET_REF_RE.test(v) ? ' is-secret' : ''}`}
-                      placeholder="value"
+                      placeholder="value or ${secret:KEY}"
                       value={v}
                       onChange={(e) => updateEnvRow(i, 1, e.target.value)}
                     />
-                    {secrets.length > 0 && (
-                      <select
-                        className="kv-secret-select"
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) updateEnvRow(i, 1, e.target.value)
-                        }}
-                        title="Use a vault secret"
-                      >
-                        <option value="">secret...</option>
-                        {secrets.map((s) => (
-                          <option key={s.id} value={`\${secret:${s.key}}`}>{s.name}</option>
-                        ))}
-                      </select>
-                    )}
                   </div>
                   <button className="kv-remove" onClick={() => removeEnvRow(i)} type="button">x</button>
                 </div>

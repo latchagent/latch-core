@@ -162,6 +162,17 @@ contextBridge.exposeInMainWorld('latch', {
   sandboxStatus: (payload: { sessionId: string }) =>
     ipcRenderer.invoke('latch:sandbox-status', payload),
 
+  // ── Gateway orchestration ──────────────────────────────────────────────
+
+  startGateway: (payload: { sessionId: string; serviceIds: string[]; maxDataTier: string; policyId: string; policyOverride?: Record<string, unknown> | null; workspacePath: string | null; enableTls?: boolean }) =>
+    ipcRenderer.invoke('latch:gateway-start', payload),
+
+  stopGateway: (payload: { sessionId: string; exitReason?: string }) =>
+    ipcRenderer.invoke('latch:gateway-stop', payload),
+
+  addGatewayService: (payload: { sessionId: string; serviceId: string }) =>
+    ipcRenderer.invoke('latch:gateway-add-service', payload),
+
   // ── Activity / Authz ──────────────────────────────────────────────────────
 
   listActivity: (payload?: { sessionId?: string; limit?: number; offset?: number }) =>
@@ -280,7 +291,7 @@ contextBridge.exposeInMainWorld('latch', {
   hasSetting: (payload: { key: string }) =>
     ipcRenderer.invoke('latch:settings-has', payload),
 
-  // ── Secrets (vault) ────────────────────────────────────────────────────
+  // ── Secrets ────────────────────────────────────────────────────────────
 
   listSecrets: (payload?: { scope?: string }) =>
     ipcRenderer.invoke('latch:secret-list', payload),
@@ -300,7 +311,7 @@ contextBridge.exposeInMainWorld('latch', {
   listSecretHints: () =>
     ipcRenderer.invoke('latch:secret-hints'),
 
-  // ── Services (enclave) ──────────────────────────────────────────────────
+  // ── Services (gateway) ──────────────────────────────────────────────────
 
   listServices: () => ipcRenderer.invoke('latch:service-list'),
 

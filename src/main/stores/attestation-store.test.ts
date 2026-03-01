@@ -119,7 +119,7 @@ describe('AttestationStore', () => {
         redactionsApplied: 0, tokenizationsApplied: 0,
         toolCalls: 5, toolDenials: 0, approvalEscalations: 0,
       },
-      enclave: {
+      gateway: {
         sandboxType: 'docker', networkForced: true,
         startedAt: new Date().toISOString(), endedAt: new Date().toISOString(),
         exitReason: 'normal',

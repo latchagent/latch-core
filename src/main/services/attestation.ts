@@ -105,7 +105,7 @@ export class AttestationEngine {
         toolDenials: input.activity.toolDenials,
         approvalEscalations: input.activity.approvalEscalations,
       },
-      enclave: {
+      gateway: {
         sandboxType: input.sandboxType,
         networkForced: input.networkForced,
         startedAt: new Date(input.startTime).toISOString(),

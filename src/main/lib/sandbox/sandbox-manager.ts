@@ -3,9 +3,9 @@
  * @description Unified sandbox backend selection and lifecycle management.
  *
  * Implements the selection cascade:
- *   1. Docker available? → DockerEnclave
- *   2. macOS? → SeatbeltEnclave (sandbox-exec + pf)
- *   3. Linux? → BubblewrapEnclave (bwrap + iptables)
+ *   1. Docker available? → Docker sandbox
+ *   2. macOS? → SeatbeltGateway (sandbox-exec + pf)
+ *   3. Linux? → BubblewrapGateway (bwrap + iptables)
  *   4. None available? → REFUSE TO START SESSION
  *
  * Wraps backend-specific operations behind a unified interface.
@@ -13,8 +13,8 @@
 
 import { execSync } from 'node:child_process'
 import DockerManager from '../docker-manager'
-import { SeatbeltEnclave } from './seatbelt-enclave'
-import { BubblewrapEnclave } from './bubblewrap-enclave'
+import { SeatbeltGateway } from './seatbelt-gateway'
+import { BubblewrapGateway } from './bubblewrap-gateway'
 import type { SandboxBackend, SandboxDetection, SandboxStatus } from '../../../types'
 
 type SendFn = (channel: string, payload: unknown) => void
@@ -40,14 +40,14 @@ interface BestBackendResult {
 
 export class SandboxManager {
   private dockerManager: DockerManager
-  private seatbeltEnclave: SeatbeltEnclave
-  private bubblewrapEnclave: BubblewrapEnclave
+  private seatbeltGateway: SeatbeltGateway
+  private bubblewrapGateway: BubblewrapGateway
   private sessions = new Map<string, SessionRecord>()
 
   constructor(send: SendFn) {
     this.dockerManager = new DockerManager(send)
-    this.seatbeltEnclave = new SeatbeltEnclave()
-    this.bubblewrapEnclave = new BubblewrapEnclave()
+    this.seatbeltGateway = new SeatbeltGateway()
+    this.bubblewrapGateway = new BubblewrapGateway()
   }
 
   /**
@@ -56,8 +56,8 @@ export class SandboxManager {
   async getAvailableBackends(): Promise<BackendDetections> {
     const [docker, seatbelt, bubblewrap] = await Promise.all([
       this._detectDocker(),
-      this.seatbeltEnclave.detect(),
-      this.bubblewrapEnclave.detect(),
+      this.seatbeltGateway.detect(),
+      this.bubblewrapGateway.detect(),
     ])
     return { docker, seatbelt, bubblewrap }
   }
@@ -73,13 +73,13 @@ export class SandboxManager {
     }
 
     // 2. Seatbelt (macOS)
-    const seatbelt = await this.seatbeltEnclave.detect()
+    const seatbelt = await this.seatbeltGateway.detect()
     if (seatbelt.available) {
       return { backend: 'seatbelt', detection: seatbelt }
     }
 
     // 3. Bubblewrap (Linux)
-    const bubblewrap = await this.bubblewrapEnclave.detect()
+    const bubblewrap = await this.bubblewrapGateway.detect()
     if (bubblewrap.available) {
       return { backend: 'bubblewrap', detection: bubblewrap }
     }
@@ -96,14 +96,14 @@ export class SandboxManager {
     return this.dockerManager
   }
 
-  /** Get the Seatbelt enclave instance. */
-  getSeatbeltEnclave(): SeatbeltEnclave {
-    return this.seatbeltEnclave
+  /** Get the Seatbelt gateway instance. */
+  getSeatbeltGateway(): SeatbeltGateway {
+    return this.seatbeltGateway
   }
 
-  /** Get the Bubblewrap enclave instance. */
-  getBubblewrapEnclave(): BubblewrapEnclave {
-    return this.bubblewrapEnclave
+  /** Get the Bubblewrap gateway instance. */
+  getBubblewrapGateway(): BubblewrapGateway {
+    return this.bubblewrapGateway
   }
 
   /** Register an active sandbox session. For bubblewrap sessions, uid and proxyPort are needed for iptables cleanup. */
@@ -129,7 +129,7 @@ export class SandboxManager {
     // Clean up iptables rules for bubblewrap sessions
     for (const record of this.sessions.values()) {
       if (record.backend === 'bubblewrap' && record.uid != null && record.proxyPort != null) {
-        const cleanup = this.bubblewrapEnclave.generateIptablesCleanup({ uid: record.uid, proxyPort: record.proxyPort })
+        const cleanup = this.bubblewrapGateway.generateIptablesCleanup({ uid: record.uid, proxyPort: record.proxyPort })
         try {
           execSync(cleanup, { stdio: 'ignore' })
         } catch {

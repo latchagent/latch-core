@@ -20,9 +20,9 @@ const GITHUB: ServiceDefinition = {
 describe('SkillGenerator', () => {
   const gen = new SkillGenerator()
 
-  it('generates enclave meta skill', () => {
-    const content = gen.generateEnclaveMeta([GITHUB])
-    expect(content).toContain('Latch Enclave')
+  it('generates gateway meta skill', () => {
+    const content = gen.generateGatewayMeta([GITHUB])
+    expect(content).toContain('Latch Gateway')
     expect(content).toContain('GitHub')
     expect(content).toContain('Do not bypass network restrictions')
   })
@@ -35,9 +35,9 @@ describe('SkillGenerator', () => {
     expect(content).toContain('do NOT ask for tokens')
   })
 
-  it('enclave meta lists all services', () => {
+  it('gateway meta lists all services', () => {
     const svc2: ServiceDefinition = { ...GITHUB, id: 'npm', name: 'npm', skill: { ...GITHUB.skill, description: 'npm access.' } }
-    const content = gen.generateEnclaveMeta([GITHUB, svc2])
+    const content = gen.generateGatewayMeta([GITHUB, svc2])
     expect(content).toContain('GitHub')
     expect(content).toContain('npm')
   })

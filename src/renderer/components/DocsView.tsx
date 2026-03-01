@@ -51,7 +51,7 @@ function ArchitectureSvg() {
   const services = [
     ['Policy Engine', 'AuthZ Server', 'Supervisor'],
     ['MCP Sync', 'Radar', 'Session Mgr'],
-    ['Secrets Vault', 'Activity Log', 'Docker Mgr'],
+    ['Secrets Store', 'Activity Log', 'Docker Mgr'],
   ]
   const harnesses = ['Claude Code', 'Codex', 'OpenClaw']
   return (
@@ -484,27 +484,6 @@ export default function DocsView() {
           </FeatureCard>
 
           <FeatureCard
-            icon="⊡"
-            title="Secrets Vault"
-            summary="An encrypted key-value store for API keys and tokens. Secrets are referenced as ${secret:KEY} in MCP server configs and environment variables, resolved at runtime."
-            detailId="vault"
-            expanded={isExpanded('vault')}
-            onToggle={toggle}
-          >
-            <p>
-              Secrets are encrypted at rest in SQLite using the OS keychain-derived encryption key.
-              Raw values never cross the IPC boundary to the renderer — only metadata (name, key,
-              description, tags) is exposed. The renderer can create and delete secrets but never
-              read their values.
-            </p>
-            <p>
-              The <code>SecretResolver</code> service substitutes <code>{'${secret:KEY}'}</code> references in MCP
-              server environment variables and Docker configs at PTY spawn time. Secret values are
-              also redacted from activity logs and terminal output where possible.
-            </p>
-          </FeatureCard>
-
-          <FeatureCard
             icon="⬡"
             title="MCP Server Management"
             summary="Register MCP servers once in Latch, then sync them to all harnesses simultaneously. Supports stdio and HTTP transports with secret-aware environment variables."
@@ -570,17 +549,17 @@ export default function DocsView() {
 
           <FeatureCard
             icon="⛊"
-            title="Enclave & Services"
+            title="Gateway & Services"
             summary="Secure service integration through a proxy architecture that injects credentials, enforces data-tier policies, and produces cryptographic attestation receipts."
-            detailId="enclave"
-            expanded={isExpanded('enclave')}
+            detailId="gateway"
+            expanded={isExpanded('gateway')}
             onToggle={toggle}
           >
             <p>
-              The Enclave proxy intercepts outbound requests from agent sessions and applies
+              The Gateway proxy intercepts outbound requests from agent sessions and applies
               per-service rules. Each <code>ServiceDefinition</code> declares allowed domains,
               credential injection headers, data tier classification, and redaction patterns.
-              Credentials are resolved from the encrypted secrets vault at request time and
+              Credentials are resolved from the encrypted secrets store at request time and
               never exposed to the agent process.
             </p>
             <p>
@@ -590,7 +569,7 @@ export default function DocsView() {
               path, and allow/deny decision for full traceability.
             </p>
             <p>
-              At session end, the Enclave produces a <code>SessionReceipt</code> containing a
+              At session end, the Gateway produces a <code>SessionReceipt</code> containing a
               Merkle root over all audit events and a cryptographic signature. This receipt
               can be attached to pull requests as a provenance annotation, proving which
               external services were accessed and what policy was in effect.

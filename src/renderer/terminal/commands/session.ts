@@ -70,7 +70,7 @@ async function sessionStatus(runner: CommandRunner): Promise<void> {
   writeln(tabId, `  ${CYAN}Sessions:${RESET}    ${sessions.size} active`)
   writeln(tabId, `  ${CYAN}Policies:${RESET}    ${policies?.policies?.length ?? 0} defined`)
   writeln(tabId, `  ${CYAN}MCP Servers:${RESET} ${mcpServers?.servers?.length ?? 0} configured (${mcpWithTools.length} with discovered tools)`)
-  writeln(tabId, `  ${CYAN}Vault:${RESET}       ${secrets?.secrets?.length ?? 0} secrets`)
+  writeln(tabId, `  ${CYAN}Secrets:${RESET}     ${secrets?.secrets?.length ?? 0} stored`)
   writeln(tabId, '')
 }
 

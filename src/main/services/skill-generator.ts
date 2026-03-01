@@ -1,9 +1,9 @@
 /**
  * @module skill-generator
- * @description Auto-generates enclave and service skill files for agent awareness.
+ * @description Auto-generates gateway and service skill files for agent awareness.
  *
  * Skills are injected into the harness discovery path so agents know:
- * - They're running in an enclave
+ * - They're running inside a Latch session gateway
  * - What services are available
  * - How to use each service
  * - What NOT to do (constraints)
@@ -12,15 +12,15 @@
 import type { ServiceDefinition } from '../../types'
 
 export class SkillGenerator {
-  /** Generate the enclave meta-skill (injected into every enclave session). */
-  generateEnclaveMeta(services: ServiceDefinition[]): string {
+  /** Generate the gateway meta-skill (injected into every gateway session). */
+  generateGatewayMeta(services: ServiceDefinition[]): string {
     const serviceList = services
       .map(s => `- **${s.name}**: ${s.skill.description}`)
       .join('\n')
 
-    return `# Latch Enclave
+    return `# Latch Gateway
 
-You are running inside a Latch security enclave.
+You are running inside a Latch session gateway.
 
 ## What's Different
 - All network traffic is monitored and policy-enforced

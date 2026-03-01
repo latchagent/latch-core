@@ -24,6 +24,7 @@ import type {
   AppView,
   DockerConfig,
   DockerStatus,
+  GatewayConfig,
   ActivityEvent,
   RadarSignal,
   PendingApproval,
@@ -139,12 +140,10 @@ export interface AppState {
   // ── MCP Servers ────────────────────────────────────────────────────────────
   mcpServers:       McpServerRecord[];
 
-  // ── Secrets (vault) ─────────────────────────────────────────────────────────
+  // ── Secrets (internal storage) ──────────────────────────────────────────────
   secrets:                SecretRecord[];
-  secretEditorOpen:       boolean;
-  secretEditorSecret:     SecretRecord | null;
 
-  // ── Services (enclave) ─────────────────────────────────────────────────────
+  // ── Services (gateway) ─────────────────────────────────────────────────────
   services:         ServiceRecord[];
   serviceCatalog:   ServiceDefinition[];
   servicesLoaded:   boolean;
@@ -256,14 +255,10 @@ export interface AppState {
   deleteMcpServer:  (id: string) => Promise<void>;
   introspectMcpServer: (id: string) => Promise<{ ok: boolean; tools?: { name: string; description: string }[]; error?: string }>;
 
-  // Secrets (vault)
+  // Secrets (internal)
   loadSecrets:        () => Promise<void>;
-  openSecretEditor:   (secret: SecretRecord | null) => void;
-  closeSecretEditor:  () => void;
-  saveSecret:         (params: { id: string; name: string; key: string; value: string; description?: string; tags?: string[] }) => Promise<void>;
-  deleteSecret:       (id: string) => Promise<void>;
 
-  // Services (enclave)
+  // Services (gateway)
   loadServices:   () => Promise<void>;
   saveService:    (definition: ServiceDefinition, credentialValue?: string) => Promise<{ ok: boolean; error?: string }>;
   deleteService:  (id: string) => Promise<{ ok: boolean }>;
@@ -326,8 +321,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   skills:           [],
   mcpServers:       [],
   secrets:                [],
-  secretEditorOpen:       false,
-  secretEditorSecret:     null,
   services:               [],
   serviceCatalog:         [],
   servicesLoaded:         false,
@@ -419,6 +412,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         goal:          row.goal || '',
         branchName:    '',
         docker:        (() => { try { return row.docker_config ? JSON.parse(row.docker_config) : null } catch { return null } })(),
+        gateway:       (() => { try { return row.enclave_config ? JSON.parse(row.enclave_config) : null } catch { return null } })(),
         tabs,
         activeTabId:   tab.id,
         needsReconnect: true,
@@ -455,6 +449,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       goal:          '',
       branchName:    '',
       docker:        null,
+      gateway:       null,
       tabs,
       activeTabId:   tab.id,
       needsReconnect: false,
@@ -484,6 +479,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteSession: async (id: string) => {
     const session = get().sessions.get(id);
     if (!session) return;
+
+    // Stop gateway if running
+    if (session.gateway?.enabled && window.latch?.stopGateway) {
+      await window.latch.stopGateway({ sessionId: id, exitReason: 'normal' })
+    }
 
     // Kill all PTYs and unmount all terminals for this session
     for (const tab of session.tabs.values()) {
@@ -732,6 +732,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // ── Gateway start ──────────────────────────────────────────────────
+    let gatewayEnv: Record<string, string> = {}
+    const sessionState = get().sessions.get(sessionId)
+    if (sessionState?.gateway?.enabled && window.latch?.startGateway) {
+      terminalManager.writeln(tabId, `\x1b[2mGateway: starting proxy and sandbox...\x1b[0m`)
+      const gatewayResult = await window.latch.startGateway({
+        sessionId,
+        serviceIds: sessionState.gateway.serviceIds,
+        maxDataTier: sessionState.gateway.maxDataTier,
+        policyId: session.policyId,
+        policyOverride: session.policyOverride,
+        workspacePath: worktreePath ?? projectDir ?? null,
+        enableTls: false,
+      })
+      if (gatewayResult?.ok) {
+        gatewayEnv = gatewayResult.gatewayEnv ?? {}
+        set((s) => {
+          const sessions = new Map(s.sessions)
+          const sess = sessions.get(sessionId)
+          if (sess?.gateway) {
+            sessions.set(sessionId, {
+              ...sess,
+              gateway: { ...sess.gateway, proxyPort: gatewayResult.proxyPort, sandboxBackend: gatewayResult.sandboxBackend ?? null, startedAt: new Date().toISOString() },
+            })
+          }
+          return { sessions }
+        })
+        terminalManager.writeln(tabId, `\x1b[32mGateway: proxy on :${gatewayResult.proxyPort}, sandbox: ${gatewayResult.sandboxBackend ?? 'none'}\x1b[0m`)
+      } else {
+        terminalManager.writeln(tabId, `\x1b[33mGateway start failed: ${gatewayResult?.error ?? 'unknown'}\x1b[0m`)
+      }
+    }
+
     // ── MCP server sync ────────────────────────────────────────────────
     if (session.harnessId && mcpServerIds?.length && window.latch?.syncMcpServers) {
       const targetDir = worktreePath ?? projectDir ?? undefined;
@@ -753,7 +786,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (window.latch?.createPty) {
       // Inject authz env vars so agents can post messages via HTTP
-      const env: Record<string, string> = {};
+      const env: Record<string, string> = { ...gatewayEnv };
       if (session.harnessId) env.LATCH_HARNESS_ID = session.harnessId;
       const portResult = await window.latch?.getAuthzPort?.();
       if (portResult?.port) {
@@ -856,6 +889,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         goal:           session.goal || null,
         project_dir:    session.projectDir || null,
         docker_config:  session.docker ? JSON.stringify(session.docker) : null,
+        enclave_config: sessionState?.gateway ? JSON.stringify(sessionState.gateway) : null,
         mcp_server_ids: mcpServerIds?.length ? JSON.stringify(mcpServerIds) : null,
       });
     }
@@ -1202,34 +1236,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     return result ?? { ok: false, error: 'API not available' }
   },
 
-  // ── Secrets (vault) ────────────────────────────────────────────────────────
+  // ── Secrets (internal) ────────────────────────────────────────────────────
 
   loadSecrets: async () => {
     const result = await window.latch?.listSecrets?.();
     set({ secrets: result?.secrets ?? [] });
   },
 
-  openSecretEditor: (secret) => {
-    set({ secretEditorOpen: true, secretEditorSecret: secret });
-  },
-
-  closeSecretEditor: () => {
-    set({ secretEditorOpen: false, secretEditorSecret: null });
-  },
-
-  saveSecret: async (params) => {
-    const result = await window.latch?.saveSecret?.(params);
-    if (!result?.ok) return;
-    get().closeSecretEditor();
-    await get().loadSecrets();
-  },
-
-  deleteSecret: async (id) => {
-    await window.latch?.deleteSecret?.({ id });
-    await get().loadSecrets();
-  },
-
-  // ── Services (enclave) ─────────────────────────────────────────────────────
+  // ── Services (gateway) ─────────────────────────────────────────────────────
 
   loadServices: async () => {
     const [listResult, catalogResult] = await Promise.all([

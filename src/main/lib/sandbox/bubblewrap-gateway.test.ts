@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { BubblewrapEnclave } from './bubblewrap-enclave'
+import { BubblewrapGateway } from './bubblewrap-gateway'
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
@@ -7,10 +7,10 @@ vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
 }))
 
-describe('BubblewrapEnclave', () => {
+describe('BubblewrapGateway', () => {
   it('generates bwrap args with workspace mount', () => {
-    const enclave = new BubblewrapEnclave()
-    const args = enclave.buildBwrapArgs({
+    const gw = new BubblewrapGateway()
+    const args = gw.buildBwrapArgs({
       workspacePath: '/home/user/project',
       proxyPort: 8080,
       authzPort: 9090,
@@ -24,8 +24,8 @@ describe('BubblewrapEnclave', () => {
   })
 
   it('blocks sensitive host directories', () => {
-    const enclave = new BubblewrapEnclave()
-    const args = enclave.buildBwrapArgs({
+    const gw = new BubblewrapGateway()
+    const args = gw.buildBwrapArgs({
       workspacePath: '/tmp/ws',
       proxyPort: 8080,
       authzPort: 9090,
@@ -39,8 +39,8 @@ describe('BubblewrapEnclave', () => {
   })
 
   it('includes environment variables in args', () => {
-    const enclave = new BubblewrapEnclave()
-    const args = enclave.buildBwrapArgs({
+    const gw = new BubblewrapGateway()
+    const args = gw.buildBwrapArgs({
       workspacePath: '/tmp/ws',
       proxyPort: 8080,
       authzPort: 9090,
@@ -53,8 +53,8 @@ describe('BubblewrapEnclave', () => {
   })
 
   it('generates iptables rules for network forcing', () => {
-    const enclave = new BubblewrapEnclave()
-    const rules = enclave.generateIptablesRules({
+    const gw = new BubblewrapGateway()
+    const rules = gw.generateIptablesRules({
       proxyPort: 8080,
       uid: 1000,
     })
@@ -73,14 +73,14 @@ describe('BubblewrapEnclave', () => {
       return {} as any
     })
 
-    const enclave = new BubblewrapEnclave()
-    const result = await enclave.detect()
+    const gw = new BubblewrapGateway()
+    const result = await gw.detect()
     expect(result).toHaveProperty('available')
   })
 
   it('uses PID namespace isolation', () => {
-    const enclave = new BubblewrapEnclave()
-    const args = enclave.buildBwrapArgs({
+    const gw = new BubblewrapGateway()
+    const args = gw.buildBwrapArgs({
       workspacePath: '/tmp/ws',
       proxyPort: 8080,
       authzPort: 9090,

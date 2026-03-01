@@ -62,6 +62,10 @@ import { annotatePR }                            from './services/pr-annotator'
 import { SERVICE_CATALOG }                       from './lib/service-catalog'
 import { DataClassifier }                        from './services/data-classifier'
 import { CredentialManager }                     from './services/credential-manager'
+import { LatchProxy }                            from './services/latch-proxy'
+import { GatewayManager }                        from './lib/gateway-manager'
+import { createFeedbackSender }                  from './services/proxy/proxy-feedback'
+import { SkillGenerator }                        from './services/skill-generator'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -89,6 +93,11 @@ let attestationStore: AttestationStore | null = null
 let attestationEngine: AttestationEngine | null = null
 let dataClassifier: DataClassifier | null = null
 let credentialManager: CredentialManager | null = null
+
+// Gateway orchestration maps — keyed by sessionId
+const proxyInstances = new Map<string, LatchProxy>()
+const gatewaySandboxConfigs = new Map<string, { command: string; args: string[] }>()
+const gatewayStartTimes = new Map<string, number>()
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
@@ -200,7 +209,8 @@ app.whenReady().then(() => {
     secretStore   = SecretStore.open(db)
     serviceStore  = ServiceStore.open(db)
     attestationStore = AttestationStore.open(db)
-    attestationEngine = new AttestationEngine(attestationStore)
+    const keyPath = path.join(app.getPath('userData'), 'attestation-key.json')
+    attestationEngine = new AttestationEngine(attestationStore, keyPath)
 
     credentialManager = new CredentialManager()
     const openaiKey = settingsStore?.get('openai-api-key') ?? null
@@ -294,7 +304,7 @@ app.whenReady().then(() => {
         ptyEnv.LATCH_AUTHZ_SECRET = authzServer.getSecret()
       }
 
-      // Inject vault secrets as env vars so agents can use $KEY
+      // Inject secrets as env vars so agents can use $KEY
       if (secretStore) {
         const secretEnv = secretStore.allKeyValues()
         Object.assign(ptyEnv, secretEnv)
@@ -309,6 +319,16 @@ app.whenReady().then(() => {
       // Load secret values for terminal output redaction
       if (secretStore) {
         ptyManager.setRedactionValues(v.data.sessionId, secretStore.allValues())
+      }
+
+      // Wire gateway proxy feedback to this PTY
+      const gatewaySessionId = ptyEnv.LATCH_SESSION_ID
+      if (gatewaySessionId) {
+        const proxy = proxyInstances.get(gatewaySessionId)
+        if (proxy) {
+          const sender = createFeedbackSender((data) => ptyManager.write(v.data.sessionId, data))
+          proxy.setOnFeedback(sender)
+        }
       }
 
       return { ok: true, pid: record.ptyProcess.pid, cwd: record.cwd, shell: record.shell }
@@ -430,7 +450,12 @@ app.whenReady().then(() => {
   ipcMain.handle('latch:policy-save', async (_event: any, policy: any) => {
     const v = validateIpc(PolicySaveSchema, policy)
     if (!v.ok) return v
-    return policyStore.savePolicy(v.data)
+    try {
+      return policyStore.savePolicy(v.data)
+    } catch (err) {
+      console.error('[policy-save] Error:', err instanceof Error ? err.message : String(err))
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to save policy' }
+    }
   })
 
   ipcMain.handle('latch:policy-delete', async (_event: any, { id }: any) => {
@@ -513,7 +538,7 @@ app.whenReady().then(() => {
     return { ok: true, ...result }
   })
 
-  // ── Secrets (vault) handlers ────────────────────────────────────────────
+  // ── Secrets handlers ───────────────────────────────────────────────────
 
   ipcMain.handle('latch:secret-list', async (_event: any, payload: any = {}) => {
     if (!secretStore) return { ok: false, secrets: [], error: 'SecretStore unavailable' }
@@ -549,7 +574,7 @@ app.whenReady().then(() => {
     return { ok: true, hints: secretStore.listHints() }
   })
 
-  // ── Services (enclave) handlers ─────────────────────────────────────────
+  // ── Services (gateway) handlers ─────────────────────────────────────────
 
   ipcMain.handle('latch:service-list', async () => {
     if (!serviceStore) return { ok: false, services: [] }
@@ -848,6 +873,260 @@ app.whenReady().then(() => {
     return { ok: true, ...status }
   })
 
+  // ── Gateway orchestration handlers ──────────────────────────────────────
+
+  ipcMain.handle('latch:gateway-start', async (_event: any, payload: any) => {
+    const { sessionId, serviceIds, maxDataTier, policyId, policyOverride, workspacePath, enableTls } = payload ?? {}
+    if (!sessionId || !serviceIds?.length) return { ok: false, error: 'Missing sessionId or serviceIds' }
+
+    try {
+      // Load service definitions and grant access
+      const services: import('../../types').ServiceDefinition[] = []
+      for (const sid of serviceIds) {
+        if (!serviceStore) continue
+        const result = serviceStore.get(sid)
+        if (result.ok && result.service) {
+          services.push(result.service.definition)
+          serviceStore.grantToSession(sid, sessionId)
+        }
+      }
+
+      // Load credentials from secret store
+      const credentials = new Map<string, Record<string, string>>()
+      for (const svc of services) {
+        if (!secretStore) continue
+        const credValue = secretStore.resolve(`service:${svc.id}`)
+        if (credValue) {
+          try {
+            credentials.set(svc.id, JSON.parse(credValue))
+          } catch {
+            credentials.set(svc.id, { token: credValue })
+          }
+        }
+      }
+
+      // Create and start proxy
+      const proxy = new LatchProxy({
+        sessionId,
+        services,
+        credentials,
+        maxDataTier: maxDataTier ?? 'internal',
+        enableTls: enableTls ?? false,
+        attestationStore: attestationStore ?? undefined,
+      })
+      const proxyPort = await proxy.start()
+
+      // Detect sandbox backend
+      const bestBackend = await sandboxManager.detectBestBackend()
+      const sandboxBackend = bestBackend.backend as import('../../types').SandboxBackend | null
+
+      // Build sandbox command/args
+      let sandboxCommand: string | undefined
+      let sandboxArgs: string[] | undefined
+      if (sandboxBackend === 'seatbelt') {
+        sandboxCommand = '/usr/bin/sandbox-exec'
+        sandboxArgs = ['-n', 'no-network']
+      } else if (sandboxBackend === 'bubblewrap') {
+        sandboxCommand = 'bwrap'
+        sandboxArgs = ['--unshare-net', '--dev', '/dev', '--proc', '/proc']
+      }
+
+      // Build gateway env
+      const authzPort = authzServer?.getPort() ?? 0
+      const gatewayEnv = GatewayManager.buildGatewayEnv({
+        proxyPort,
+        authzPort,
+        sessionId,
+        services,
+        credentials,
+        caCertPath: proxy.getCaCertPath() ?? undefined,
+      })
+
+      // Register session with sandbox manager
+      if (sandboxBackend) {
+        sandboxManager.registerSession(sessionId, sandboxBackend, `gateway-${sessionId}`)
+      }
+
+      // Store instances for later cleanup
+      proxyInstances.set(sessionId, proxy)
+      gatewayStartTimes.set(sessionId, Date.now())
+      if (sandboxCommand && sandboxArgs) {
+        gatewaySandboxConfigs.set(sessionId, { command: sandboxCommand, args: sandboxArgs })
+      }
+
+      // Generate gateway skill files for agent awareness
+      try {
+        const skillGen = new SkillGenerator()
+        const fs = await import('node:fs/promises')
+        const os = await import('node:os')
+        const skillsDir = path.join(os.homedir(), '.claude', 'skills')
+
+        // Write gateway meta-skill
+        const metaDir = path.join(skillsDir, 'latch-gateway')
+        await fs.mkdir(metaDir, { recursive: true })
+        await fs.writeFile(path.join(metaDir, 'SKILL.md'), skillGen.generateGatewayMeta(services), 'utf8')
+
+        // Write per-service skills
+        for (const svc of services) {
+          const svcDir = path.join(skillsDir, `latch-svc-${svc.id}`)
+          await fs.mkdir(svcDir, { recursive: true })
+          await fs.writeFile(path.join(svcDir, 'SKILL.md'), skillGen.generateServiceSkill(svc), 'utf8')
+        }
+      } catch (err) {
+        console.error('[gateway-start] Failed to generate skill files:', err)
+      }
+
+      return {
+        ok: true,
+        proxyPort,
+        sandboxCommand,
+        sandboxArgs,
+        gatewayEnv,
+        caCertPath: proxy.getCaCertPath(),
+        sandboxBackend,
+      }
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('latch:gateway-stop', async (_event: any, payload: any) => {
+    const { sessionId, exitReason } = payload ?? {}
+    if (!sessionId) return { ok: false, error: 'Missing sessionId' }
+
+    try {
+      const proxy = proxyInstances.get(sessionId)
+      const startTime = gatewayStartTimes.get(sessionId) ?? Date.now()
+
+      // Collect audit stats
+      const auditLog = proxy?.getAuditLog() ?? []
+      const requests = auditLog.length
+      const blocked = auditLog.filter(e => e.decision === 'deny').length
+      const redactions = auditLog.reduce((s, e) => s + e.redactionsApplied, 0)
+      const tokenizations = auditLog.reduce((s, e) => s + e.tokenizationsApplied, 0)
+
+      // Collect tool-call stats
+      const activityResult = activityStore?.list({ sessionId }) ?? { events: [], total: 0 }
+      const toolCalls = activityResult.total
+      const toolDenials = activityResult.events.filter(e => e.decision === 'deny').length
+      const approvalEscalations = activityResult.events.filter(e => e.decision === 'ask').length
+
+      // Get services info
+      const servicesGranted = serviceStore?.listForSession(sessionId).map(s => s.id) ?? []
+      const servicesUsed = [...new Set(auditLog.filter(e => e.service).map(e => e.service!))]
+
+      // Get sandbox status
+      const sandboxStatus = sandboxManager.getSessionStatus(sessionId)
+      const sandboxType = (sandboxStatus.backend ?? 'seatbelt') as 'docker' | 'seatbelt' | 'bubblewrap'
+
+      // Get policy
+      const policy = policyStore.getPolicy(payload.policyId ?? 'default')
+      const policyDoc = policy?.ok ? policy.policy : {
+        id: 'default', name: 'Default', description: '', permissions: {
+          allowBash: true, allowNetwork: false, allowFileWrite: true,
+          confirmDestructive: true, blockedGlobs: [],
+        }, harnesses: {},
+      }
+
+      // Generate receipt
+      let receipt: import('../../types').SessionReceipt | undefined
+      if (attestationEngine) {
+        receipt = attestationEngine.generateReceipt({
+          sessionId,
+          policy: policyDoc,
+          maxDataTier: 'internal',
+          servicesGranted,
+          servicesUsed,
+          activity: { requests, blocked, redactions, tokenizations, toolCalls, toolDenials, approvalEscalations },
+          sandboxType,
+          networkForced: true,
+          exitReason: exitReason ?? 'normal',
+          startTime,
+          endTime: Date.now(),
+        })
+      }
+
+      // Clean up gateway skill files
+      try {
+        const fs = await import('node:fs/promises')
+        const os = await import('node:os')
+        const skillsDir = path.join(os.homedir(), '.claude', 'skills')
+        const metaDir = path.join(skillsDir, 'latch-gateway')
+        await fs.rm(metaDir, { recursive: true, force: true })
+        for (const sid of servicesGranted) {
+          await fs.rm(path.join(skillsDir, `latch-svc-${sid}`), { recursive: true, force: true })
+        }
+      } catch { /* best-effort cleanup */ }
+
+      // Cleanup
+      proxy?.stop()
+      sandboxManager.unregisterSession(sessionId)
+      proxyInstances.delete(sessionId)
+      gatewaySandboxConfigs.delete(sessionId)
+      gatewayStartTimes.delete(sessionId)
+
+      return { ok: true, receipt }
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ── Gateway: add service mid-session ─────────────────────────────────
+
+  ipcMain.handle('latch:gateway-add-service', async (_event: any, payload: any) => {
+    const { sessionId, serviceId } = payload ?? {}
+    if (!sessionId || !serviceId) return { ok: false, error: 'Missing sessionId or serviceId' }
+
+    try {
+      const proxy = proxyInstances.get(sessionId)
+      if (!proxy) return { ok: false, error: 'No active gateway proxy for this session' }
+
+      // Load service definition
+      const result = serviceStore.get(serviceId)
+      if (!result?.ok || !result.service) return { ok: false, error: `Service "${serviceId}" not found` }
+
+      const svc = result.service!.definition
+
+      // Load credential
+      const credValue = secretStore.resolve(`service:${serviceId}`)
+      const credentials = new Map<string, Record<string, string>>()
+      if (credValue) {
+        try { credentials.set(svc.id, JSON.parse(credValue)) } catch { /* skip */ }
+      }
+
+      // Hot-reload into proxy
+      proxy.addServices([svc], credentials)
+
+      // Grant service to session
+      serviceStore.grantToSession(serviceId, sessionId)
+
+      // Regenerate skill files with updated service list
+      try {
+        const skillGen = new SkillGenerator()
+        const fs = await import('node:fs/promises')
+        const os = await import('node:os')
+        const skillsDir = path.join(os.homedir(), '.claude', 'skills')
+
+        // Write new service skill
+        const svcDir = path.join(skillsDir, `latch-svc-${svc.id}`)
+        await fs.mkdir(svcDir, { recursive: true })
+        await fs.writeFile(path.join(svcDir, 'SKILL.md'), skillGen.generateServiceSkill(svc), 'utf8')
+
+        // Regenerate gateway meta-skill with all current services
+        const allServices = serviceStore?.listForSession(sessionId).map(s => s.definition) ?? []
+        const metaDir = path.join(skillsDir, 'latch-gateway')
+        await fs.mkdir(metaDir, { recursive: true })
+        await fs.writeFile(path.join(metaDir, 'SKILL.md'), skillGen.generateGatewayMeta(allServices), 'utf8')
+      } catch (err) {
+        console.error('[gateway-add-service] Failed to update skill files:', err)
+      }
+
+      return { ok: true }
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
   // ── Project stack detection ────────────────────────────────────────────
 
   ipcMain.handle('latch:detect-project-stack', async (_event: any, { cwd }: any) => {
@@ -961,6 +1240,12 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // Stop all gateway proxies
+  for (const [, proxy] of proxyInstances) proxy.stop()
+  proxyInstances.clear()
+  gatewaySandboxConfigs.clear()
+  gatewayStartTimes.clear()
+
   ptyManager?.disposeAll()
   dockerManager?.disposeAll()
   sandboxManager?.disposeAll()

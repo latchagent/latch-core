@@ -1,5 +1,5 @@
 /**
- * @module seatbelt-enclave
+ * @module seatbelt-gateway
  * @description macOS Seatbelt sandbox backend using sandbox-exec + pf.
  *
  * Generates a Seatbelt profile that:
@@ -34,7 +34,7 @@ interface SpawnArgs {
   args: string[]
 }
 
-export class SeatbeltEnclave {
+export class SeatbeltGateway {
   private profileDir: string | null = null
 
   /**
@@ -146,7 +146,7 @@ export class SeatbeltEnclave {
    * and block UDP/53 (DNS) to prevent DNS exfiltration.
    */
   generatePfRules(opts: PfRuleOptions): string {
-    return `# Latch Enclave pf rules — session sandbox
+    return `# Latch Gateway pf rules — session sandbox
 # Redirect all outbound TCP from sandbox user to proxy
 rdr pass on lo0 proto tcp from any to any port 1:65535 -> 127.0.0.1 port ${opts.proxyPort}
 

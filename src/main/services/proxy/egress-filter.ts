@@ -37,6 +37,22 @@ export class EgressFilter {
     }
   }
 
+  /** Rebuild domain rules from an updated service list (for hot-reload). */
+  rebuildRules(services: ServiceDefinition[]): void {
+    this.services = services
+    this.domainRules = []
+    for (const svc of services) {
+      for (const domain of svc.injection.proxy.domains) {
+        if (!VALID_DOMAIN_RE.test(domain)) continue
+        const pattern = domain.replace(/\./g, '\\.').replace(/\*/g, '[^.]+')
+        this.domainRules.push({
+          regex: new RegExp(`^${pattern}$`, 'i'),
+          service: svc,
+        })
+      }
+    }
+  }
+
   matchService(domain: string): ServiceDefinition | null {
     const lower = domain.toLowerCase()
     for (const rule of this.domainRules) {

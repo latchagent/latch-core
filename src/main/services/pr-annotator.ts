@@ -33,7 +33,7 @@ const LATCH_REPO_URL = process.env.LATCH_REPO_URL ?? 'https://github.com/anthrop
 /** Format a session receipt as a GitHub PR comment body (Markdown). */
 export function formatReceiptComment(receipt: SessionReceipt): string {
   const duration = Math.round(
-    (new Date(receipt.enclave.endedAt).getTime() - new Date(receipt.enclave.startedAt).getTime()) / 1000,
+    (new Date(receipt.gateway.endedAt).getTime() - new Date(receipt.gateway.startedAt).getTime()) / 1000,
   )
 
   return `## Latch Attestation
@@ -48,9 +48,9 @@ This PR was created under Latch policy **\`${receipt.policy.id}\`**, tier **\`${
 | Tokenizations applied | ${receipt.activity.tokenizationsApplied} |
 | Tool calls | ${receipt.activity.toolCalls} |
 | Tool denials | ${receipt.activity.toolDenials} |
-| Sandbox | ${receipt.enclave.sandboxType} |
+| Sandbox | ${receipt.gateway.sandboxType} |
 | Duration | ${duration}s |
-| Exit | ${receipt.enclave.exitReason} |
+| Exit | ${receipt.gateway.exitReason} |
 
 <details>
 <summary>Cryptographic proof</summary>

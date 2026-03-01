@@ -1,14 +1,13 @@
 /**
- * @module enclave-manager
- * @description Manages sandbox lifecycle for enclave sessions.
+ * @module gateway-manager
+ * @description Manages sandbox lifecycle for gateway sessions.
  *
  * Selection cascade: Docker → Seatbelt (macOS) → Bubblewrap (Linux) → null.
- * No sandbox = no session — the enclave is mandatory.
  */
 
 import type { ServiceDefinition, SandboxBackend } from '../../types'
 
-export interface EnclaveEnvInput {
+export interface GatewayEnvInput {
   proxyPort: number
   authzPort: number
   sessionId: string
@@ -17,12 +16,12 @@ export interface EnclaveEnvInput {
   caCertPath?: string  // Phase 2: ephemeral CA cert for TLS interception
 }
 
-export class EnclaveManager {
+export class GatewayManager {
   /**
-   * Build the environment variables for an enclave session.
+   * Build the environment variables for a gateway session.
    * Includes proxy vars, service-specific env, and Latch metadata.
    */
-  static buildEnclaveEnv(input: EnclaveEnvInput): Record<string, string> {
+  static buildGatewayEnv(input: GatewayEnvInput): Record<string, string> {
     const env: Record<string, string> = {
       // Proxy routing — all traffic through Latch proxy
       HTTP_PROXY: `http://127.0.0.1:${input.proxyPort}`,
@@ -32,7 +31,7 @@ export class EnclaveManager {
       NO_PROXY: '',
 
       // Latch metadata
-      LATCH_ENCLAVE: 'true',
+      LATCH_GATEWAY: 'true',
       LATCH_SESSION_ID: input.sessionId,
 
       // Security hardening

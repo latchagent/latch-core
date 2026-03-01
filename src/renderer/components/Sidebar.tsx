@@ -1,5 +1,5 @@
 import React from 'react'
-import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Key, Gear, ShieldWarning, BookOpenText, Target } from '@phosphor-icons/react'
+import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Gear, ShieldWarning, BookOpenText, Target, Plugs, ShieldCheck } from '@phosphor-icons/react'
 import { useAppStore, useAgentStatus } from '../store/useAppStore'
 import StatusDot from './StatusDot'
 import type { SessionRecord, AppView } from '../../types'
@@ -121,11 +121,18 @@ export default function Sidebar() {
           MCP
         </button>
         <button
-          className={`sidebar-nav-item${activeView === 'vault' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('vault')}
+          className={`sidebar-nav-item${activeView === 'services' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('services')}
         >
-          <Key className="sidebar-nav-icon" weight="light" />
-          Vault
+          <Plugs className="sidebar-nav-icon" weight="light" />
+          Services
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'gateway' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('gateway')}
+        >
+          <ShieldCheck className="sidebar-nav-icon" weight="light" />
+          Gateway
         </button>
         <button
           className={`sidebar-nav-item${activeView === 'radar' ? ' is-active' : ''}`}

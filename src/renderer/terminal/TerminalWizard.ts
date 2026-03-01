@@ -19,7 +19,7 @@ export interface WizardOption {
 export interface WizardStep {
   id: string
   prompt: string
-  type: 'text' | 'select' | 'confirm' | 'browse'
+  type: 'text' | 'select' | 'confirm' | 'browse' | 'multiselect'
   options?: WizardOption[]
   default?: string
   hint?: string
@@ -27,7 +27,7 @@ export interface WizardStep {
 }
 
 export interface WizardAnswers {
-  [key: string]: string | boolean
+  [key: string]: string | boolean | string[]
 }
 
 type OnComplete = (answers: WizardAnswers) => void
@@ -52,6 +52,11 @@ export class TerminalWizard {
   // Select state
   private selectIndex = 0
   private selectRendered = false
+
+  // Multiselect state
+  private multiselectIndex = 0
+  private multiselectRendered = false
+  private selectedIndices = new Set<number>()
 
   // Escape sequence accumulator
   private escBuffer = ''
@@ -104,10 +109,11 @@ export class TerminalWizard {
     }
 
     switch (step.type) {
-      case 'text':    this.handleTextInput(data, step); break
-      case 'select':  this.handleSelectInput(data, step); break
-      case 'confirm': this.handleConfirmInput(data, step); break
-      case 'browse':  this.handleBrowseInput(data, step); break
+      case 'text':        this.handleTextInput(data, step); break
+      case 'select':      this.handleSelectInput(data, step); break
+      case 'confirm':     this.handleConfirmInput(data, step); break
+      case 'browse':      this.handleBrowseInput(data, step); break
+      case 'multiselect': this.handleMultiselectInput(data, step); break
     }
   }
 
@@ -219,20 +225,63 @@ export class TerminalWizard {
     }
   }
 
+  private handleMultiselectInput(data: string, step: WizardStep): void {
+    const options = (step.options ?? []).filter(o => !o.disabled)
+    if (options.length === 0) return
+
+    if (data === ' ') {
+      // Toggle selection on current item
+      if (this.selectedIndices.has(this.multiselectIndex)) {
+        this.selectedIndices.delete(this.multiselectIndex)
+      } else {
+        this.selectedIndices.add(this.multiselectIndex)
+      }
+      this.renderMultiselect(step)
+      return
+    }
+
+    if (data === '\r') {
+      // Submit — collect selected values
+      const selected = options
+        .filter((_, i) => this.selectedIndices.has(i))
+        .map(o => o.value)
+      this.answers[step.id] = selected
+      this.write(SHOW_CURSOR)
+      this.writeln('')
+      this.advance()
+      return
+    }
+
+    // Ctrl+C — cancel wizard
+    if (data === '\x03') {
+      this.write(SHOW_CURSOR)
+      this.cancel()
+      return
+    }
+  }
+
   private handleEscapeSequence(seq: string, step: WizardStep): void {
-    if (step.type !== 'select') return
+    if (step.type !== 'select' && step.type !== 'multiselect') return
 
     const options = (step.options ?? []).filter(o => !o.disabled)
     if (options.length === 0) return
 
-    if (seq === '\x1b[A') {
-      // Up arrow
-      this.selectIndex = (this.selectIndex - 1 + options.length) % options.length
-      this.renderSelect(step)
-    } else if (seq === '\x1b[B') {
-      // Down arrow
-      this.selectIndex = (this.selectIndex + 1) % options.length
-      this.renderSelect(step)
+    if (step.type === 'select') {
+      if (seq === '\x1b[A') {
+        this.selectIndex = (this.selectIndex - 1 + options.length) % options.length
+        this.renderSelect(step)
+      } else if (seq === '\x1b[B') {
+        this.selectIndex = (this.selectIndex + 1) % options.length
+        this.renderSelect(step)
+      }
+    } else if (step.type === 'multiselect') {
+      if (seq === '\x1b[A') {
+        this.multiselectIndex = (this.multiselectIndex - 1 + options.length) % options.length
+        this.renderMultiselect(step)
+      } else if (seq === '\x1b[B') {
+        this.multiselectIndex = (this.multiselectIndex + 1) % options.length
+        this.renderMultiselect(step)
+      }
     }
   }
 
@@ -310,6 +359,19 @@ export class TerminalWizard {
       case 'confirm':
         this.write(`  ${GREEN}>${RESET} ${DIM}(y/N)${RESET} `)
         break
+
+      case 'multiselect':
+        this.multiselectIndex = 0
+        this.multiselectRendered = false
+        this.selectedIndices = new Set<number>()
+        // Pre-select all if default is 'all'
+        if (step.default === 'all' && step.options) {
+          const enabled = step.options.filter(o => !o.disabled)
+          enabled.forEach((_, i) => this.selectedIndices.add(i))
+        }
+        this.write(HIDE_CURSOR)
+        this.renderMultiselect(step)
+        break
     }
   }
 
@@ -338,11 +400,49 @@ export class TerminalWizard {
     }
   }
 
+  private renderMultiselect(step: WizardStep): void {
+    const allOptions = step.options ?? []
+
+    // On re-render, erase previous option lines
+    if (this.multiselectRendered) {
+      const lineCount = allOptions.length
+      for (let i = 0; i < lineCount; i++) {
+        this.write(`\x1b[A${ERASE_LINE}`)
+      }
+    }
+    this.multiselectRendered = true
+
+    let enabledIdx = 0
+    for (const opt of allOptions) {
+      if (opt.disabled) {
+        this.writeln(`    ${DIM}${opt.label}${RESET}`)
+      } else {
+        const isHighlighted = enabledIdx === this.multiselectIndex
+        const isSelected = this.selectedIndices.has(enabledIdx)
+        const marker = isHighlighted ? `${GREEN}>${RESET}` : ' '
+        const checkbox = isSelected ? `${GREEN}[x]${RESET}` : `${DIM}[ ]${RESET}`
+        const style = isHighlighted ? BOLD : ''
+        this.writeln(`  ${marker} ${checkbox} ${style}${opt.label}${RESET}`)
+        enabledIdx++
+      }
+    }
+  }
+
   // ─── Step navigation ───────────────────────────────────────────────────
 
   private advance(): void {
     // Dynamically update skip flags based on collected answers
     const justCompleted = this.steps[this.currentStep]
+
+    // After gateway toggle, show/skip services step
+    if (justCompleted?.id === 'gateway') {
+      for (const step of this.steps) {
+        if (step.id === 'services') {
+          const hasOptions = (step.options ?? []).length > 0
+          step.skip = !this.answers.gateway || !hasOptions
+        }
+      }
+    }
 
     // After harness selection, skip irrelevant steps for OpenClaw
     if (justCompleted?.id === 'harness' && this.answers.harness === 'openclaw') {
@@ -412,6 +512,7 @@ export class TerminalWizard {
 export interface WizardStepBuilderOpts {
   harnesses: { id: string; label: string; installed: boolean }[]
   policies: { id: string; name: string }[]
+  services?: { id: string; name: string; hasCredential: boolean }[]
   pendingProjectDir?: string | null
 }
 
@@ -420,7 +521,7 @@ export interface WizardStepBuilderOpts {
  * Called once when the wizard starts.
  */
 export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
-  const { harnesses, policies } = opts
+  const { harnesses, policies, services } = opts
 
   const harnessOptions: WizardOption[] = harnesses.map(h => ({
     label: `${h.label}${h.installed ? '' : ` ${DIM}(not detected)${RESET}`}`,
@@ -464,6 +565,26 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
       default: policies.length > 0 ? policies[0].id : 'none',
       hint: 'Select a policy to enforce guardrails for this session',
       skip: policies.length === 0,
+    },
+    {
+      id: 'gateway',
+      prompt: 'Enable Gateway?',
+      type: 'confirm',
+      hint: 'Proxy-based network isolation with credential injection and audit logging',
+      default: 'n',
+      skip: false,
+    },
+    {
+      id: 'services',
+      prompt: 'Select services for this session',
+      type: 'multiselect',
+      hint: 'Space to toggle, Enter to confirm',
+      default: 'all',
+      options: (services ?? [])
+        .filter(s => s.hasCredential)
+        .map(s => ({ label: s.name, value: s.id })),
+      // Skipped by default — dynamically enabled in advance() when gateway = true
+      skip: true,
     },
     {
       id: 'goal',

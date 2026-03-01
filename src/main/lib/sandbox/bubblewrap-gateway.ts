@@ -1,5 +1,5 @@
 /**
- * @module bubblewrap-enclave
+ * @module bubblewrap-gateway
  * @description Linux Bubblewrap sandbox backend using bwrap + iptables.
  *
  * Uses unprivileged user namespaces for filesystem and PID isolation.
@@ -26,7 +26,7 @@ interface IptablesRuleOptions {
   uid: number
 }
 
-export class BubblewrapEnclave {
+export class BubblewrapGateway {
   /**
    * Build the bwrap CLI args for a sandboxed shell.
    *
@@ -97,7 +97,7 @@ export class BubblewrapEnclave {
    * Blocks UDP/53 (DNS) to prevent DNS exfiltration.
    */
   generateIptablesRules(opts: IptablesRuleOptions): string {
-    return `# Latch Enclave iptables rules — session sandbox
+    return `# Latch Gateway iptables rules — session sandbox
 # Redirect all outbound TCP to proxy (except loopback)
 iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner ${opts.uid} ! -d 127.0.0.1 -j REDIRECT --to-port ${opts.proxyPort}
 
@@ -116,7 +116,7 @@ iptables -A OUTPUT -m owner --uid-owner ${opts.uid} -j DROP
    * Generate cleanup commands to remove iptables rules.
    */
   generateIptablesCleanup(opts: IptablesRuleOptions): string {
-    return `# Clean up Latch Enclave iptables rules
+    return `# Clean up Latch Gateway iptables rules
 iptables -t nat -D OUTPUT -p tcp -m owner --uid-owner ${opts.uid} ! -d 127.0.0.1 -j REDIRECT --to-port ${opts.proxyPort} 2>/dev/null
 iptables -D OUTPUT -p udp --dport 53 -m owner --uid-owner ${opts.uid} -j DROP 2>/dev/null
 iptables -D OUTPUT -p tcp -d 127.0.0.1 -m owner --uid-owner ${opts.uid} -j ACCEPT 2>/dev/null

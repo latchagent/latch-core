@@ -88,8 +88,9 @@ export class LatchProxy {
     const service = this.egressFilter.matchService(domain)
 
     if (!service) {
-      this._recordAudit(domain, method, path, null, 'deny', `${domain} is not an authorized service`)
-      return { decision: 'deny', service: null, reason: `${domain} is not an authorized service` }
+      const reason = `${domain} is not an authorized service. Add it via Services in the Latch sidebar.`
+      this._recordAudit(domain, method, path, null, 'deny', reason)
+      return { decision: 'deny', service: null, reason }
     }
 
     if (!this.egressFilter.checkTierAccess(service.dataTier.defaultTier, this.config.maxDataTier)) {
@@ -126,6 +127,28 @@ export class LatchProxy {
   /** Get the CA cert path for env injection (null if TLS not enabled). */
   getCaCertPath(): string | null {
     return this.tlsInterceptor?.getCaCertPath() ?? null
+  }
+
+  /** Set the feedback callback after construction (for post-PTY wiring). */
+  setOnFeedback(cb: (msg: ProxyFeedbackMessage) => void): void {
+    this.config.onFeedback = cb
+  }
+
+  /** Add services to a running proxy (hot-reload for mid-session addition). */
+  addServices(newServices: ServiceDefinition[], newCredentials: Map<string, Record<string, string>>): void {
+    // Merge new services into config (avoid duplicates by id)
+    const existingIds = new Set(this.config.services.map(s => s.id))
+    for (const svc of newServices) {
+      if (!existingIds.has(svc.id)) {
+        this.config.services.push(svc)
+      }
+    }
+    // Merge new credentials
+    for (const [id, creds] of newCredentials) {
+      this.config.credentials.set(id, creds)
+    }
+    // Rebuild egress filter with updated service list
+    this.egressFilter.rebuildRules(this.config.services)
   }
 
   /** Stop the proxy and clean up. */

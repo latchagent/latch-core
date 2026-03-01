@@ -25,16 +25,16 @@ import AgentsView      from './components/AgentsView'
 import McpView         from './components/McpView'
 import FeedView         from './components/FeedView'
 import RadarView        from './components/RadarView'
-import VaultView        from './components/VaultView'
 import DocsView         from './components/DocsView'
 import CreatePolicyView from './components/CreatePolicyView'
+import ServicesView     from './components/panels/ServicesPanel'
+import GatewayView      from './components/panels/GatewayPanel'
 import SettingsView     from './components/panels/SettingsPanel'
 import PolicyEditor    from './components/modals/PolicyEditor'
 import SkillEditor     from './components/modals/SkillEditor'
 import SkillDetail     from './components/modals/SkillDetail'
 import McpEditor       from './components/modals/McpEditor'
 import McpDetail       from './components/modals/McpDetail'
-import SecretEditor    from './components/modals/SecretEditor'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -79,7 +79,6 @@ export default function App() {
     skillDetailOpen,
     mcpEditorOpen,
     mcpDetailOpen,
-    secretEditorOpen,
   } = useAppStore()
 
   // ── Boot ──────────────────────────────────────────────────────────────────
@@ -231,12 +230,14 @@ export default function App() {
     mainContent = <McpView />
   } else if (activeView === 'feed') {
     mainContent = <FeedView />
-  } else if (activeView === 'vault') {
-    mainContent = <VaultView />
   } else if (activeView === 'docs') {
     mainContent = <DocsView />
   } else if (activeView === 'radar') {
     mainContent = <RadarView />
+  } else if (activeView === 'services') {
+    mainContent = <ServicesView />
+  } else if (activeView === 'gateway') {
+    mainContent = <GatewayView />
   } else if (activeView === 'create-policy') {
     mainContent = <CreatePolicyView />
   } else if (activeView === 'edit-policy') {
@@ -265,7 +266,6 @@ export default function App() {
       {skillDetailOpen  && <SkillDetail />}
       {mcpEditorOpen    && <McpEditor />}
       {mcpDetailOpen    && <McpDetail />}
-      {secretEditorOpen && <SecretEditor />}
       {/* ── App shell ───────────────────────────────────────────────────── */}
       <div className="app no-rail">
         <Sidebar />

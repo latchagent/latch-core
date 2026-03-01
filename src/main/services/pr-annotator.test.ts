@@ -11,7 +11,7 @@ const mockReceipt: SessionReceipt = {
     redactionsApplied: 1, tokenizationsApplied: 5,
     toolCalls: 10, toolDenials: 2, approvalEscalations: 0,
   },
-  enclave: {
+  gateway: {
     sandboxType: 'docker', networkForced: true,
     startedAt: '2026-02-28T10:00:00Z', endedAt: '2026-02-28T10:30:00Z',
     exitReason: 'normal',

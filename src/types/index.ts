@@ -123,9 +123,9 @@ export interface McpToolInfo {
   description: string
 }
 
-// ─── Secret (vault) ──────────────────────────────────────────────────────────
+// ─── Secret ──────────────────────────────────────────────────────────────────
 
-/** Metadata for a vault secret. Raw values never cross to the renderer. */
+/** Metadata for an encrypted secret. Raw values never cross to the renderer. */
 export interface SecretRecord {
   id: string
   name: string              // Human label: "GitHub PAT"
@@ -137,7 +137,7 @@ export interface SecretRecord {
   updatedAt: string
 }
 
-// ─── Service (enclave) ──────────────────────────────────────────────────────
+// ─── Service (gateway) ──────────────────────────────────────────────────────
 
 export type DataTier = 'public' | 'internal' | 'confidential' | 'restricted'
 export type ServiceCategory = 'vcs' | 'cloud' | 'comms' | 'ci' | 'registry' | 'custom'
@@ -267,7 +267,7 @@ export interface DataClassification {
   reasoning: string
 }
 
-// ─── Sandbox (enclave) ──────────────────────────────────────────────────────
+// ─── Sandbox (gateway) ──────────────────────────────────────────────────────
 
 export type SandboxBackend = 'docker' | 'seatbelt' | 'bubblewrap'
 
@@ -324,7 +324,7 @@ export interface SessionReceipt {
     toolDenials: number
     approvalEscalations: number
   }
-  enclave: {
+  gateway: {
     sandboxType: 'docker' | 'seatbelt' | 'bubblewrap'
     networkForced: boolean
     startedAt: string
@@ -394,6 +394,18 @@ export interface DockerConfig {
   status: DockerStatus;
 }
 
+/** Gateway session configuration. */
+export interface GatewayConfig {
+  enabled: boolean
+  serviceIds: string[]
+  maxDataTier: DataTier
+  sandboxPreference?: SandboxBackend | null
+  proxyPort?: number
+  sandboxBackend?: SandboxBackend | null
+  caCertPath?: string | null
+  startedAt?: string
+}
+
 /** Derived agent activity status for a session or tab. */
 export type AgentStatus = 'running' | 'waiting' | 'idle' | 'exited';
 
@@ -421,6 +433,7 @@ export interface SessionCreateInput {
   goal?: string | null
   docker_config?: string | null
   project_dir?: string | null
+  enclave_config?: string | null
 }
 
 /** Columns that may be updated via updateSession(). */
@@ -438,6 +451,7 @@ export interface SessionUpdateFields {
   docker_config?: string | null
   project_dir?: string | null
   mcp_server_ids?: string | null
+  enclave_config?: string | null
 }
 
 /** Raw session row returned from SQLite. */
@@ -457,6 +471,7 @@ export interface SessionRow {
   docker_config: string | null
   project_dir: string | null
   mcp_server_ids: string | null
+  enclave_config: string | null
 }
 
 /** One terminal tab — each tab has its own PTY process. */
@@ -487,6 +502,7 @@ export interface SessionRecord {
   tabs: Map<string, TabRecord>;
   activeTabId: string;
   docker: DockerConfig | null;
+  gateway: GatewayConfig | null;
   needsReconnect: boolean;
   showWizard: boolean;
 }
@@ -598,9 +614,9 @@ export interface UpdateState {
 
 // ─── Rail panels ──────────────────────────────────────────────────────────────
 
-export type RailPanel = 'activity' | 'policy' | 'services' | 'enclave';
+export type RailPanel = 'activity' | 'policy' | 'services' | 'gateway';
 
-export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'settings' | 'feed' | 'radar' | 'vault' | 'docs';
+export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway';
 
 // ─── Window.latch API ─────────────────────────────────────────────────────────
 // These types mirror the contextBridge API from the preload script.
@@ -671,6 +687,36 @@ export interface LatchAPI {
   sandboxDetect(): Promise<{ ok: boolean; backends: Record<string, { available: boolean; version?: string; reason?: string }>; best: string | null }>;
   sandboxStatus(payload: { sessionId: string }): Promise<{ ok: boolean; status: string | null; backend: string | null; processId: string | null }>;
 
+  // Gateway orchestration
+  startGateway(payload: {
+    sessionId: string
+    serviceIds: string[]
+    maxDataTier: DataTier
+    policyId: string
+    policyOverride?: PolicyDocument | null
+    workspacePath: string | null
+    enableTls?: boolean
+  }): Promise<{
+    ok: boolean
+    proxyPort?: number
+    sandboxCommand?: string
+    sandboxArgs?: string[]
+    gatewayEnv?: Record<string, string>
+    caCertPath?: string | null
+    sandboxBackend?: SandboxBackend | null
+    error?: string
+  }>;
+
+  stopGateway(payload: {
+    sessionId: string
+    exitReason?: 'normal' | 'timeout' | 'killed' | 'error'
+  }): Promise<{ ok: boolean; receipt?: SessionReceipt; error?: string }>;
+
+  addGatewayService(payload: {
+    sessionId: string
+    serviceId: string
+  }): Promise<{ ok: boolean; error?: string }>;
+
   // Activity / Authz
   listActivity(payload?: { sessionId?: string; limit?: number; offset?: number }): Promise<{ ok: boolean; events: ActivityEvent[]; total: number }>;
   clearActivity(payload?: { sessionId?: string }): Promise<{ ok: boolean }>;
@@ -718,7 +764,7 @@ export interface LatchAPI {
   deleteSetting(payload: { key: string }): Promise<{ ok: boolean; error?: string }>;
   hasSetting(payload: { key: string }): Promise<{ ok: boolean; exists: boolean; encrypted: boolean; error?: string }>;
 
-  // Secrets (vault)
+  // Secrets
   listSecrets(payload?: { scope?: string }): Promise<{ ok: boolean; secrets: SecretRecord[]; error?: string }>;
   getSecret(payload: { id: string }): Promise<{ ok: boolean; secret?: SecretRecord; error?: string }>;
   saveSecret(params: { id: string; name: string; key: string; value: string; description?: string; scope?: string; tags?: string[] }): Promise<{ ok: boolean; error?: string }>;
@@ -726,7 +772,7 @@ export interface LatchAPI {
   validateSecretRefs(payload: { env: Record<string, string> }): Promise<{ ok: boolean; missing: string[]; error?: string }>;
   listSecretHints(): Promise<{ ok: boolean; hints: Array<{ key: string; description: string }>; error?: string }>;
 
-  // Services (enclave)
+  // Services (gateway)
   listServices(): Promise<{ ok: boolean; services: ServiceRecord[] }>;
   getService(payload: { id: string }): Promise<{ ok: boolean; service?: ServiceRecord; error?: string }>;
   saveService(payload: { definition: ServiceDefinition; credentialValue?: string }): Promise<{ ok: boolean; error?: string }>;

@@ -17,7 +17,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useAppStore, useTabAgentStatus } from '../store/useAppStore'
 import { terminalManager } from '../terminal/TerminalManager'
 import { TerminalWizard, buildWizardSteps } from '../terminal/TerminalWizard'
-import type { SessionRecord, TabRecord, DockerConfig } from '../../types'
+import type { SessionRecord, TabRecord, DockerConfig, GatewayConfig, DataTier } from '../../types'
 import ApprovalBar   from './ApprovalBar'
 import StatusDot     from './StatusDot'
 
@@ -273,9 +273,17 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
       // Check for a pending project dir (set by "Open Project" button)
       const pendingProjectDir = state.pendingProjectDir
 
+      // Ensure services are loaded for gateway service picker
+      if (!state.servicesLoaded) await state.loadServices()
+      const latestState = useAppStore.getState()
+      const services = (latestState.services ?? []).map(s => ({
+        id: s.id, name: s.name, hasCredential: s.hasCredential,
+      }))
+
       const steps = buildWizardSteps({
         harnesses,
         policies,
+        services,
         pendingProjectDir,
       })
 
@@ -297,9 +305,24 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
         const harnessId = (answers.harness as string) || harnesses.find(h => h.installed)?.id || ''
         const harness = harnesses.find(h => h.id === harnessId)
 
+        // Build gateway config
+        const gatewayEnabled = answers.gateway === true
+        const selectedServiceIds = Array.isArray(answers.services)
+          ? answers.services as string[]
+          : (useAppStore.getState().services ?? []).filter(s => s.hasCredential).map(s => s.id)
+        const gatewayConfig: GatewayConfig | null = gatewayEnabled
+          ? {
+              enabled: true,
+              serviceIds: selectedServiceIds,
+              maxDataTier: 'internal' as DataTier,
+              sandboxPreference: null,
+            }
+          : null
+
         // Build docker config — auto-enable from settings when Docker is available
+        // Skip Docker when gateway is active (gateway handles sandbox)
         const state2 = useAppStore.getState()
-        const dockerEnabled = state2.dockerAvailable && state2.sandboxEnabled && harnessId !== 'openclaw'
+        const dockerEnabled = !gatewayEnabled && state2.dockerAvailable && state2.sandboxEnabled && harnessId !== 'openclaw'
 
         // Auto-detect image from project stack when possible
         let dockerImage = state2.defaultDockerImage || 'node:20'
@@ -350,6 +373,7 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
               policyId: selectedPolicy ? selectedPolicy.id : '',
               policy: selectedPolicy ? selectedPolicy.name : 'None',
               docker,
+              gateway: gatewayConfig,
             })
           }
           return { sessions }

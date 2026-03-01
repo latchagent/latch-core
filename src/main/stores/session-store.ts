@@ -49,7 +49,8 @@ class SessionStore {
       'ALTER TABLE sessions ADD COLUMN policy_override TEXT',
       'ALTER TABLE sessions ADD COLUMN docker_config   TEXT',
       'ALTER TABLE sessions ADD COLUMN project_dir     TEXT',
-      'ALTER TABLE sessions ADD COLUMN mcp_server_ids  TEXT'
+      'ALTER TABLE sessions ADD COLUMN mcp_server_ids  TEXT',
+      'ALTER TABLE sessions ADD COLUMN enclave_config  TEXT'
     ]
 
     migrations.forEach((sql) => {
@@ -69,16 +70,17 @@ class SessionStore {
       this.db.prepare(`
         INSERT INTO sessions
           (id, name, created_at, status, repo_root, worktree_path, branch_ref,
-           policy_set, harness_id, harness_command, goal, docker_config, project_dir)
+           policy_set, harness_id, harness_command, goal, docker_config, project_dir, enclave_config)
         VALUES
           (@id, @name, @created_at, @status, @repo_root, @worktree_path, @branch_ref,
-           @policy_set, @harness_id, @harness_command, @goal, @docker_config, @project_dir)
+           @policy_set, @harness_id, @harness_command, @goal, @docker_config, @project_dir, @enclave_config)
       `).run({
         harness_id:      null,
         harness_command: null,
         goal:            null,
         docker_config:   null,
         project_dir:     null,
+        enclave_config:  null,
         ...session
       })
       return { ok: true }
@@ -91,7 +93,7 @@ class SessionStore {
   static readonly ALLOWED_COLUMNS = new Set([
     'name', 'status', 'repo_root', 'worktree_path', 'branch_ref',
     'policy_set', 'harness_id', 'harness_command', 'goal',
-    'policy_override', 'docker_config', 'project_dir', 'mcp_server_ids'
+    'policy_override', 'docker_config', 'project_dir', 'mcp_server_ids', 'enclave_config'
   ])
 
   updateSession(id: string, updates: Record<string, any>) {

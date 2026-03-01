@@ -4,13 +4,13 @@ import type { RailPanel } from '../../types'
 import PolicyPanel   from './panels/PolicyPanel'
 import ActivityPanel from './panels/ActivityPanel'
 import ServicesPanel from './panels/ServicesPanel'
-import EnclavePanel from './panels/EnclavePanel'
+import GatewayPanel from './panels/GatewayPanel'
 
 const TABS: { id: RailPanel; label: string }[] = [
   { id: 'activity', label: 'Activity' },
   { id: 'policy',   label: 'Policy'   },
   { id: 'services', label: 'Services' },
-  { id: 'enclave', label: 'Enclave' },
+  { id: 'gateway', label: 'Gateway' },
 ]
 
 export default function Rail() {
@@ -37,7 +37,7 @@ export default function Rail() {
         {activeRailPanel === 'activity' && <ActivityPanel />}
         {activeRailPanel === 'policy'   && <PolicyPanel />}
         {activeRailPanel === 'services' && <ServicesPanel />}
-        {activeRailPanel === 'enclave'  && <EnclavePanel />}
+        {activeRailPanel === 'gateway'  && <GatewayPanel />}
       </div>
     </aside>
   )

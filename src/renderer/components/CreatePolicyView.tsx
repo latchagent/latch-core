@@ -55,6 +55,7 @@ export default function CreatePolicyView() {
   const handleSave = async () => {
     if (saving) return
     setSaving(true)
+    setError(null)
     const policy: PolicyDocument = {
       id:          `policy-${Date.now()}`,
       name:        name.trim() || 'Untitled Policy',
@@ -63,9 +64,15 @@ export default function CreatePolicyView() {
       harnesses:   {},
     }
     try {
-      await window.latch?.savePolicy?.(policy)
+      const result = await window.latch?.savePolicy?.(policy)
+      if (!result?.ok) {
+        setError(result?.error ?? 'Failed to save policy.')
+        return
+      }
       await loadPolicies()
       setActiveView('policies')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save policy.')
     } finally {
       setSaving(false)
     }
@@ -214,6 +221,8 @@ export default function CreatePolicyView() {
                 <button className="cp-add-glob" onClick={addGlob}>+ Add path</button>
               </div>
             </div>
+
+            {error && <div className="cp-error">{error}</div>}
 
             <div className="cp-actions">
               <button className="cp-cancel" onClick={handleBack}>Back</button>

@@ -27,9 +27,10 @@ interface HeaderEntry {
 interface ServiceEditorProps {
   onClose: () => void
   initial?: ServiceDefinition | null
+  hasExistingCredential?: boolean
 }
 
-export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) {
+export default function ServiceEditor({ onClose, initial, hasExistingCredential }: ServiceEditorProps) {
   const [name, setName] = useState(initial?.name ?? '')
   const [category, setCategory] = useState<ServiceCategory>(initial?.category ?? 'custom')
   const [protocol, setProtocol] = useState<ServiceProtocol>(initial?.protocol ?? 'http')
@@ -45,6 +46,7 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
   const [credentialFields, setCredentialFields] = useState(
     initial?.credential.fields.join('\n') ?? 'token',
   )
+  const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [dataTier, setDataTier] = useState<DataTier>(initial?.dataTier.defaultTier ?? 'internal')
   const [redactionPatterns, setRedactionPatterns] = useState(
     initial?.dataTier.redaction.patterns.join('\n') ?? '',
@@ -53,6 +55,11 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const saveService = useAppStore(s => s.saveService)
+
+  const credFieldNames = credentialFields
+    .split('\n')
+    .map(f => f.trim())
+    .filter(Boolean)
 
   const handleAddHeader = () => {
     setHeaders((h) => [...h, { key: '', value: '' }])
@@ -120,10 +127,19 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
       },
     }
 
+    // Build credential value JSON if any fields were filled in
+    const filledCreds: Record<string, string> = {}
+    for (const [field, val] of Object.entries(credValues)) {
+      if (val.trim()) filledCreds[field] = val.trim()
+    }
+    const credentialValue = Object.keys(filledCreds).length > 0
+      ? JSON.stringify(filledCreds)
+      : undefined
+
     setSaving(true)
     setError(null)
     try {
-      const result = await saveService(definition)
+      const result = await saveService(definition, credentialValue)
       if (!result.ok) {
         setError(result.error ?? 'Failed to save service')
         return
@@ -298,6 +314,27 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
               rows={2}
             />
           </div>
+
+          {/* Credential values */}
+          {credFieldNames.length > 0 && (
+            <div className="modal-field">
+              <label className="modal-label">
+                Credential {hasExistingCredential ? '(leave empty to keep current)' : ''}
+              </label>
+              {credFieldNames.map(field => (
+                <input
+                  key={field}
+                  className="modal-input"
+                  type="password"
+                  placeholder={field}
+                  value={credValues[field] ?? ''}
+                  onChange={(e) => setCredValues(prev => ({ ...prev, [field]: e.target.value }))}
+                  style={{ marginBottom: 6 }}
+                  autoComplete="off"
+                />
+              ))}
+            </div>
+          )}
 
           {/* Data tier */}
           <div className="modal-field">

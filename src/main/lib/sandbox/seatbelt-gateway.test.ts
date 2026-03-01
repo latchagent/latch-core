@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { SeatbeltEnclave } from './seatbelt-enclave'
+import { SeatbeltGateway } from './seatbelt-gateway'
 
 // Mock child_process since we can't actually run sandbox-exec in tests
 vi.mock('node:child_process', () => ({
@@ -8,10 +8,10 @@ vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
 }))
 
-describe('SeatbeltEnclave', () => {
+describe('SeatbeltGateway', () => {
   it('generates a valid sandbox profile', () => {
-    const enclave = new SeatbeltEnclave()
-    const profile = enclave.generateProfile({
+    const gw = new SeatbeltGateway()
+    const profile = gw.generateProfile({
       workspacePath: '/Users/test/project',
       proxyPort: 8080,
       authzPort: 9090,
@@ -25,8 +25,8 @@ describe('SeatbeltEnclave', () => {
   })
 
   it('profile allows loopback to proxy and authz ports only', () => {
-    const enclave = new SeatbeltEnclave()
-    const profile = enclave.generateProfile({
+    const gw = new SeatbeltGateway()
+    const profile = gw.generateProfile({
       workspacePath: '/tmp/ws',
       proxyPort: 12345,
       authzPort: 12346,
@@ -40,8 +40,8 @@ describe('SeatbeltEnclave', () => {
   })
 
   it('profile blocks sensitive directories', () => {
-    const enclave = new SeatbeltEnclave()
-    const profile = enclave.generateProfile({
+    const gw = new SeatbeltGateway()
+    const profile = gw.generateProfile({
       workspacePath: '/tmp/ws',
       proxyPort: 8080,
       authzPort: 9090,
@@ -54,8 +54,8 @@ describe('SeatbeltEnclave', () => {
   })
 
   it('generates pf rules for network forcing', () => {
-    const enclave = new SeatbeltEnclave()
-    const rules = enclave.generatePfRules({
+    const gw = new SeatbeltGateway()
+    const rules = gw.generatePfRules({
       proxyPort: 8080,
       uid: 501,
     })
@@ -65,8 +65,8 @@ describe('SeatbeltEnclave', () => {
   })
 
   it('builds spawn args for sandbox-exec', () => {
-    const enclave = new SeatbeltEnclave()
-    const args = enclave.buildSpawnArgs({
+    const gw = new SeatbeltGateway()
+    const args = gw.buildSpawnArgs({
       profilePath: '/tmp/latch-sb-xxx/profile.sb',
       shell: '/bin/zsh',
     })
@@ -77,8 +77,8 @@ describe('SeatbeltEnclave', () => {
   })
 
   it('rejects workspacePath containing parentheses', () => {
-    const enclave = new SeatbeltEnclave()
-    expect(() => enclave.generateProfile({
+    const gw = new SeatbeltGateway()
+    expect(() => gw.generateProfile({
       workspacePath: '/tmp/ws(evil)',
       proxyPort: 8080,
       authzPort: 9090,
@@ -87,8 +87,8 @@ describe('SeatbeltEnclave', () => {
   })
 
   it('rejects shell containing quotes', () => {
-    const enclave = new SeatbeltEnclave()
-    expect(() => enclave.generateProfile({
+    const gw = new SeatbeltGateway()
+    expect(() => gw.generateProfile({
       workspacePath: '/tmp/ws',
       proxyPort: 8080,
       authzPort: 9090,
@@ -105,8 +105,8 @@ describe('SeatbeltEnclave', () => {
       return {} as any
     })
 
-    const enclave = new SeatbeltEnclave()
-    const result = await enclave.detect()
+    const gw = new SeatbeltGateway()
+    const result = await gw.detect()
     // On non-macOS in CI this may vary, just check the shape
     expect(result).toHaveProperty('available')
   })

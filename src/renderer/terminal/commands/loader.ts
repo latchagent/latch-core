@@ -6,6 +6,5 @@
 
 import './policy'
 import './mcp'
-import './vault'
 import './settings'
 import './session'

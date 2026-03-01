@@ -49,7 +49,6 @@ const LAUNCHER_OPTIONS = [
   { label: 'Policies',     value: 'policies',     description: 'Manage security policies' },
   { label: 'Skills',       value: 'skills',       description: 'Manage agent skills' },
   { label: 'MCP Servers',  value: 'mcp',          description: 'Manage MCP server configs' },
-  { label: 'Vault',        value: 'vault',        description: 'Manage secrets' },
   { label: 'Settings',     value: 'settings',     description: 'App settings' },
 ]
 
@@ -91,7 +90,6 @@ async function showLauncher(runner: CommandRunner): Promise<void> {
     case 'policies':
     case 'skills':
     case 'mcp':
-    case 'vault':
     case 'settings':
       store.setActiveView(choice as any)
       return // Don't re-show — user navigated away
