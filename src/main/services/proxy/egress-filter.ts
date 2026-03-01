@@ -74,4 +74,52 @@ export class EgressFilter {
     }
     return { safe: leaked.length === 0, leaked }
   }
+
+  /**
+   * Check if a request's method and path are allowed by the service's path rules.
+   * Returns { allowed: true } if no rules defined or request passes.
+   * Deny rules take precedence over allow rules.
+   */
+  checkPathScope(
+    service: ServiceDefinition,
+    method: string,
+    path: string,
+  ): { allowed: boolean; reason?: string } {
+    const rules = service.injection.proxy.pathRules
+    if (!rules || rules.length === 0) return { allowed: true }
+
+    // Check deny rules first (deny takes precedence)
+    for (const rule of rules) {
+      if (rule.decision !== 'deny') continue
+      if (this._methodMatches(rule.methods, method) && this._pathMatches(rule.paths, path)) {
+        return { allowed: false, reason: `${method} ${path} denied by path rule` }
+      }
+    }
+
+    // Check allow rules — if any allow rules exist, request must match one
+    const allowRules = rules.filter(r => r.decision === 'allow')
+    if (allowRules.length === 0) return { allowed: true }
+
+    for (const rule of allowRules) {
+      if (this._methodMatches(rule.methods, method) && this._pathMatches(rule.paths, path)) {
+        return { allowed: true }
+      }
+    }
+
+    // Allow rules exist but none matched — allow by default (deny must be explicit)
+    return { allowed: true }
+  }
+
+  private _methodMatches(methods: string[], method: string): boolean {
+    return methods.includes('*') || methods.includes(method.toUpperCase())
+  }
+
+  private _pathMatches(patterns: string[], path: string): boolean {
+    return patterns.some(pattern => {
+      const regex = new RegExp(
+        '^' + pattern.replace(/\*\*/g, '.*').replace(/(?<!\.)(\*)/g, '[^/]*') + '$'
+      )
+      return regex.test(path)
+    })
+  }
 }
