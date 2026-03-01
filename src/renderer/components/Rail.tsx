@@ -18,10 +18,13 @@ export default function Rail() {
 
   return (
     <aside className="rail">
-      <div className="rail-tabs">
+      <div className="rail-tabs" role="tablist">
         {TABS.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeRailPanel === tab.id}
+            aria-controls={`rail-panel-${tab.id}`}
             className={`rail-tab${activeRailPanel === tab.id ? ' is-active' : ''}`}
             onClick={() => setActiveRailPanel(tab.id)}
           >
@@ -30,10 +33,12 @@ export default function Rail() {
         ))}
       </div>
 
-      {activeRailPanel === 'activity' && <ActivityPanel />}
-      {activeRailPanel === 'policy'   && <PolicyPanel />}
-      {activeRailPanel === 'services' && <ServicesPanel />}
-      {activeRailPanel === 'enclave' && <EnclavePanel />}
+      <div id={`rail-panel-${activeRailPanel}`} role="tabpanel">
+        {activeRailPanel === 'activity' && <ActivityPanel />}
+        {activeRailPanel === 'policy'   && <PolicyPanel />}
+        {activeRailPanel === 'services' && <ServicesPanel />}
+        {activeRailPanel === 'enclave'  && <EnclavePanel />}
+      </div>
     </aside>
   )
 }
