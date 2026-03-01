@@ -5239,3 +5239,46 @@ textarea:focus-visible,
 
 .enclave-badge-allow { color: var(--success); }
 .enclave-badge-deny  { color: var(--error); }
+
+/* ─── Service Editor ─────────────────────────────────────────────────────── */
+
+.service-editor-modal {
+  max-height: 80vh;
+}
+
+.service-editor-textarea {
+  resize: vertical;
+  min-height: 56px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.service-editor-header-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.service-editor-header-key {
+  flex: 2;
+}
+
+.service-editor-header-value {
+  flex: 3;
+}
+
+.service-editor-header-remove {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.service-editor-header-remove:hover {
+  color: var(--text-primary);
+}

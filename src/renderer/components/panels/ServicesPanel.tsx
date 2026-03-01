@@ -1,17 +1,34 @@
+import { useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
+import ServiceEditor from '../modals/ServiceEditor'
 
 export default function ServicesPanel() {
   const services = useAppStore(s => s.services)
   const serviceCatalog = useAppStore(s => s.serviceCatalog)
   const servicesLoaded = useAppStore(s => s.servicesLoaded)
+  const loadServices = useAppStore(s => s.loadServices)
+  const [showServiceEditor, setShowServiceEditor] = useState(false)
 
   if (!servicesLoaded) return <div className="panel-empty">Loading services...</div>
+
+  const handleEditorClose = () => {
+    setShowServiceEditor(false)
+    loadServices()
+  }
 
   return (
     <div className="services-panel">
       <div className="panel-header">
         <h3>Services</h3>
       </div>
+
+      <button
+        className="panel-action is-primary"
+        style={{ marginBottom: 12 }}
+        onClick={() => setShowServiceEditor(true)}
+      >
+        + Create Service
+      </button>
 
       {services.length === 0 ? (
         <div className="panel-empty">
@@ -50,6 +67,10 @@ export default function ServicesPanel() {
               ))}
           </div>
         </div>
+      )}
+
+      {showServiceEditor && (
+        <ServiceEditor onClose={handleEditorClose} />
       )}
     </div>
   )
