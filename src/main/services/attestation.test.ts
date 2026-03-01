@@ -152,4 +152,53 @@ describe('AttestationEngine', () => {
     const valid = engine.verifyInclusionProof(proof!)
     expect(valid).toBe(true)
   })
+
+  // -- H8: Tamper detection tests ──────────────────────────────────────────
+
+  it('detects tampering when activity.networkRequests is modified', () => {
+    const receipt = engine.generateReceipt(makeInput())
+    expect(engine.verifyReceipt(receipt)).toBe(true)
+
+    // Tamper with the receipt
+    const tampered = JSON.parse(JSON.stringify(receipt))
+    tampered.activity.networkRequests = 999
+    expect(engine.verifyReceipt(tampered)).toBe(false)
+  })
+
+  it('detects tampering when proof.signature is corrupted', () => {
+    const receipt = engine.generateReceipt(makeInput())
+    expect(engine.verifyReceipt(receipt)).toBe(true)
+
+    // Corrupt the signature
+    const tampered = JSON.parse(JSON.stringify(receipt))
+    tampered.proof.signature = 'AAAA' + tampered.proof.signature.slice(4)
+    expect(engine.verifyReceipt(tampered)).toBe(false)
+  })
+
+  it('detects tampering when proof.publicKey is garbage PEM', () => {
+    const receipt = engine.generateReceipt(makeInput())
+    expect(engine.verifyReceipt(receipt)).toBe(true)
+
+    // Replace public key with garbage
+    const tampered = JSON.parse(JSON.stringify(receipt))
+    tampered.proof.publicKey = '-----BEGIN PUBLIC KEY-----\ngarbage\n-----END PUBLIC KEY-----\n'
+    expect(engine.verifyReceipt(tampered)).toBe(false)
+  })
+
+  it('receipt signed by one engine fails verification with different engine key', () => {
+    const receipt = engine.generateReceipt(makeInput({ sessionId: 'session-cross' }))
+    expect(engine.verifyReceipt(receipt)).toBe(true)
+
+    // Create a second engine with a different key pair
+    const db2 = new Database(':memory:')
+    const store2 = AttestationStore.open(db2)
+    const engine2 = new AttestationEngine(store2)
+
+    // The receipt has engine1's public key embedded, but if we change
+    // the public key to engine2's and re-verify, the signature won't match
+    const receipt2 = engine2.generateReceipt(makeInput({ sessionId: 'session-cross-2' }))
+    const crossTampered = JSON.parse(JSON.stringify(receipt))
+    crossTampered.proof.publicKey = receipt2.proof.publicKey
+    expect(engine.verifyReceipt(crossTampered)).toBe(false)
+  })
 })
