@@ -58,6 +58,57 @@ describe('AttestationStore', () => {
     expect(chain1).not.toBe(chain2)
   })
 
+  it('tracks leaf_index per event', () => {
+    store.recordEvent(makeEvent({ id: 'e1' }))
+    store.recordEvent(makeEvent({ id: 'e2' }))
+    store.recordEvent(makeEvent({ id: 'e3' }))
+    const hashes = store.getLeafHashes('session-1')
+    expect(hashes).toHaveLength(3)
+    expect(hashes[0]).toHaveLength(64) // SHA-256 hex
+  })
+
+  it('getMerkleRoot returns null for empty session', () => {
+    expect(store.getMerkleRoot('no-such-session')).toBeNull()
+  })
+
+  it('getMerkleRoot returns 64-char hex for non-empty session', () => {
+    store.recordEvent(makeEvent())
+    store.recordEvent(makeEvent())
+    const root = store.getMerkleRoot('session-1')
+    expect(root).toHaveLength(64)
+  })
+
+  it('getMerkleRoot changes when events differ', () => {
+    store.recordEvent(makeEvent({ domain: 'a.com' }))
+    const root1 = store.getMerkleRoot('session-1')
+
+    const db2 = new Database(':memory:')
+    const store2 = AttestationStore.open(db2)
+    store2.recordEvent(makeEvent({ domain: 'b.com' }))
+    const root2 = store2.getMerkleRoot('session-1')
+
+    expect(root1).not.toBe(root2)
+  })
+
+  it('getInclusionProof returns valid proof', () => {
+    const e1 = makeEvent({ id: 'evt-1' })
+    const e2 = makeEvent({ id: 'evt-2' })
+    const e3 = makeEvent({ id: 'evt-3' })
+    store.recordEvent(e1)
+    store.recordEvent(e2)
+    store.recordEvent(e3)
+
+    const proof = store.getInclusionProof('session-1', 'evt-2')
+    expect(proof).not.toBeNull()
+    expect(proof!.leafIndex).toBe(1)
+    expect(proof!.root).toBe(store.getMerkleRoot('session-1'))
+  })
+
+  it('getInclusionProof returns null for missing event', () => {
+    store.recordEvent(makeEvent())
+    expect(store.getInclusionProof('session-1', 'no-such-event')).toBeNull()
+  })
+
   it('saves and retrieves a session receipt', () => {
     const receipt: SessionReceipt = {
       version: 1,

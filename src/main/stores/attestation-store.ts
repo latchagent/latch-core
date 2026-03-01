@@ -8,7 +8,8 @@
 
 import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import type { ProxyAuditEvent, SessionReceipt } from '../../types'
+import type { ProxyAuditEvent, SessionReceipt, MerkleProof } from '../../types'
+import { computeLeafHash, buildMerkleRoot, buildInclusionProof } from '../lib/merkle'
 
 export class AttestationStore {
   private db: Database.Database
@@ -41,6 +42,11 @@ export class AttestationStore {
         created_at  TEXT NOT NULL
       )
     `)
+    try {
+      this.db.exec('ALTER TABLE proxy_audit_log ADD COLUMN leaf_index INTEGER')
+    } catch {
+      // Column already exists
+    }
   }
 
   recordEvent(event: ProxyAuditEvent): void {
@@ -52,10 +58,16 @@ export class AttestationStore {
     const eventJson = JSON.stringify(event)
     const hash = createHash('sha256').update(prevHash + eventJson).digest('hex')
 
+    // Compute leaf_index as next sequential index for this session
+    const countRow = this.db.prepare(
+      'SELECT COUNT(*) as count FROM proxy_audit_log WHERE session_id = ?'
+    ).get(event.sessionId) as { count: number }
+    const leafIndex = countRow.count
+
     this.db.prepare(`
-      INSERT INTO proxy_audit_log (id, session_id, event_json, prev_hash, hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(event.id, event.sessionId, eventJson, prevHash || null, hash, event.timestamp)
+      INSERT INTO proxy_audit_log (id, session_id, event_json, prev_hash, hash, leaf_index, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(event.id, event.sessionId, eventJson, prevHash || null, hash, leafIndex, event.timestamp)
   }
 
   listEvents(sessionId: string, limit?: number): ProxyAuditEvent[] {
@@ -80,6 +92,31 @@ export class AttestationStore {
       'SELECT COUNT(*) as count FROM proxy_audit_log WHERE session_id = ?'
     ).get(sessionId) as { count: number }
     return row.count
+  }
+
+  /** Get ordered leaf hashes for Merkle tree computation. */
+  getLeafHashes(sessionId: string): string[] {
+    const rows = this.db.prepare(
+      'SELECT event_json FROM proxy_audit_log WHERE session_id = ? ORDER BY leaf_index ASC'
+    ).all(sessionId) as { event_json: string }[]
+    return rows.map(r => computeLeafHash(r.event_json))
+  }
+
+  /** Compute the Merkle root over all audit events for a session. */
+  getMerkleRoot(sessionId: string): string | null {
+    const leaves = this.getLeafHashes(sessionId)
+    return buildMerkleRoot(leaves)
+  }
+
+  /** Build an inclusion proof for a specific event. */
+  getInclusionProof(sessionId: string, eventId: string): MerkleProof | null {
+    const indexRow = this.db.prepare(
+      'SELECT leaf_index FROM proxy_audit_log WHERE session_id = ? AND id = ?'
+    ).get(sessionId, eventId) as { leaf_index: number } | undefined
+    if (!indexRow) return null
+
+    const leaves = this.getLeafHashes(sessionId)
+    return buildInclusionProof(leaves, indexRow.leaf_index)
   }
 
   saveReceipt(receipt: SessionReceipt): void {
