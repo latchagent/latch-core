@@ -73,7 +73,7 @@ describe('AttestationStore', () => {
         startedAt: new Date().toISOString(), endedAt: new Date().toISOString(),
         exitReason: 'normal',
       },
-      proof: { auditEventCount: 10, auditHashChain: 'abc', signature: 'sig', publicKey: 'pub' },
+      proof: { auditEventCount: 10, auditHashChain: 'abc', merkleRoot: 'def456', signature: 'sig', publicKey: 'pub' },
     }
     store.saveReceipt(receipt)
     const retrieved = store.getReceipt('session-1')

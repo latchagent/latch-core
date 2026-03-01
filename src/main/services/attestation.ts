@@ -47,6 +47,7 @@ export class AttestationEngine {
       .digest('hex')
 
     const auditHashChain = this.store.getHashChain(input.sessionId) ?? ''
+    const merkleRoot = this.store.getMerkleRoot(input.sessionId) ?? ''
     const auditEventCount = this.store.getEventCount(input.sessionId)
 
     const receipt: SessionReceipt = {
@@ -78,6 +79,7 @@ export class AttestationEngine {
       proof: {
         auditEventCount,
         auditHashChain,
+        merkleRoot,
         signature: '',
         publicKey: this.publicKeyPem,
       },

@@ -315,9 +315,27 @@ export interface SessionReceipt {
   proof: {
     auditEventCount: number
     auditHashChain: string
+    merkleRoot: string
     signature: string
     publicKey: string
   }
+}
+
+/** Merkle inclusion proof for a single audit event. */
+export interface MerkleProof {
+  leafIndex: number
+  leafHash: string
+  siblings: string[]
+  root: string
+}
+
+/** Consistency proof that the log grew without mutation. */
+export interface ConsistencyProof {
+  fromSize: number
+  toSize: number
+  fromRoot: string
+  toRoot: string
+  proof: string[]
 }
 
 // ─── Skill ────────────────────────────────────────────────────────────────────
@@ -501,7 +519,7 @@ export interface UpdateState {
 
 // ─── Rail panels ──────────────────────────────────────────────────────────────
 
-export type RailPanel = 'activity' | 'policy' | 'services';
+export type RailPanel = 'activity' | 'policy' | 'services' | 'enclave';
 
 export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'settings' | 'feed' | 'radar' | 'vault' | 'docs';
 
@@ -639,6 +657,8 @@ export interface LatchAPI {
   // Attestation
   getAttestation(payload: { sessionId: string }): Promise<{ ok: boolean; receipt?: SessionReceipt; error?: string }>;
   listProxyAudit(payload: { sessionId: string; limit?: number }): Promise<{ ok: boolean; events: ProxyAuditEvent[] }>;
+  getInclusionProof(payload: { sessionId: string; eventId: string }): Promise<{ ok: boolean; proof?: MerkleProof; error?: string }>;
+  annotateGitHubPR(payload: { sessionId: string; prUrl: string }): Promise<{ ok: boolean; commentUrl?: string; error?: string }>;
 
   // Feed
   listFeed(payload?: { sessionId?: string; limit?: number }): Promise<{ ok: boolean; items: FeedItem[]; total: number }>;
