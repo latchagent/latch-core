@@ -6,7 +6,7 @@
  * No sandbox = no session — the enclave is mandatory.
  */
 
-import type { ServiceDefinition } from '../../types'
+import type { ServiceDefinition, SandboxBackend } from '../../types'
 
 export interface EnclaveEnvInput {
   proxyPort: number
@@ -16,8 +16,6 @@ export interface EnclaveEnvInput {
   credentials: Map<string, Record<string, string>>
   caCertPath?: string  // Phase 2: ephemeral CA cert for TLS interception
 }
-
-export type SandboxBackend = 'docker' | 'seatbelt' | 'bubblewrap'
 
 export class EnclaveManager {
   /**

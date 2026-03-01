@@ -248,6 +248,43 @@ export interface ProxyFeedbackMessage {
   detail: string
 }
 
+// ─── Sandbox (enclave) ──────────────────────────────────────────────────────
+
+export type SandboxBackend = 'docker' | 'seatbelt' | 'bubblewrap'
+
+/** Configuration for starting a sandbox session. */
+export interface SandboxConfig {
+  sessionId: string
+  workspacePath: string
+  proxyPort: number
+  authzPort: number
+  env: Record<string, string>
+  shell?: string
+  memoryLimit?: string
+  cpuLimit?: string
+}
+
+/** Result of starting a sandbox. */
+export interface SandboxResult {
+  ok: boolean
+  processId?: string
+  error?: string
+}
+
+/** Status of a running sandbox. */
+export interface SandboxStatus {
+  status: 'starting' | 'running' | 'stopped' | 'error' | null
+  processId: string | null
+  backend: SandboxBackend | null
+}
+
+/** Detection result for a sandbox backend. */
+export interface SandboxDetection {
+  available: boolean
+  version?: string
+  reason?: string
+}
+
 /** Signed session receipt. */
 export interface SessionReceipt {
   version: 1
