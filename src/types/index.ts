@@ -137,6 +137,126 @@ export interface SecretRecord {
   updatedAt: string
 }
 
+// ─── Service (enclave) ──────────────────────────────────────────────────────
+
+export type DataTier = 'public' | 'internal' | 'confidential' | 'restricted'
+export type ServiceCategory = 'vcs' | 'cloud' | 'comms' | 'ci' | 'registry' | 'custom'
+export type ServiceProtocol = 'http' | 'ssh' | 'db' | 'grpc' | 'custom'
+
+export interface ServiceCredentialConfig {
+  type: 'token' | 'keypair' | 'oauth' | 'env-bundle'
+  fields: string[]
+}
+
+export interface ServiceInjectionConfig {
+  env: Record<string, string>
+  files: Record<string, string>
+  proxy: {
+    domains: string[]
+    headers: Record<string, string>
+    tlsExceptions?: string[]
+  }
+}
+
+export interface ServiceDefinition {
+  id: string
+  name: string
+  category: ServiceCategory
+  protocol: ServiceProtocol
+  credential: ServiceCredentialConfig
+  injection: ServiceInjectionConfig
+  dataTier: {
+    defaultTier: DataTier
+    redaction: {
+      patterns: string[]
+      fields: string[]
+    }
+  }
+  skill: {
+    description: string
+    capabilities: string[]
+    constraints: string[]
+  }
+}
+
+/** Stored service instance — definition + user credential metadata. */
+export interface ServiceRecord {
+  id: string
+  definitionId: string
+  name: string
+  category: ServiceCategory
+  protocol: ServiceProtocol
+  definition: ServiceDefinition
+  hasCredential: boolean
+  expiresAt: string | null
+  lastUsed: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Token entry for same-origin tokenization. */
+export interface TokenEntry {
+  id: string
+  value: string
+  origin: {
+    service: string
+    tier: DataTier
+    endpoint: string
+  }
+  validDestinations: string[]
+  createdAt: string
+}
+
+/** Proxy audit event. */
+export interface ProxyAuditEvent {
+  id: string
+  timestamp: string
+  sessionId: string
+  service: string | null
+  domain: string
+  method: string
+  path: string
+  tier: DataTier | null
+  decision: 'allow' | 'deny'
+  reason: string | null
+  contentType: string | null
+}
+
+/** Signed session receipt. */
+export interface SessionReceipt {
+  version: 1
+  sessionId: string
+  policy: {
+    id: string
+    hash: string
+    maxDataTier: DataTier
+    servicesGranted: string[]
+  }
+  activity: {
+    servicesUsed: string[]
+    networkRequests: number
+    blockedRequests: number
+    redactionsApplied: number
+    tokenizationsApplied: number
+    toolCalls: number
+    toolDenials: number
+    approvalEscalations: number
+  }
+  enclave: {
+    sandboxType: 'docker' | 'seatbelt' | 'bubblewrap'
+    networkForced: boolean
+    startedAt: string
+    endedAt: string
+    exitReason: 'normal' | 'timeout' | 'killed' | 'error'
+  }
+  proof: {
+    auditEventCount: number
+    auditHashChain: string
+    signature: string
+    publicKey: string
+  }
+}
+
 // ─── Skill ────────────────────────────────────────────────────────────────────
 
 export interface SkillRecord {
@@ -318,7 +438,7 @@ export interface UpdateState {
 
 // ─── Rail panels ──────────────────────────────────────────────────────────────
 
-export type RailPanel = 'activity' | 'policy';
+export type RailPanel = 'activity' | 'policy' | 'services';
 
 export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'settings' | 'feed' | 'radar' | 'vault' | 'docs';
 
@@ -441,6 +561,17 @@ export interface LatchAPI {
   deleteSecret(payload: { id: string }): Promise<{ ok: boolean; error?: string }>;
   validateSecretRefs(payload: { env: Record<string, string> }): Promise<{ ok: boolean; missing: string[]; error?: string }>;
   listSecretHints(): Promise<{ ok: boolean; hints: Array<{ key: string; description: string }>; error?: string }>;
+
+  // Services (enclave)
+  listServices(): Promise<{ ok: boolean; services: ServiceRecord[] }>;
+  getService(payload: { id: string }): Promise<{ ok: boolean; service?: ServiceRecord; error?: string }>;
+  saveService(payload: { definition: ServiceDefinition; credentialValue?: string }): Promise<{ ok: boolean; error?: string }>;
+  deleteService(payload: { id: string }): Promise<{ ok: boolean }>;
+  getServiceCatalog(): Promise<{ ok: boolean; catalog: ServiceDefinition[] }>;
+
+  // Attestation
+  getAttestation(payload: { sessionId: string }): Promise<{ ok: boolean; receipt?: SessionReceipt; error?: string }>;
+  listProxyAudit(payload: { sessionId: string; limit?: number }): Promise<{ ok: boolean; events: ProxyAuditEvent[] }>;
 
   // Feed
   listFeed(payload?: { sessionId?: string; limit?: number }): Promise<{ ok: boolean; items: FeedItem[]; total: number }>;
