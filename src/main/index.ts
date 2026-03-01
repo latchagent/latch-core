@@ -232,8 +232,8 @@ app.whenReady().then(() => {
     if (feedStore) authzServer.setFeedStore(feedStore)
     authzServer.setSettingsStore(settingsStore)
     if (secretStore) authzServer.setSecretStore(secretStore)
-    authzServer.start().catch((err: any) => {
-      console.error('Authz server start failed:', err?.message)
+    authzServer.start().catch((err: unknown) => {
+      console.error('Authz server start failed:', err instanceof Error ? err.message : String(err))
       authzServer = null
     })
     radar.start()
@@ -242,10 +242,11 @@ app.whenReady().then(() => {
     // The supervisor watches PTY output for harness permission prompts and
     // types yes/no based on policy decisions queued by the authz server.
     supervisor = new Supervisor(authzServer, ptyManager, sendToRenderer, feedStore)
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err)
     const unavailable = (name: string) => ({
       ok:    false,
-      error: `${name} unavailable: ${err?.message}`
+      error: `${name} unavailable: ${errMsg}`
     })
     // Fallback stubs so IPC handlers return errors instead of crashing.
     sessionStore = {
@@ -311,8 +312,8 @@ app.whenReady().then(() => {
       }
 
       return { ok: true, pid: record.ptyProcess.pid, cwd: record.cwd, shell: record.shell }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Failed to start shell.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Failed to start shell.' }
     }
   })
 
@@ -322,8 +323,8 @@ app.whenReady().then(() => {
     try {
       ptyManager.write(v.data.sessionId, v.data.data)
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'PTY write failed.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'PTY write failed.' }
     }
   })
 
@@ -333,8 +334,8 @@ app.whenReady().then(() => {
     try {
       ptyManager.resize(v.data.sessionId, v.data.cols, v.data.rows)
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'PTY resize failed.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'PTY resize failed.' }
     }
   })
 
@@ -344,8 +345,8 @@ app.whenReady().then(() => {
     try {
       ptyManager.kill(v.data.sessionId)
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'PTY kill failed.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'PTY kill failed.' }
     }
   })
 
@@ -451,8 +452,8 @@ app.whenReady().then(() => {
       const policy = await generatePolicy(prompt, apiKey)
       track('policy_generated')
       return { ok: true, policy }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Policy generation failed.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Policy generation failed.' }
     }
   })
 
@@ -461,8 +462,8 @@ app.whenReady().then(() => {
       const apiKey = settingsStore?.get('openai-api-key') ?? undefined
       const title = await generateSessionTitle(goal, apiKey)
       return { ok: true, title }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Title generation failed.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Title generation failed.' }
     }
   })
 
@@ -837,8 +838,8 @@ app.whenReady().then(() => {
       const backends = await sandboxManager.getAvailableBackends()
       const best = await sandboxManager.detectBestBackend()
       return { ok: true, backends, best: best.backend }
-    } catch (err: any) {
-      return { ok: false, error: err?.message, backends: {}, best: null }
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err), backends: {}, best: null }
     }
   })
 
@@ -946,8 +947,8 @@ app.whenReady().then(() => {
     try {
       await fs.writeFile(resolved, v.data.content, 'utf-8')
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? 'Write failed' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Write failed' }
     }
   })
 

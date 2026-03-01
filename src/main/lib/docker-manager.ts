@@ -211,7 +211,7 @@ class DockerManager {
   disposeAll(): void {
     if (!this.dockerPath) return
     this.containers.forEach((record) => {
-      try { execFileSync(this.dockerPath!, ['stop', '-t', '5', record.containerId], { timeout: 10000 }) } catch (err: any) { console.warn('[docker] Failed to stop container:', record.containerId, err?.message) }
+      try { execFileSync(this.dockerPath!, ['stop', '-t', '5', record.containerId], { timeout: 10000 }) } catch (err: unknown) { console.warn('[docker] Failed to stop container:', record.containerId, err instanceof Error ? err.message : String(err)) }
     })
     this.containers.clear()
   }
@@ -231,8 +231,8 @@ class DockerManager {
           resolve()
         })
       })
-    } catch (err: any) {
-      console.warn('[docker] Orphan cleanup failed:', err?.message)
+    } catch (err: unknown) {
+      console.warn('[docker] Orphan cleanup failed:', err instanceof Error ? err.message : String(err))
     }
   }
 

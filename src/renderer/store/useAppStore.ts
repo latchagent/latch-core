@@ -870,14 +870,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     terminalManager.focus(tabId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Session finalization failed:', err);
       // Try to show the error in the terminal (use tabId, not sessionId)
       const s = get().sessions.get(sessionId);
       const errorTabId = s?.activeTabId;
       if (errorTabId) {
-        terminalManager.writeln(errorTabId, `\r\n\x1b[31mSession setup failed: ${err?.message || err}\x1b[0m\r\n`);
-        terminalManager.writeln(errorTabId, `\x1b[2m${err?.stack ?? ''}\x1b[0m`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const errStack = err instanceof Error ? err.stack ?? '' : '';
+        terminalManager.writeln(errorTabId, `\r\n\x1b[31mSession setup failed: ${errMsg}\x1b[0m\r\n`);
+        terminalManager.writeln(errorTabId, `\x1b[2m${errStack}\x1b[0m`);
       }
     } finally {
       set({ sessionFinalizing: false });

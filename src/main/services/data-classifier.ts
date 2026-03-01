@@ -9,6 +9,11 @@
 
 import type { DataClassification, DataTier } from '../../types'
 
+/** Shape of the OpenAI Chat Completions API response (subset). */
+interface OpenAIChatResponse {
+  choices: Array<{ message: { content: string } }>
+}
+
 const VALID_TIERS: DataTier[] = ['public', 'internal', 'confidential', 'restricted']
 
 const MAX_BODY_LENGTH = 4000
@@ -105,7 +110,7 @@ export class DataClassifier {
 
       if (!response.ok) return null
 
-      const data = await response.json() as any
+      const data = await response.json() as OpenAIChatResponse
       const content = data.choices?.[0]?.message?.content
       if (!content) return null
 

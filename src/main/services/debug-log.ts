@@ -56,8 +56,8 @@ export function initDebugLog(): void {
 
     // Prune old log files
     pruneOldLogs()
-  } catch (err: any) {
-    console.error('[debug-log] Failed to initialise:', err?.message)
+  } catch (err: unknown) {
+    console.error('[debug-log] Failed to initialise:', err instanceof Error ? err.message : String(err))
   }
 }
 

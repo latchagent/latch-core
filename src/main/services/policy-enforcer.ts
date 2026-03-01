@@ -621,20 +621,16 @@ export function enforceForCodex(
 
   // CLI flags for critical settings — highest precedence, always applies
   // regardless of project trust level.
-  if (hx?.approvalMode) {
-    flags.push(`--approval-mode ${hx.approvalMode}`)
-  } else if (!p.allowFileWrite) {
-    flags.push('--approval-mode read-only')
-  } else if (p.confirmDestructive) {
-    flags.push('--approval-mode full')
+  // Uses the same mapping functions as config.toml to translate Latch values
+  // to Codex-native values (e.g. 'full' → 'untrusted').
+  const approvalValue = mapCodexApprovalPolicy(p, hx)
+  if (approvalValue !== 'never') {
+    flags.push(`--ask-for-approval ${approvalValue}`)
   }
 
-  if (hx?.sandbox) {
-    flags.push(`--sandbox ${hx.sandbox}`)
-  } else if (!p.allowBash || !p.allowFileWrite) {
-    flags.push('--sandbox strict')
-  } else if (p.confirmDestructive) {
-    flags.push('--sandbox moderate')
+  const sandboxValue = mapCodexSandboxMode(p, hx)
+  if (sandboxValue !== 'danger-full-access') {
+    flags.push(`--sandbox ${sandboxValue}`)
   }
 
   // Generate config files in the worktree's .codex/ directory
@@ -883,7 +879,7 @@ export async function enforcePolicy(
         // Unknown harness — no enforcement, pass through
         return { ok: true, harnessCommand }
     }
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? 'Policy enforcement failed.' }
+  } catch (err: unknown) {
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Policy enforcement failed.' }
   }
 }

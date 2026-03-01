@@ -34,8 +34,8 @@ export function initTelemetrySDK(appKey: string): void {
   try {
     initialize(appKey)
     initialised = true
-  } catch (err: any) {
-    console.warn('[telemetry] Aptabase init failed:', err?.message)
+  } catch (err: unknown) {
+    console.warn('[telemetry] Aptabase init failed:', err instanceof Error ? err.message : String(err))
   }
 }
 
@@ -67,7 +67,7 @@ export async function track(
 
   try {
     await trackEvent(event, props)
-  } catch (err: any) {
-    console.warn('[telemetry] Failed to track event:', event, err?.message)
+  } catch (err: unknown) {
+    console.warn('[telemetry] Failed to track event:', event, err instanceof Error ? err.message : String(err))
   }
 }

@@ -246,11 +246,11 @@ async function introspectHttp(
       .filter((t: McpToolInfo) => t.name)
 
     return { ok: true, tools }
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
       return { ok: false, error: 'Discovery timed out after 10 seconds.' }
     }
-    return { ok: false, error: `HTTP discovery failed: ${err.message}` }
+    return { ok: false, error: `HTTP discovery failed: ${err instanceof Error ? err.message : String(err)}` }
   } finally {
     clearTimeout(timer)
   }

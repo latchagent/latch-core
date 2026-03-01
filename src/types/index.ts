@@ -397,7 +397,67 @@ export interface DockerConfig {
 /** Derived agent activity status for a session or tab. */
 export type AgentStatus = 'running' | 'waiting' | 'idle' | 'exited';
 
+// ─── Git Worktree ────────────────────────────────────────────────────────────
+
+/** A git worktree entry from `git worktree list --porcelain`. */
+export interface GitWorktreeEntry {
+  [key: string]: string
+}
+
 // ─── Session ──────────────────────────────────────────────────────────────────
+
+/** Input for creating a session record (DB row shape). */
+export interface SessionCreateInput {
+  id: string
+  name: string
+  created_at: string
+  status: string
+  repo_root?: string | null
+  worktree_path?: string | null
+  branch_ref?: string | null
+  policy_set?: string | null
+  harness_id?: string | null
+  harness_command?: string | null
+  goal?: string | null
+  docker_config?: string | null
+  project_dir?: string | null
+}
+
+/** Columns that may be updated via updateSession(). */
+export interface SessionUpdateFields {
+  name?: string
+  status?: string
+  repo_root?: string | null
+  worktree_path?: string | null
+  branch_ref?: string | null
+  policy_set?: string | null
+  harness_id?: string | null
+  harness_command?: string | null
+  goal?: string | null
+  policy_override?: string | null
+  docker_config?: string | null
+  project_dir?: string | null
+  mcp_server_ids?: string | null
+}
+
+/** Raw session row returned from SQLite. */
+export interface SessionRow {
+  id: string
+  name: string
+  created_at: string
+  status: string
+  repo_root: string | null
+  worktree_path: string | null
+  branch_ref: string | null
+  policy_set: string | null
+  harness_id: string | null
+  harness_command: string | null
+  goal: string | null
+  policy_override: string | null
+  docker_config: string | null
+  project_dir: string | null
+  mcp_server_ids: string | null
+}
 
 /** One terminal tab — each tab has its own PTY process. */
 export interface TabRecord {
@@ -559,21 +619,21 @@ export interface LatchAPI {
   getGitStatus(payload?: { cwd?: string }): Promise<{ isRepo: boolean; root: string | null }>;
   createWorktree(payload: { repoPath: string; branchName?: string; sessionName: string }): Promise<{ ok: boolean; workspacePath?: string; branchRef?: string; error?: string }>;
   getGitDefaults(): Promise<{ workspaceRoot: string; branchPrefix: string }>;
-  listWorktrees(payload?: { repoPath: string }): Promise<{ ok: boolean; worktrees?: any[]; error?: string }>;
+  listWorktrees(payload?: { repoPath: string }): Promise<{ ok: boolean; worktrees?: GitWorktreeEntry[]; error?: string }>;
   removeWorktree(payload: { worktreePath: string }): Promise<{ ok: boolean; error?: string }>;
 
   detectHarnesses(): Promise<{ ok: boolean; harnesses: HarnessRecord[] }>;
   openExternal(url: string): Promise<{ ok: boolean }>;
 
-  listSessionRecords(): Promise<{ ok: boolean; sessions: any[] }>;
-  createSessionRecord(payload: object): Promise<{ ok: boolean; error?: string }>;
-  updateSessionRecord(payload: { id: string; updates: object }): Promise<{ ok: boolean }>;
-  setSessionOverride(payload: { id: string; override: object | null }): Promise<{ ok: boolean }>;
+  listSessionRecords(): Promise<{ ok: boolean; sessions: SessionRow[] }>;
+  createSessionRecord(payload: SessionCreateInput): Promise<{ ok: boolean; error?: string }>;
+  updateSessionRecord(payload: { id: string; updates: SessionUpdateFields }): Promise<{ ok: boolean }>;
+  setSessionOverride(payload: { id: string; override: PolicyDocument | null }): Promise<{ ok: boolean }>;
   deleteSessionRecord(payload: { id: string }): Promise<{ ok: boolean }>;
 
   listPolicies(): Promise<{ ok: boolean; policies: PolicyDocument[] }>;
   getPolicy(payload: { id: string }): Promise<{ ok: boolean; policy: PolicyDocument }>;
-  savePolicy(policy: object): Promise<{ ok: boolean; error?: string }>;
+  savePolicy(policy: PolicyDocument): Promise<{ ok: boolean; error?: string }>;
   deletePolicy(payload: { id: string }): Promise<{ ok: boolean }>;
   enforcePolicy(payload: {
     policyId: string;
@@ -588,13 +648,13 @@ export interface LatchAPI {
 
   listSkills(): Promise<{ ok: boolean; skills: SkillRecord[] }>;
   getSkill(payload: { id: string }): Promise<{ ok: boolean; skill: SkillRecord }>;
-  saveSkill(skill: object): Promise<{ ok: boolean; error?: string }>;
+  saveSkill(skill: SkillRecord): Promise<{ ok: boolean; error?: string }>;
   deleteSkill(payload: { id: string }): Promise<{ ok: boolean }>;
   syncSkills(payload: { harnessId: string }): Promise<{ ok: boolean; error?: string }>;
 
   listMcpServers(): Promise<{ ok: boolean; servers: McpServerRecord[] }>;
   getMcpServer(payload: { id: string }): Promise<{ ok: boolean; server: McpServerRecord }>;
-  saveMcpServer(server: object): Promise<{ ok: boolean; error?: string }>;
+  saveMcpServer(server: McpServerRecord): Promise<{ ok: boolean; error?: string }>;
   deleteMcpServer(payload: { id: string }): Promise<{ ok: boolean }>;
   syncMcpServers(payload: { harnessId: string; targetDir?: string }): Promise<{ ok: boolean; path?: string; error?: string }>;
   introspectMcpServer(payload: { id: string }): Promise<{ ok: boolean; tools?: McpToolInfo[]; error?: string }>;

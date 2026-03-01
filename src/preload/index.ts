@@ -70,13 +70,13 @@ contextBridge.exposeInMainWorld('latch', {
 
   listSessionRecords: () => ipcRenderer.invoke('latch:session-list'),
 
-  createSessionRecord: (payload: object) =>
+  createSessionRecord: (payload: { id: string; name: string; created_at: string; status: string; repo_root?: string | null; worktree_path?: string | null; branch_ref?: string | null; policy_set?: string | null; harness_id?: string | null; harness_command?: string | null; goal?: string | null; docker_config?: string | null; project_dir?: string | null }) =>
     ipcRenderer.invoke('latch:session-create', payload),
 
-  updateSessionRecord: (payload: { id: string; updates: object }) =>
+  updateSessionRecord: (payload: { id: string; updates: Record<string, string | null | undefined> }) =>
     ipcRenderer.invoke('latch:session-update', payload),
 
-  setSessionOverride: (payload: { id: string; override: object | null }) =>
+  setSessionOverride: (payload: { id: string; override: Record<string, unknown> | null }) =>
     ipcRenderer.invoke('latch:session-set-override', payload),
 
   deleteSessionRecord: (payload: { id: string }) =>
@@ -89,13 +89,13 @@ contextBridge.exposeInMainWorld('latch', {
   getPolicy: (payload: { id: string }) =>
     ipcRenderer.invoke('latch:policy-get', payload),
 
-  savePolicy: (policy: object) =>
+  savePolicy: (policy: Record<string, unknown>) =>
     ipcRenderer.invoke('latch:policy-save', policy),
 
   deletePolicy: (payload: { id: string }) =>
     ipcRenderer.invoke('latch:policy-delete', payload),
 
-  enforcePolicy: (payload: { policyId: string; policyOverride?: object | null; harnessId: string; harnessCommand: string; worktreePath: string | null; sessionId?: string; authzPort?: number }) =>
+  enforcePolicy: (payload: { policyId: string; policyOverride?: Record<string, unknown> | null; harnessId: string; harnessCommand: string; worktreePath: string | null; projectDir?: string | null; sessionId?: string; authzPort?: number }) =>
     ipcRenderer.invoke('latch:policy-enforce', payload),
 
   // ── Skills ────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ contextBridge.exposeInMainWorld('latch', {
   getSkill: (payload: { id: string }) =>
     ipcRenderer.invoke('latch:skills-get', payload),
 
-  saveSkill: (skill: object) =>
+  saveSkill: (skill: Record<string, unknown>) =>
     ipcRenderer.invoke('latch:skills-save', skill),
 
   deleteSkill: (payload: { id: string }) =>
@@ -121,7 +121,7 @@ contextBridge.exposeInMainWorld('latch', {
   getMcpServer: (payload: { id: string }) =>
     ipcRenderer.invoke('latch:mcp-get', payload),
 
-  saveMcpServer: (server: object) =>
+  saveMcpServer: (server: Record<string, unknown>) =>
     ipcRenderer.invoke('latch:mcp-save', server),
 
   deleteMcpServer: (payload: { id: string }) =>
@@ -177,7 +177,7 @@ contextBridge.exposeInMainWorld('latch', {
 
   getAuthzPort: () => ipcRenderer.invoke('latch:authz-port'),
 
-  authzRegister: (payload: { sessionId: string; harnessId: string; policyId: string; policyOverride?: object | null }) =>
+  authzRegister: (payload: { sessionId: string; harnessId: string; policyId: string; policyOverride?: Record<string, unknown> | null }) =>
     ipcRenderer.invoke('latch:authz-register', payload),
 
   authzUnregister: (payload: { sessionId: string }) =>
@@ -307,7 +307,7 @@ contextBridge.exposeInMainWorld('latch', {
   getService: (payload: { id: string }) =>
     ipcRenderer.invoke('latch:service-get', payload),
 
-  saveService: (payload: { definition: any; credentialValue?: string }) =>
+  saveService: (payload: { definition: Record<string, unknown>; credentialValue?: string }) =>
     ipcRenderer.invoke('latch:service-save', payload),
 
   deleteService: (payload: { id: string }) =>

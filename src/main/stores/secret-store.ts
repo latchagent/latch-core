@@ -197,8 +197,8 @@ export class SecretStore {
       }
       // Fallback: if encryption wasn't available at write time, value is plaintext
       return hex
-    } catch (err: any) {
-      console.error('[SecretStore] Decryption failed:', err?.message)
+    } catch (err: unknown) {
+      console.error('[SecretStore] Decryption failed:', err instanceof Error ? err.message : String(err))
       return null
     }
   }

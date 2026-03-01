@@ -91,8 +91,8 @@ export function initUpdater(mainWindow: BrowserWindow): void {
 export async function checkForUpdates(): Promise<UpdateState> {
   try {
     await autoUpdater.checkForUpdates()
-  } catch (err: any) {
-    setState({ status: 'error', error: err?.message ?? 'Check failed' })
+  } catch (err: unknown) {
+    setState({ status: 'error', error: (err instanceof Error ? err.message : String(err)) || 'Check failed' })
   }
   return { ...state }
 }
@@ -102,8 +102,8 @@ export async function downloadUpdate(): Promise<UpdateState> {
   try {
     setState({ status: 'downloading', progress: 0 })
     await autoUpdater.downloadUpdate()
-  } catch (err: any) {
-    setState({ status: 'error', error: err?.message ?? 'Download failed' })
+  } catch (err: unknown) {
+    setState({ status: 'error', error: (err instanceof Error ? err.message : String(err)) || 'Download failed' })
   }
   return { ...state }
 }

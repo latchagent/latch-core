@@ -94,7 +94,7 @@ class PtyManager {
       const safeData = pattern ? data.replace(pattern, '[REDACTED]') : data
       this.send('latch:pty-data', { sessionId, data: safeData })
       for (const cb of this.dataCallbacks) {
-        try { cb(sessionId, safeData) } catch (err: any) { console.warn('[pty-manager] Data callback error:', err?.message) }
+        try { cb(sessionId, safeData) } catch (err: unknown) { console.warn('[pty-manager] Data callback error:', err instanceof Error ? err.message : String(err)) }
       }
     })
 
@@ -103,7 +103,7 @@ class PtyManager {
       this.redactionPatterns.delete(sessionId)
       this.send('latch:pty-exit', { sessionId })
       for (const cb of this.exitCallbacks) {
-        try { cb(sessionId) } catch (err: any) { console.warn('[pty-manager] Exit callback error:', err?.message) }
+        try { cb(sessionId) } catch (err: unknown) { console.warn('[pty-manager] Exit callback error:', err instanceof Error ? err.message : String(err)) }
       }
     })
 

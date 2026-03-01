@@ -299,8 +299,8 @@ export class CommandRunner implements PromptHost {
       }
 
       await resolved.handler.run(this, resolved.args)
-    } catch (err: any) {
-      writeln(this.tabId, `  ${RED}Error:${RESET} ${err?.message ?? String(err)}`)
+    } catch (err: unknown) {
+      writeln(this.tabId, `  ${RED}Error:${RESET} ${err instanceof Error ? err.message : String(err)}`)
       writeln(this.tabId, '')
     } finally {
       this.running = false

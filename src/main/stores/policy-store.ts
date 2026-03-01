@@ -47,8 +47,8 @@ export class PolicyStore {
     for (const row of rows) {
       try {
         policies.push({ ...JSON.parse(row.body), id: row.id, name: row.name, updatedAt: row.updated_at })
-      } catch (err: any) {
-        console.warn('[PolicyStore] Skipping row with corrupt JSON body:', row.id, err?.message)
+      } catch (err: unknown) {
+        console.warn('[PolicyStore] Skipping row with corrupt JSON body:', row.id, err instanceof Error ? err.message : String(err))
       }
     }
     return { ok: true, policies }
@@ -62,8 +62,8 @@ export class PolicyStore {
         ok: true,
         policy: { ...JSON.parse(row.body), id: row.id, name: row.name, updatedAt: row.updated_at }
       }
-    } catch (err: any) {
-      console.warn('[PolicyStore] Corrupt policy data for id:', id, err?.message)
+    } catch (err: unknown) {
+      console.warn('[PolicyStore] Corrupt policy data for id:', id, err instanceof Error ? err.message : String(err))
       return { ok: false, error: 'Corrupt policy data' }
     }
   }

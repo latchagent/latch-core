@@ -82,8 +82,8 @@ class SessionStore {
         ...session
       })
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Failed to create session.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Failed to create session.' }
     }
   }
 
@@ -105,8 +105,8 @@ class SessionStore {
         UPDATE sessions SET ${assignments} WHERE id = @id
       `).run({ id, ...safeUpdates })
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Failed to update session.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Failed to update session.' }
     }
   }
 
@@ -120,8 +120,8 @@ class SessionStore {
     try {
       this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Failed to delete session.' }
+    } catch (err: unknown) {
+      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Failed to delete session.' }
     }
   }
 }

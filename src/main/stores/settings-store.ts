@@ -55,8 +55,8 @@ export class SettingsStore {
       try {
         const buf = Buffer.from(row.value, 'hex')
         return safeStorage.decryptString(buf)
-      } catch (err: any) {
-        console.error(`[SettingsStore] Failed to decrypt key "${key}":`, err?.message)
+      } catch (err: unknown) {
+        console.error(`[SettingsStore] Failed to decrypt key "${key}":`, err instanceof Error ? err.message : String(err))
         return null
       }
     }

@@ -608,10 +608,11 @@ export class AuthzServer {
         } else if (feedMatch) {
           this.processFeed(sessionId, body, res)
         }
-      } catch (err: any) {
-        console.error('Authz error:', err?.message)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('Authz error:', msg)
         res.writeHead(500)
-        res.end(JSON.stringify({ error: err?.message ?? 'Internal error' }))
+        res.end(JSON.stringify({ error: msg || 'Internal error' }))
       }
     })
   }

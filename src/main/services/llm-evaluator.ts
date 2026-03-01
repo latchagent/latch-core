@@ -102,9 +102,10 @@ export async function evaluateWithLlm(
 
     const text = response.choices[0]?.message?.content?.trim() ?? ''
     return parseResponse(text)
-  } catch (err: any) {
-    console.error('[llm-evaluator] Evaluation failed:', err?.message)
-    return { decision: 'deny', reason: `LLM evaluation failed: ${err?.message ?? 'unknown error'}` }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[llm-evaluator] Evaluation failed:', msg)
+    return { decision: 'deny', reason: `LLM evaluation failed: ${msg || 'unknown error'}` }
   }
 }
 
