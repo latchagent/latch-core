@@ -7,8 +7,9 @@
  */
 
 import { createHash, generateKeyPairSync, sign, verify, createPublicKey } from 'node:crypto'
+import { verifyInclusionProof as verifyProof } from '../lib/merkle'
 import type { AttestationStore } from '../stores/attestation-store'
-import type { PolicyDocument, SessionReceipt, DataTier } from '../../types'
+import type { PolicyDocument, SessionReceipt, DataTier, MerkleProof } from '../../types'
 
 export interface ReceiptInput {
   sessionId: string
@@ -102,5 +103,15 @@ export class AttestationEngine {
     } catch {
       return false
     }
+  }
+
+  /** Generate a Merkle inclusion proof for a specific audit event. */
+  generateInclusionProof(sessionId: string, eventId: string): MerkleProof | null {
+    return this.store.getInclusionProof(sessionId, eventId)
+  }
+
+  /** Verify a Merkle inclusion proof. */
+  verifyInclusionProof(proof: MerkleProof): boolean {
+    return verifyProof(proof)
   }
 }
