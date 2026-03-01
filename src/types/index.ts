@@ -146,6 +146,9 @@ export type ServiceProtocol = 'http' | 'ssh' | 'db' | 'grpc' | 'custom'
 export interface ServiceCredentialConfig {
   type: 'token' | 'keypair' | 'oauth' | 'env-bundle'
   fields: string[]
+  expiresAt?: string
+  refreshEndpoint?: string
+  rotationPolicy?: 'manual' | 'auto'
 }
 
 export interface ServiceInjectionConfig {
@@ -155,7 +158,15 @@ export interface ServiceInjectionConfig {
     domains: string[]
     headers: Record<string, string>
     tlsExceptions?: string[]
+    pathRules?: PathRule[]
   }
+}
+
+/** Path/method access rule for fine-grained service scoping. */
+export interface PathRule {
+  methods: string[]
+  paths: string[]
+  decision: 'allow' | 'deny'
 }
 
 export interface ServiceDefinition {
@@ -242,10 +253,18 @@ export interface IngressScanResult {
 
 /** Message sent to agent terminal about proxy enforcement. */
 export interface ProxyFeedbackMessage {
-  type: 'block' | 'redaction' | 'tokenization' | 'tls-exception'
+  type: 'block' | 'redaction' | 'tokenization' | 'tls-exception' | 'scope-violation' | 'credential-expired' | 'leak-detected'
   domain: string
   service: string | null
   detail: string
+}
+
+/** Result from LLM-assisted data classification (propose only, never enforce). */
+export interface DataClassification {
+  suggestedTier: DataTier
+  confidence: number
+  patterns: string[]
+  reasoning: string
 }
 
 // ─── Sandbox (enclave) ──────────────────────────────────────────────────────
@@ -659,6 +678,13 @@ export interface LatchAPI {
   listProxyAudit(payload: { sessionId: string; limit?: number }): Promise<{ ok: boolean; events: ProxyAuditEvent[] }>;
   getInclusionProof(payload: { sessionId: string; eventId: string }): Promise<{ ok: boolean; proof?: MerkleProof; error?: string }>;
   annotateGitHubPR(payload: { sessionId: string; prUrl: string }): Promise<{ ok: boolean; commentUrl?: string; error?: string }>;
+
+  // Data classification (LLM)
+  classifyData(payload: { body: string; service: string; contentType: string }): Promise<{ ok: boolean; classification?: DataClassification; error?: string }>;
+
+  // Credential lifecycle
+  refreshCredential(payload: { serviceId: string }): Promise<{ ok: boolean; error?: string }>;
+  getCredentialStatus(payload: { serviceId: string }): Promise<{ ok: boolean; expired: boolean; expiresAt: string | null; lastValidated: string | null }>;
 
   // Feed
   listFeed(payload?: { sessionId?: string; limit?: number }): Promise<{ ok: boolean; items: FeedItem[]; total: number }>;
