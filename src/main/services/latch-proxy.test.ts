@@ -142,4 +142,19 @@ describe('LatchProxy', () => {
     // _handleConnect block path triggers onFeedback, but we can test via evaluateRequest + onBlock
     proxy2.stop()
   })
+
+  it('audit events include Phase 2 fields with defaults', () => {
+    proxy.evaluateRequest('httpbin.org', 'GET', '/get')
+    const events = proxy.getAuditLog()
+    expect(events[0].tlsInspected).toBe(false)
+    expect(events[0].redactionsApplied).toBe(0)
+    expect(events[0].tokenizationsApplied).toBe(0)
+  })
+
+  it('audit events for denied requests have Phase 2 defaults', () => {
+    proxy.evaluateRequest('evil.com', 'GET', '/')
+    const events = proxy.getAuditLog()
+    expect(events[0].tlsInspected).toBe(false)
+    expect(events[0].contentType).toBeNull()
+  })
 })
