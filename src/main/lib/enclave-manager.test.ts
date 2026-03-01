@@ -66,4 +66,31 @@ describe('EnclaveManager', () => {
     expect(env.GH_TOKEN).toBe('ghp_abc')
     expect(env.NPM_TOKEN).toBe('npm_xyz')
   })
+
+  it('injects CA cert env vars when caCertPath is provided', () => {
+    const env = EnclaveManager.buildEnclaveEnv({
+      proxyPort: 8080,
+      authzPort: 9090,
+      sessionId: 'test',
+      services: [],
+      credentials: new Map(),
+      caCertPath: '/tmp/latch-ca-xxx/ca.crt',
+    })
+    expect(env.NODE_EXTRA_CA_CERTS).toBe('/tmp/latch-ca-xxx/ca.crt')
+    expect(env.SSL_CERT_FILE).toBe('/tmp/latch-ca-xxx/ca.crt')
+    expect(env.GIT_SSL_CAINFO).toBe('/tmp/latch-ca-xxx/ca.crt')
+  })
+
+  it('omits CA cert env vars when caCertPath is not provided', () => {
+    const env = EnclaveManager.buildEnclaveEnv({
+      proxyPort: 8080,
+      authzPort: 9090,
+      sessionId: 'test',
+      services: [],
+      credentials: new Map(),
+    })
+    expect(env.NODE_EXTRA_CA_CERTS).toBeUndefined()
+    expect(env.SSL_CERT_FILE).toBeUndefined()
+    expect(env.GIT_SSL_CAINFO).toBeUndefined()
+  })
 })

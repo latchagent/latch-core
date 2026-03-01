@@ -14,6 +14,7 @@ export interface EnclaveEnvInput {
   sessionId: string
   services: ServiceDefinition[]
   credentials: Map<string, Record<string, string>>
+  caCertPath?: string  // Phase 2: ephemeral CA cert for TLS interception
 }
 
 export type SandboxBackend = 'docker' | 'seatbelt' | 'bubblewrap'
@@ -38,6 +39,13 @@ export class EnclaveManager {
 
       // Security hardening
       HISTFILE: '/dev/null',
+    }
+
+    // TLS interception — trust the session's ephemeral CA
+    if (input.caCertPath) {
+      env.NODE_EXTRA_CA_CERTS = input.caCertPath
+      env.SSL_CERT_FILE = input.caCertPath
+      env.GIT_SSL_CAINFO = input.caCertPath
     }
 
     // Inject service-specific env vars with credential substitution
