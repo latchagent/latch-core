@@ -127,7 +127,7 @@ export class LatchProxy {
 
   // -- Private ──────────────────────────────────────────────────────────────
 
-  /** Handle regular HTTP requests (non-CONNECT). */
+  /** Handle regular HTTP requests (non-CONNECT) with response scanning. */
   private _handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
     const domain = url.hostname
@@ -135,12 +135,12 @@ export class LatchProxy {
 
     if (evaluation.decision === 'deny') {
       this.config.onBlock?.(`Request to ${domain} blocked — ${evaluation.reason}`)
+      this.config.onFeedback?.({ type: 'block', domain, service: null, detail: evaluation.reason ?? '' })
       res.writeHead(403, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: evaluation.reason }))
       return
     }
 
-    // Inject credentials
     const service = evaluation.service!
     const creds = this.config.credentials.get(service.id)
     if (creds) {
@@ -150,25 +150,77 @@ export class LatchProxy {
       }
     }
 
-    // Forward request
-    const proxyReq = http.request(
-      {
-        hostname: domain,
-        port: url.port || 80,
-        path: url.pathname + url.search,
-        method: req.method,
-        headers: req.headers,
-      },
-      (proxyRes) => {
-        res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
-        proxyRes.pipe(res)
-      },
-    )
-    proxyReq.on('error', (err) => {
-      res.writeHead(502)
-      res.end(`Proxy error: ${err.message}`)
+    // Buffer request body for de-tokenization
+    const reqChunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => reqChunks.push(chunk))
+    req.on('end', () => {
+      let reqBody = Buffer.concat(reqChunks)
+      const bodyStr = reqBody.toString('utf-8')
+      const detokenized = this.tokenMap.detokenizeString(bodyStr, service.id)
+      if (detokenized !== bodyStr) {
+        reqBody = Buffer.from(detokenized, 'utf-8')
+      }
+
+      const proxyReq = http.request(
+        {
+          hostname: domain,
+          port: url.port || 80,
+          path: url.pathname + url.search,
+          method: req.method,
+          headers: { ...req.headers, 'content-length': String(reqBody.length) },
+        },
+        (proxyRes) => {
+          const contentType = proxyRes.headers['content-type'] ?? null
+
+          if (!this.ingressFilter.isScannable(contentType)) {
+            // Binary — pass through without body scanning
+            this._recordAudit(domain, req.method ?? 'GET', url.pathname, service.id, 'allow', null, {
+              contentType,
+              tlsInspected: false,
+            })
+            res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+            proxyRes.pipe(res)
+            return
+          }
+
+          // Buffer and scan scannable responses
+          const resChunks: Buffer[] = []
+          proxyRes.on('data', (chunk: Buffer) => resChunks.push(chunk))
+          proxyRes.on('end', () => {
+            const resBody = Buffer.concat(resChunks).toString('utf-8')
+            const scanResult = this.ingressFilter.scanResponse(contentType, resBody, service, url.pathname)
+
+            if (scanResult.tokenizationsApplied > 0) {
+              this.config.onFeedback?.({
+                type: 'tokenization',
+                domain,
+                service: service.id,
+                detail: `${scanResult.tokenizationsApplied} value(s) tokenized in response`,
+              })
+            }
+
+            this._recordAudit(domain, req.method ?? 'GET', url.pathname, service.id, 'allow', null, {
+              contentType,
+              tlsInspected: false,
+              redactionsApplied: scanResult.redactionsApplied,
+              tokenizationsApplied: scanResult.tokenizationsApplied,
+            })
+
+            const responseBody = scanResult.processedBody ?? resBody
+            const headers = { ...proxyRes.headers }
+            headers['content-length'] = String(Buffer.byteLength(responseBody))
+            delete headers['transfer-encoding']
+            res.writeHead(proxyRes.statusCode ?? 200, headers)
+            res.end(responseBody)
+          })
+        },
+      )
+      proxyReq.on('error', (err) => {
+        res.writeHead(502)
+        res.end(`Proxy error: ${err.message}`)
+      })
+      proxyReq.end(reqBody)
     })
-    req.pipe(proxyReq)
   }
 
   /** Handle HTTPS CONNECT requests. TLS MITM when enabled, tunnel otherwise. */
