@@ -54,6 +54,9 @@ import {
 } from './lib/ipc-schemas'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdateState } from './services/updater'
 import { initDebugLog, closeDebugLog } from './services/debug-log'
+import { ServiceStore }                          from './stores/service-store'
+import { AttestationStore }                      from './stores/attestation-store'
+import { SERVICE_CATALOG }                       from './lib/service-catalog'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -75,6 +78,8 @@ let feedStore: FeedStore | null = null
 let radar: Radar | null = null
 let settingsStore: SettingsStore | null = null
 let secretStore: SecretStore | null = null
+let serviceStore: ServiceStore | null = null
+let attestationStore: AttestationStore | null = null
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
@@ -181,6 +186,8 @@ app.whenReady().then(() => {
     feedStore     = FeedStore.open(db)
     settingsStore = SettingsStore.open(db)
     secretStore   = SecretStore.open(db)
+    serviceStore  = ServiceStore.open(db)
+    attestationStore = AttestationStore.open(db)
 
     // Bind telemetry to settings store (SDK already initialised above)
     bindTelemetrySettings((k) => settingsStore!.get(k))
@@ -522,6 +529,61 @@ app.whenReady().then(() => {
   ipcMain.handle('latch:secret-hints', async () => {
     if (!secretStore) return { ok: false, hints: [], error: 'SecretStore unavailable' }
     return { ok: true, hints: secretStore.listHints() }
+  })
+
+  // ── Services (enclave) handlers ─────────────────────────────────────────
+
+  ipcMain.handle('latch:service-list', async () => {
+    if (!serviceStore) return { ok: false, services: [] }
+    return serviceStore.list()
+  })
+
+  ipcMain.handle('latch:service-get', async (_event: any, { id }: any) => {
+    if (!serviceStore) return { ok: false, error: 'ServiceStore unavailable' }
+    return serviceStore.get(id)
+  })
+
+  ipcMain.handle('latch:service-save', async (_event: any, payload: any) => {
+    if (!serviceStore) return { ok: false, error: 'ServiceStore unavailable' }
+    const result = serviceStore.save(payload.definition)
+    if (result.ok && payload.credentialValue && secretStore) {
+      const secretKey = `service:${payload.definition.id}`
+      secretStore.save({
+        id: `svc-${payload.definition.id}`,
+        name: `${payload.definition.name} credential`,
+        key: secretKey,
+        value: payload.credentialValue,
+        description: `Auto-managed credential for ${payload.definition.name} service`,
+        scope: 'global',
+        tags: ['service', payload.definition.id],
+      })
+      serviceStore.markCredentialStored(payload.definition.id)
+    }
+    return result
+  })
+
+  ipcMain.handle('latch:service-delete', async (_event: any, { id }: any) => {
+    if (!serviceStore) return { ok: false }
+    if (secretStore) secretStore.delete(`svc-${id}`)
+    return serviceStore.delete(id)
+  })
+
+  ipcMain.handle('latch:service-catalog', async () => {
+    return { ok: true, catalog: SERVICE_CATALOG }
+  })
+
+  // ── Attestation handlers ──────────────────────────────────────────────
+
+  ipcMain.handle('latch:attestation-get', async (_event: any, { sessionId }: any) => {
+    if (!attestationStore) return { ok: false, error: 'AttestationStore unavailable' }
+    const receipt = attestationStore.getReceipt(sessionId)
+    if (!receipt) return { ok: false, error: 'No attestation receipt for this session' }
+    return { ok: true, receipt }
+  })
+
+  ipcMain.handle('latch:attestation-audit-log', async (_event: any, { sessionId, limit }: any) => {
+    if (!attestationStore) return { ok: false, events: [] }
+    return { ok: true, events: attestationStore.listEvents(sessionId, limit) }
   })
 
   // ── Skills handlers ─────────────────────────────────────────────────────

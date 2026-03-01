@@ -293,6 +293,29 @@ contextBridge.exposeInMainWorld('latch', {
   listSecretHints: () =>
     ipcRenderer.invoke('latch:secret-hints'),
 
+  // ── Services (enclave) ──────────────────────────────────────────────────
+
+  listServices: () => ipcRenderer.invoke('latch:service-list'),
+
+  getService: (payload: { id: string }) =>
+    ipcRenderer.invoke('latch:service-get', payload),
+
+  saveService: (payload: { definition: any; credentialValue?: string }) =>
+    ipcRenderer.invoke('latch:service-save', payload),
+
+  deleteService: (payload: { id: string }) =>
+    ipcRenderer.invoke('latch:service-delete', payload),
+
+  getServiceCatalog: () => ipcRenderer.invoke('latch:service-catalog'),
+
+  // ── Attestation ──────────────────────────────────────────────────────────
+
+  getAttestation: (payload: { sessionId: string }) =>
+    ipcRenderer.invoke('latch:attestation-get', payload),
+
+  listProxyAudit: (payload: { sessionId: string; limit?: number }) =>
+    ipcRenderer.invoke('latch:attestation-audit-log', payload),
+
   // ── Feed (agent status updates) ────────────────────────────────────────
 
   listFeed: (payload?: { sessionId?: string; limit?: number }) =>

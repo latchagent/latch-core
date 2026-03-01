@@ -13,6 +13,7 @@
 
 import http from 'node:http'
 import net from 'node:net'
+import type { Duplex } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { EgressFilter } from './proxy/egress-filter'
 import { TokenMap } from './proxy/token-map'
@@ -157,7 +158,7 @@ export class LatchProxy {
   /** Handle HTTPS CONNECT tunneling. Phase 1: allow/deny at domain level only. */
   private _handleConnect(
     req: http.IncomingMessage,
-    socket: net.Socket,
+    socket: Duplex,
     _head: Buffer,
   ): void {
     const [host, portStr] = (req.url ?? '').split(':')
