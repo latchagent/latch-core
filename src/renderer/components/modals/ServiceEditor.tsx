@@ -6,6 +6,7 @@
  */
 
 import React, { useState, KeyboardEvent } from 'react'
+import { useAppStore } from '../../store/useAppStore'
 import type {
   ServiceDefinition,
   ServiceCategory,
@@ -50,6 +51,8 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
   )
   const [skillDescription, setSkillDescription] = useState(initial?.skill.description ?? '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const saveService = useAppStore(s => s.saveService)
 
   const handleAddHeader = () => {
     setHeaders((h) => [...h, { key: '', value: '' }])
@@ -118,12 +121,19 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
     }
 
     setSaving(true)
+    setError(null)
     try {
-      await window.latch?.saveService?.({ definition })
+      const result = await saveService(definition)
+      if (!result.ok) {
+        setError(result.error ?? 'Failed to save service')
+        return
+      }
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error saving service')
     } finally {
       setSaving(false)
     }
-    onClose()
   }
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -340,6 +350,7 @@ export default function ServiceEditor({ onClose, initial }: ServiceEditorProps) 
         </div>
 
         <div className="modal-footer">
+          {error && <span className="modal-error">{error}</span>}
           <button className="modal-btn" onClick={onClose}>
             Cancel
           </button>
