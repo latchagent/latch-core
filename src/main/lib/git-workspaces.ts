@@ -93,6 +93,13 @@ export async function createWorktree({ repoPath, branchName, sessionName, startP
     return { ok: false, error: 'Worktree path already exists.', workspacePath, branchRef }
   }
 
+  // Ensure repo has at least one commit (empty repos have no valid HEAD)
+  try {
+    await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot })
+  } catch {
+    await execFileAsync('git', ['commit', '--allow-empty', '-m', 'Initial commit'], { cwd: repoRoot })
+  }
+
   await ensureDir(path.dirname(workspacePath))
   const exists = await branchExists(repoRoot, branchRef)
   const args = exists
