@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('latch', {
   // ── PTY ───────────────────────────────────────────────────────────────────
   // Note: `sessionId` in all PTY calls is the *tabId*, not the session ID.
 
-  createPty: (payload: { sessionId: string; cwd?: string; cols: number; rows: number; env?: Record<string, string>; dockerContainerId?: string }) =>
+  createPty: (payload: { sessionId: string; cwd?: string; cols: number; rows: number; env?: Record<string, string>; dockerContainerId?: string; sandboxCommand?: string; sandboxArgs?: string[] }) =>
     ipcRenderer.invoke('latch:pty-create', payload),
 
   writePty: (payload: { sessionId: string; data: string }) =>
@@ -188,7 +188,7 @@ contextBridge.exposeInMainWorld('latch', {
 
   getAuthzPort: () => ipcRenderer.invoke('latch:authz-port'),
 
-  authzRegister: (payload: { sessionId: string; harnessId: string; policyId: string; policyOverride?: Record<string, unknown> | null }) =>
+  authzRegister: (payload: { sessionId: string; harnessId: string; policyIds: string[]; policyOverride?: Record<string, unknown> | null }) =>
     ipcRenderer.invoke('latch:authz-register', payload),
 
   authzUnregister: (payload: { sessionId: string }) =>
@@ -311,6 +311,22 @@ contextBridge.exposeInMainWorld('latch', {
   listSecretHints: () =>
     ipcRenderer.invoke('latch:secret-hints'),
 
+  // ── 1Password ──────────────────────────────────────────────────────────
+
+  opStatus: () => ipcRenderer.invoke('latch:op-status'),
+
+  opConnect: () => ipcRenderer.invoke('latch:op-connect'),
+
+  opDisconnect: () => ipcRenderer.invoke('latch:op-disconnect'),
+
+  opListVaults: () => ipcRenderer.invoke('latch:op-vaults'),
+
+  opListItems: (payload: { vaultId: string }) =>
+    ipcRenderer.invoke('latch:op-items', payload),
+
+  opGetItemFields: (payload: { itemId: string; vaultId: string }) =>
+    ipcRenderer.invoke('latch:op-item-fields', payload),
+
   // ── Services (gateway) ──────────────────────────────────────────────────
 
   listServices: () => ipcRenderer.invoke('latch:service-list'),
@@ -364,4 +380,78 @@ contextBridge.exposeInMainWorld('latch', {
     ipcRenderer.on('latch:feed-update', handler)
     return () => { ipcRenderer.removeListener('latch:feed-update', handler) }
   },
+
+  // ── Usage / Observability ───────────────────────────────────────────────
+  listUsage: (payload?: { sessionId?: string; limit?: number; offset?: number }) =>
+    ipcRenderer.invoke('latch:usage-list', payload),
+
+  getUsageSummary: (payload?: { days?: number; sessionId?: string }) =>
+    ipcRenderer.invoke('latch:usage-summary', payload),
+
+  clearUsage: (payload?: { sessionId?: string }) =>
+    ipcRenderer.invoke('latch:usage-clear', payload),
+
+  exportUsage: (payload?: { sessionId?: string; format?: 'json' | 'csv' }) =>
+    ipcRenderer.invoke('latch:usage-export', payload),
+
+  onUsageEvent: (callback: (event: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:usage-event', handler)
+    return () => { ipcRenderer.removeListener('latch:usage-event', handler) }
+  },
+
+  onUsageBackfillProgress: (callback: (progress: { current: number; total: number }) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:usage-backfill-progress', handler)
+    return () => { ipcRenderer.removeListener('latch:usage-backfill-progress', handler) }
+  },
+
+  onLiveEvent: (callback: (event: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:live-event', handler)
+    return () => { ipcRenderer.removeListener('latch:live-event', handler) }
+  },
+
+  onBudgetAlert: (callback: (alert: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:budget-alert', handler)
+    return () => { ipcRenderer.removeListener('latch:budget-alert', handler) }
+  },
+
+  respondBudgetAlert: (payload: { alertId: string; action: string }) =>
+    ipcRenderer.invoke('latch:budget-respond', payload),
+
+  // ── Rewind / Checkpoints ─────────────────────────────────────────────
+
+  listCheckpoints: (payload: { sessionId: string }) =>
+    ipcRenderer.invoke('latch:checkpoint-list', payload),
+
+  searchCheckpoints: (payload: { query: string; sessionId?: string }) =>
+    ipcRenderer.invoke('latch:checkpoint-search', payload),
+
+  gitLog: (payload: { cwd: string; limit?: number }) =>
+    ipcRenderer.invoke('latch:git-log', payload),
+
+  gitDiff: (payload: { cwd: string; from: string; to?: string }) =>
+    ipcRenderer.invoke('latch:git-diff', payload),
+
+  rewind: (payload: { sessionId: string; checkpointId: string }) =>
+    ipcRenderer.invoke('latch:rewind', payload),
+
+  forkFromCheckpoint: (payload: { checkpointId: string; sourceSessionId: string }) =>
+    ipcRenderer.invoke('latch:fork-checkpoint', payload),
+
+  // ── Timeline ───────────────────────────────────────────────────────────
+  listTimelineConversations: (payload?: { projectSlug?: string }) =>
+    ipcRenderer.invoke('latch:timeline-conversations', payload ?? {}),
+
+  loadTimeline: (payload: { filePath: string }) =>
+    ipcRenderer.invoke('latch:timeline-load', payload),
+
+  // ── Analytics ──────────────────────────────────────────────────────────
+  getConversationAnalytics: (payload: { filePath: string }) =>
+    ipcRenderer.invoke('latch:analytics-conversation', payload),
+
+  getAnalyticsDashboard: () =>
+    ipcRenderer.invoke('latch:analytics-dashboard'),
 });

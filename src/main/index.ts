@@ -12,7 +12,11 @@
 
 import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type Database from 'better-sqlite3'
+
+const execFileAsync = promisify(execFile)
 
 // Local modules — these are JS files imported as ESM so Vite will bundle them.
 import {
@@ -66,6 +70,25 @@ import { LatchProxy }                            from './services/latch-proxy'
 import { GatewayManager }                        from './lib/gateway-manager'
 import { createFeedbackSender }                  from './services/proxy/proxy-feedback'
 import { SkillGenerator }                        from './services/skill-generator'
+import { UsageStore }                            from './stores/usage-store'
+import { startUsageWatcher, stopUsageWatcher }   from './services/usage-watcher'
+import { startLiveTailer, stopLiveTailer, liveTailerAddSession, liveTailerRemoveSession } from './services/live-tailer'
+import {
+  startBudgetEnforcer,
+  budgetEnforcerProcessEvent,
+  respondToBudgetAlert,
+  budgetEnforcerRemoveSession,
+  stopBudgetEnforcer,
+} from './services/budget-enforcer'
+import { CheckpointStore }                        from './stores/checkpoint-store'
+import {
+  startCheckpointEngine,
+  checkpointOnFileWrite,
+  checkpointRemoveSession,
+  stopCheckpointEngine,
+} from './services/checkpoint-engine'
+import { listConversations, parseTimeline }      from './lib/timeline-parser'
+import { computeConversationAnalytics, computeDashboard } from './lib/analytics-engine'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -93,6 +116,8 @@ let attestationStore: AttestationStore | null = null
 let attestationEngine: AttestationEngine | null = null
 let dataClassifier: DataClassifier | null = null
 let credentialManager: CredentialManager | null = null
+let usageStore: UsageStore | null = null
+let checkpointStore: CheckpointStore | null = null
 
 // Gateway orchestration maps — keyed by sessionId
 const proxyInstances = new Map<string, LatchProxy>()
@@ -209,6 +234,8 @@ app.whenReady().then(() => {
     secretStore   = SecretStore.open(db)
     serviceStore  = ServiceStore.open(db)
     attestationStore = AttestationStore.open(db)
+    usageStore    = UsageStore.open(db)
+    checkpointStore = CheckpointStore.open(db)
     const keyPath = path.join(app.getPath('userData'), 'attestation-key.json')
     attestationEngine = new AttestationEngine(attestationStore, keyPath)
 
@@ -252,6 +279,99 @@ app.whenReady().then(() => {
     // The supervisor watches PTY output for harness permission prompts and
     // types yes/no based on policy decisions queued by the authz server.
     supervisor = new Supervisor(authzServer, ptyManager, sendToRenderer, feedStore)
+
+    // Start usage watcher for JSONL ingestion
+    console.log('[usage-watcher] usageStore:', usageStore ? 'initialized' : 'NULL')
+    if (usageStore) {
+      startUsageWatcher(usageStore, {
+        getSessionMap: () => {
+          const result = sessionStore.listSessions() as any
+          const sessions = result?.sessions ?? []
+          const map = new Map<string, string>()
+          for (const s of sessions) {
+            if (s.repo_root) map.set(s.id, s.repo_root)
+          }
+          return map
+        },
+        sendToRenderer: (channel: string, payload: unknown) => {
+          sendToRenderer(channel, payload)
+          // Feed usage events to budget enforcer
+          if (channel === 'latch:usage-event') {
+            budgetEnforcerProcessEvent(payload as any)
+          }
+        },
+      })
+    }
+
+    // Start live tailer for real-time session tailing
+    startLiveTailer({
+      sendToRenderer,
+      getSessionMap: () => {
+        const result = sessionStore.listSessions() as any
+        const sessions = result?.sessions ?? []
+        const map = new Map<string, string>()
+        for (const s of sessions) {
+          if (s.repo_root) map.set(s.id, s.repo_root)
+        }
+        return map
+      },
+      onLeakDetected: (sessionId, leak) => {
+        feedStore.record({
+          sessionId,
+          message: `Credential leak detected (${leak.kind}): ${leak.preview}${leak.filePath ? ` in ${leak.filePath}` : ''}`,
+          harnessId: 'latch',
+        })
+        sendToRenderer('latch:radar-signal', {
+          id: `radar-leak-${Date.now()}`,
+          level: 'high',
+          message: `Credential leak: ${leak.kind} detected${leak.filePath ? ` in ${leak.filePath}` : ''}`,
+          observedAt: new Date().toISOString(),
+        })
+      },
+      onFileWrite: (sessionId, filePath) => {
+        checkpointOnFileWrite(sessionId, filePath)
+      },
+    })
+
+    // Start checkpoint engine for auto-checkpointing on agent writes
+    startCheckpointEngine({
+      store: checkpointStore!,
+      sendToRenderer,
+      getSessionWorktree: (sessionId) => {
+        const result = sessionStore.listSessions() as any
+        const sessions = result?.sessions ?? []
+        const row = sessions.find((s: any) => s.id === sessionId)
+        return row?.worktree_path ?? row?.project_dir ?? null
+      },
+    })
+
+    // Start budget enforcer for spend controls
+    startBudgetEnforcer({
+      sendToRenderer,
+      getSessionBudget: (sessionId) => {
+        const v = settingsStore?.get(`session-budget:${sessionId}`)
+        return v ? parseFloat(v) : null
+      },
+      getGlobalSessionBudget: () => {
+        const v = settingsStore?.get('default-session-budget')
+        return v ? parseFloat(v) : null
+      },
+      getDailyProjectBudget: () => {
+        const v = settingsStore?.get('daily-project-budget')
+        return v ? parseFloat(v) : null
+      },
+      getSessionProject: (sessionId) => {
+        const result = sessionStore.listSessions() as any
+        const sessions = result?.sessions ?? []
+        const row = sessions.find((s: any) => s.id === sessionId)
+        return row?.project_dir ?? row?.repo_root ?? null
+      },
+      killSession: (sessionId) => {
+        ptyManager?.kill(sessionId)
+      },
+      recordFeed: (params) => feedStore.record(params),
+      emitRadar: (signal) => sendToRenderer('latch:radar-signal', signal),
+    })
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err)
     const unavailable = (name: string) => ({
@@ -304,9 +424,9 @@ app.whenReady().then(() => {
         ptyEnv.LATCH_AUTHZ_SECRET = authzServer.getSecret()
       }
 
-      // Inject secrets as env vars so agents can use $KEY
+      // Inject secrets as env vars so agents can use $KEY (resolves op:// refs)
       if (secretStore) {
-        const secretEnv = secretStore.allKeyValues()
+        const secretEnv = await secretStore.allKeyValuesAsync()
         Object.assign(ptyEnv, secretEnv)
       }
 
@@ -316,9 +436,10 @@ app.whenReady().then(() => {
         dockerContainerId: v.data.dockerContainerId,
       })
 
-      // Load secret values for terminal output redaction
+      // Load secret values for terminal output redaction (resolves op:// refs)
       if (secretStore) {
-        ptyManager.setRedactionValues(v.data.sessionId, secretStore.allValues())
+        const redactValues = await secretStore.allValuesAsync()
+        ptyManager.setRedactionValues(v.data.sessionId, redactValues)
       }
 
       // Wire gateway proxy feedback to this PTY
@@ -333,7 +454,11 @@ app.whenReady().then(() => {
 
       return { ok: true, pid: record.ptyProcess.pid, cwd: record.cwd, shell: record.shell }
     } catch (err: unknown) {
-      return { ok: false, error: (err instanceof Error ? err.message : String(err)) || 'Failed to start shell.' }
+      const msg = err instanceof Error ? err.message : String(err)
+      const code = (err as any)?.code ?? ''
+      const errno = (err as any)?.errno ?? ''
+      console.error('[pty-create] spawn failed:', { msg, code, errno, payload: { sessionId: v.data.sessionId, cwd: v.data.cwd } })
+      return { ok: false, error: `${msg}${code ? ` (${code})` : ''}${errno ? ` errno=${errno}` : ''}` }
     }
   })
 
@@ -420,6 +545,9 @@ app.whenReady().then(() => {
     if (!v.ok) return v
     const result = sessionStore.createSession(v.data)
     track('session_created', { harness: v.data.harness_id ?? '' })
+    if (result.ok && (result as any).session?.repo_root) {
+      liveTailerAddSession((result as any).session.id, (result as any).session.repo_root)
+    }
     return result
   })
 
@@ -574,6 +702,41 @@ app.whenReady().then(() => {
     return { ok: true, hints: secretStore.listHints() }
   })
 
+  // ── 1Password handlers ──────────────────────────────────────────────────
+
+  ipcMain.handle('latch:op-status', async () => {
+    const { opStatus } = await import('./lib/op-connect')
+    return opStatus()
+  })
+
+  ipcMain.handle('latch:op-connect', async () => {
+    const { opConnect } = await import('./lib/op-connect')
+    return opConnect()
+  })
+
+  ipcMain.handle('latch:op-disconnect', async () => {
+    const { opDisconnect } = await import('./lib/op-connect')
+    opDisconnect()
+    return { ok: true }
+  })
+
+  ipcMain.handle('latch:op-vaults', async () => {
+    const { opListVaults } = await import('./lib/op-connect')
+    return opListVaults()
+  })
+
+  ipcMain.handle('latch:op-items', async (_event: any, payload: any) => {
+    if (!payload?.vaultId) return { ok: false, items: [], error: 'vaultId required' }
+    const { opListItems } = await import('./lib/op-connect')
+    return opListItems(payload.vaultId)
+  })
+
+  ipcMain.handle('latch:op-item-fields', async (_event: any, payload: any) => {
+    if (!payload?.itemId || !payload?.vaultId) return { ok: false, fields: [], error: 'itemId and vaultId required' }
+    const { opGetItemFields } = await import('./lib/op-connect')
+    return opGetItemFields(payload.itemId, payload.vaultId)
+  })
+
   // ── Services (gateway) handlers ─────────────────────────────────────────
 
   ipcMain.handle('latch:service-list', async () => {
@@ -642,7 +805,7 @@ app.whenReady().then(() => {
     if (!receipt) return { ok: false, error: 'No receipt for this session' }
 
     // Get GitHub token from secrets store
-    const token = secretStore?.resolve('service:github')
+    const token = await secretStore?.resolveAsync('service:github')
     if (!token) return { ok: false, error: 'No GitHub credential configured' }
 
     return annotatePR(receipt, prUrl, token)
@@ -662,7 +825,7 @@ app.whenReady().then(() => {
     const result = serviceStore.get(serviceId)
     if (!result.ok || !result.service) return { ok: false, error: 'Service not found' }
     if (!secretStore) return { ok: false, error: 'SecretStore unavailable' }
-    const credValue = secretStore.resolve(`service:${serviceId}`)
+    const credValue = await secretStore.resolveAsync(`service:${serviceId}`)
     if (!credValue) return { ok: false, error: 'No credential stored' }
     let creds: Record<string, string>
     try { creds = JSON.parse(credValue) } catch { return { ok: false, error: 'Invalid credential format' } }
@@ -796,6 +959,124 @@ app.whenReady().then(() => {
     return { ok: true, signals: radar?.getSignals() ?? [] }
   })
 
+  // ── Usage / Observability ─────────────────────────────────────────────────
+
+  ipcMain.handle('latch:usage-list', async (_event: any, payload: any = {}) => {
+    if (!usageStore) return { ok: false, events: [], total: 0 }
+    const result = usageStore.list(payload)
+    return { ok: true, ...result }
+  })
+
+  ipcMain.handle('latch:usage-summary', async (_event: any, payload: any = {}) => {
+    if (!usageStore) return { ok: false, summary: null }
+    const summary = usageStore.getSummary(payload)
+    return { ok: true, summary }
+  })
+
+  ipcMain.handle('latch:usage-clear', async (_event: any, payload: any = {}) => {
+    if (!usageStore) return { ok: false }
+    usageStore.clear(payload?.sessionId)
+    return { ok: true }
+  })
+
+  ipcMain.handle('latch:usage-export', async (_event: any, payload: any = {}) => {
+    if (!usageStore) return { ok: false, error: 'Usage store unavailable' }
+    const format = payload?.format === 'csv' ? 'csv' : 'json'
+    const events = usageStore.exportAll(payload?.sessionId)
+
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      defaultPath: `latch-usage-export.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+    })
+    if (canceled || !filePath) return { ok: false, error: 'Cancelled' }
+
+    let content: string
+    if (format === 'csv') {
+      const header = 'id,session_id,harness_id,model,timestamp,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,cost_usd,tool_name\n'
+      const rows = events.map((e) =>
+        `${e.id},${e.sessionId ?? ''},${e.harnessId},${e.model},${e.timestamp},${e.inputTokens},${e.outputTokens},${e.cacheWriteTokens},${e.cacheReadTokens},${e.costUsd},${e.toolName ?? ''}`
+      ).join('\n')
+      content = header + rows
+    } else {
+      content = JSON.stringify(events, null, 2)
+    }
+
+    const fs = await import('node:fs')
+    await fs.promises.writeFile(filePath, content, 'utf8')
+    return { ok: true, filePath, count: events.length }
+  })
+
+  // ── Timeline ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle('latch:timeline-conversations', async (_event: any, payload: any = {}) => {
+    try {
+      const conversations = listConversations(payload.projectSlug)
+      return { ok: true, conversations }
+    } catch (err: unknown) {
+      return { ok: false, conversations: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('latch:timeline-load', async (_event: any, payload: any = {}) => {
+    if (!payload.filePath) return { ok: false, data: null, error: 'filePath required' }
+    try {
+      const data = parseTimeline(payload.filePath)
+      return { ok: true, data }
+    } catch (err: unknown) {
+      return { ok: false, data: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ── Analytics ───────────────────────────────────────────────────────────
+
+  ipcMain.handle('latch:analytics-conversation', async (_event: any, payload: any = {}) => {
+    if (!payload.filePath) return { ok: false, analytics: null, error: 'filePath required' }
+    try {
+      const data = parseTimeline(payload.filePath)
+      const analytics = computeConversationAnalytics(data)
+      return { ok: true, analytics }
+    } catch (err: unknown) {
+      return { ok: false, analytics: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('latch:analytics-dashboard', async () => {
+    try {
+      const conversations = listConversations()
+
+      // Group by project slug
+      const projectMap = new Map<string, {
+        name: string
+        conversations: typeof conversations
+        timelines: ReturnType<typeof parseTimeline>[]
+      }>()
+
+      for (const conv of conversations) {
+        let entry = projectMap.get(conv.projectSlug)
+        if (!entry) {
+          entry = { name: conv.projectName, conversations: [], timelines: [] }
+          projectMap.set(conv.projectSlug, entry)
+        }
+        entry.conversations.push(conv)
+      }
+
+      // Parse timelines — limit to most recent 5 per project to avoid blocking
+      for (const [, entry] of projectMap) {
+        const recent = entry.conversations.slice(0, 5)
+        for (const conv of recent) {
+          try {
+            entry.timelines.push(parseTimeline(conv.filePath))
+          } catch { /* skip unparseable files */ }
+        }
+      }
+
+      const dashboard = computeDashboard(projectMap)
+      return { ok: true, dashboard }
+    } catch (err: unknown) {
+      return { ok: false, dashboard: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
   ipcMain.handle('latch:authz-port', async () => {
     return { ok: true, port: authzServer?.getPort() ?? 0 }
   })
@@ -803,7 +1084,7 @@ app.whenReady().then(() => {
   ipcMain.handle('latch:authz-register', async (_event: any, payload: any) => {
     const v = validateIpc(AuthzRegisterSchema, payload)
     if (!v.ok) return v
-    authzServer?.registerSession(v.data.sessionId, v.data.harnessId, v.data.policyId, v.data.policyOverride ?? null)
+    authzServer?.registerSession(v.data.sessionId, v.data.harnessId, v.data.policyIds, v.data.policyOverride ?? null)
     return { ok: true }
   })
 
@@ -817,6 +1098,17 @@ app.whenReady().then(() => {
     // Falls through to authzServer for Codex/OpenClaw's ApprovalBar flow.
     supervisor?.resolveDecision(id, decision)
     authzServer?.resolveApproval(id, decision)
+    return { ok: true }
+  })
+
+  // ── Budget handlers ────────────────────────────────────────────────────
+
+  ipcMain.handle('latch:budget-respond', async (_event: any, payload: any) => {
+    const { alertId, action } = payload ?? {}
+    if (!alertId || !['kill', 'extend'].includes(action)) {
+      return { ok: false, error: 'Invalid payload' }
+    }
+    respondToBudgetAlert(alertId, action)
     return { ok: true }
   })
 
@@ -877,12 +1169,13 @@ app.whenReady().then(() => {
 
   ipcMain.handle('latch:gateway-start', async (_event: any, payload: any) => {
     const { sessionId, serviceIds, maxDataTier, policyId, policyOverride, workspacePath, enableTls } = payload ?? {}
-    if (!sessionId || !serviceIds?.length) return { ok: false, error: 'Missing sessionId or serviceIds' }
+    if (!sessionId) return { ok: false, error: 'Missing sessionId' }
+    const resolvedServiceIds: string[] = serviceIds ?? []
 
     try {
       // Load service definitions and grant access
       const services: import('../../types').ServiceDefinition[] = []
-      for (const sid of serviceIds) {
+      for (const sid of resolvedServiceIds) {
         if (!serviceStore) continue
         const result = serviceStore.get(sid)
         if (result.ok && result.service) {
@@ -891,11 +1184,11 @@ app.whenReady().then(() => {
         }
       }
 
-      // Load credentials from secret store
+      // Load credentials from secret store (resolves op:// refs)
       const credentials = new Map<string, Record<string, string>>()
       for (const svc of services) {
         if (!secretStore) continue
-        const credValue = secretStore.resolve(`service:${svc.id}`)
+        const credValue = await secretStore.resolveAsync(`service:${svc.id}`)
         if (credValue) {
           try {
             credentials.set(svc.id, JSON.parse(credValue))
@@ -1019,8 +1312,9 @@ app.whenReady().then(() => {
       const sandboxStatus = sandboxManager.getSessionStatus(sessionId)
       const sandboxType = (sandboxStatus.backend ?? 'seatbelt') as 'docker' | 'seatbelt' | 'bubblewrap'
 
-      // Get policy
-      const policy = policyStore.getPolicy(payload.policyId ?? 'default')
+      // Get policy — use first selected policy for receipt (merge is done at enforcement time)
+      const receiptPolicyId = Array.isArray(payload.policyIds) ? payload.policyIds[0] : (payload.policyId ?? 'default')
+      const policy = policyStore.getPolicy(receiptPolicyId)
       const policyDoc = policy?.ok ? policy.policy : {
         id: 'default', name: 'Default', description: '', permissions: {
           allowBash: true, allowNetwork: false, allowFileWrite: true,
@@ -1087,8 +1381,8 @@ app.whenReady().then(() => {
 
       const svc = result.service!.definition
 
-      // Load credential
-      const credValue = secretStore.resolve(`service:${serviceId}`)
+      // Load credential (resolves op:// refs)
+      const credValue = await secretStore.resolveAsync(`service:${serviceId}`)
       const credentials = new Map<string, Record<string, string>>()
       if (credValue) {
         try { credentials.set(svc.id, JSON.parse(credValue)) } catch { /* skip */ }
@@ -1231,6 +1525,93 @@ app.whenReady().then(() => {
     }
   })
 
+  // ── Git operations for rewind ────────────────────────────────────────────
+
+  ipcMain.handle('latch:git-log', async (_event: any, payload: any) => {
+    const { cwd, limit = 50 } = payload ?? {}
+    if (!cwd) return { ok: false, error: 'Missing cwd', commits: [] }
+    try {
+      const { stdout } = await execFileAsync('git', [
+        'log', `--max-count=${limit}`, '--format=%H|%s|%aI',
+      ], { cwd })
+      const commits = stdout.trim().split('\n').filter(Boolean).map(line => {
+        const [hash, message, timestamp] = line.split('|')
+        return { hash, message, timestamp }
+      })
+      return { ok: true, commits }
+    } catch (err: any) {
+      return { ok: false, error: err.message, commits: [] }
+    }
+  })
+
+  ipcMain.handle('latch:git-diff', async (_event: any, payload: any) => {
+    const { cwd, from, to } = payload ?? {}
+    if (!cwd || !from) return { ok: false, error: 'Missing cwd or from', diff: '' }
+    try {
+      const args = to ? ['diff', from, to] : ['diff', from, 'HEAD']
+      const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: 1024 * 1024 * 5 })
+      return { ok: true, diff: stdout }
+    } catch (err: any) {
+      return { ok: false, error: err.message, diff: '' }
+    }
+  })
+
+  ipcMain.handle('latch:rewind', async (_event: any, payload: any) => {
+    const { sessionId, checkpointId } = payload ?? {}
+    if (!sessionId || !checkpointId) return { ok: false, error: 'Missing sessionId or checkpointId' }
+
+    const checkpoint = checkpointStore?.get(checkpointId)
+    if (!checkpoint) return { ok: false, error: 'Checkpoint not found' }
+
+    // Find the worktree path
+    const result = sessionStore.listSessions() as any
+    const sessions = result?.sessions ?? []
+    const row = sessions.find((s: any) => s.id === sessionId)
+    const cwd = row?.worktree_path ?? row?.project_dir
+    if (!cwd) return { ok: false, error: 'Session has no worktree' }
+
+    try {
+      // Git reset --hard to checkpoint commit
+      await execFileAsync('git', ['reset', '--hard', checkpoint.commitHash], { cwd })
+
+      // Invalidate checkpoints after this one
+      checkpointStore!.invalidateAfter(sessionId, checkpoint.number)
+
+      // Record feed item
+      feedStore?.record({
+        sessionId,
+        message: `Rewound to checkpoint #${checkpoint.number}: ${checkpoint.summary}`,
+        harnessId: 'latch',
+      })
+
+      // Build rewind context message for the agent
+      const rewindContext = [
+        `[LATCH REWIND] Codebase reverted to checkpoint #${checkpoint.number} (after turn ${checkpoint.turnEnd}).`,
+        '',
+        `Changes after turn ${checkpoint.turnEnd} were abandoned. Files on disk match the state at turn ${checkpoint.turnEnd}.`,
+        '',
+        'Your new direction:',
+      ].join('\n')
+
+      return { ok: true, rewindContext }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  // Checkpoint list/search handlers
+  ipcMain.handle('latch:checkpoint-list', async (_event: any, payload: any) => {
+    const { sessionId } = payload ?? {}
+    if (!sessionId) return { ok: false, checkpoints: [] }
+    return { ok: true, checkpoints: checkpointStore?.list(sessionId) ?? [] }
+  })
+
+  ipcMain.handle('latch:checkpoint-search', async (_event: any, payload: any) => {
+    const { query, sessionId } = payload ?? {}
+    if (!query) return { ok: true, checkpoints: [] }
+    return { ok: true, checkpoints: checkpointStore?.search(query, sessionId) ?? [] }
+  })
+
 })
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
@@ -1251,6 +1632,10 @@ app.on('before-quit', () => {
   sandboxManager?.disposeAll()
   authzServer?.stop()
   radar?.stop()
+  stopUsageWatcher()
+  stopLiveTailer()
+  stopBudgetEnforcer()
+  stopCheckpointEngine()
   db?.close()
   closeDebugLog()
 })

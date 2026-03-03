@@ -13,7 +13,6 @@ import type {
   TabRecord,
   HarnessRecord,
   PolicyDocument,
-  SkillRecord,
   McpServerRecord,
   SecretRecord,
   ServiceRecord,
@@ -30,9 +29,19 @@ import type {
   PendingApproval,
   ApprovalDecision,
   FeedItem,
+  UsageEvent,
+  UsageSummary,
+  TimelineConversation,
+  TimelineData,
+  ConversationAnalytics,
+  AnalyticsDashboard,
+  LiveEvent,
+  LiveSessionStats,
+  BudgetAlert,
+  Checkpoint,
+  PlaybackSpeed,
 } from '../../types';
 import { terminalManager } from '../terminal/TerminalManager';
-import type { CatalogSkill } from '../data/skill-catalog';
 import type { CatalogMcpServer } from '../data/mcp-catalog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -134,9 +143,6 @@ export interface AppState {
   policiesLoaded:   boolean;
   activePolicyDoc:  PolicyDocument | null;
 
-  // ── Skills rail ──────────────────────────────────────────────────────────────
-  skills:           SkillRecord[];
-
   // ── MCP Servers ────────────────────────────────────────────────────────────
   mcpServers:       McpServerRecord[];
 
@@ -147,6 +153,8 @@ export interface AppState {
   services:         ServiceRecord[];
   serviceCatalog:   ServiceDefinition[];
   servicesLoaded:   boolean;
+  serviceEditorDef: ServiceDefinition | null;
+  serviceEditorHasCred: boolean;
 
   // ── Docker ───────────────────────────────────────────────────────────────────
   dockerAvailable: boolean;
@@ -163,6 +171,47 @@ export interface AppState {
   feedUnread: number;
   soundNotifications: boolean;
   theme: 'dark' | 'light' | 'system';
+
+  // ── Usage / Observability ────────────────────────────────────────────────
+  usageEvents: UsageEvent[];
+  usageSummary: UsageSummary | null;
+  usageLoading: boolean;
+
+  // ── Timeline ──────────────────────────────────────────────────────────────
+  timelineConversations: TimelineConversation[];
+  timelineData: TimelineData | null;
+  timelineSelectedTurn: number | null;
+  timelineLoading: boolean;
+
+  // ── Analytics ─────────────────────────────────────────────────────────────
+  analyticsConv: ConversationAnalytics | null;
+  analyticsDashboard: AnalyticsDashboard | null;
+  analyticsLoading: boolean;
+  analyticsProjectSlug: string | null;
+
+  // ── Live Tailing ────────────────────────────────────────────────────────────
+  liveEvents: Map<string, LiveEvent[]>;
+  liveSessionStats: Map<string, LiveSessionStats>;
+  liveDetailSessionId: string | null;
+
+  // ── Budget Enforcement ─────────────────────────────────────────────────────
+  activeBudgetAlert: BudgetAlert | null;
+
+  // ── Rewind ─────────────────────────────────────────────────────────────────
+  rewindSessionId: string | null;
+  rewindCheckpoints: Checkpoint[];
+  rewindSelectedCheckpoint: Checkpoint | null;
+  rewindDiff: string | null;
+  rewindLoading: boolean;
+  rewindSearchQuery: string;
+
+  // ── Replay ────────────────────────────────────────────────────────────────
+  replayConversationId: string | null;
+  replayTurns: TimelineTurn[];
+  replayCurrentIndex: number;
+  replayIsPlaying: boolean;
+  replaySpeed: PlaybackSpeed;
+  replayCheckpointIndices: number[];
 
   // ── Approvals ──────────────────────────────────────────────────────────────
   pendingApprovals: PendingApproval[];
@@ -192,11 +241,6 @@ export interface AppState {
   // Session wizard state lives on session.showWizard (see SessionRecord).
   policyEditorIsOverride: boolean;
   policyEditorPolicy:     PolicyDocument | null;
-  skillEditorOpen:        boolean;
-  skillEditorSkill:       SkillRecord | null;
-  skillDetailOpen:        boolean;
-  skillDetailSkill:       CatalogSkill | SkillRecord | null;
-  skillInstallFlash:      string | null;
   mcpEditorOpen:          boolean;
   mcpEditorServer:        McpServerRecord | null;
   mcpDetailOpen:          boolean;
@@ -236,15 +280,6 @@ export interface AppState {
   savePolicyFromEditor: (policy: PolicyDocument) => Promise<void>;
   clearSessionOverride: () => Promise<void>;
 
-  // Skills
-  loadSkills: () => Promise<void>;
-  openSkillEditor:  (skill: SkillRecord | null) => void;
-  closeSkillEditor: () => void;
-  openSkillDetail:  (skill: CatalogSkill | SkillRecord) => void;
-  closeSkillDetail: () => void;
-  saveSkill:        (skill: SkillRecord) => Promise<void>;
-  deleteSkill:      (id: string) => Promise<void>;
-
   // MCP Servers
   loadMcpServers:   () => Promise<void>;
   openMcpEditor:    (server: McpServerRecord | null) => void;
@@ -259,9 +294,11 @@ export interface AppState {
   loadSecrets:        () => Promise<void>;
 
   // Services (gateway)
-  loadServices:   () => Promise<void>;
-  saveService:    (definition: ServiceDefinition, credentialValue?: string) => Promise<{ ok: boolean; error?: string }>;
-  deleteService:  (id: string) => Promise<{ ok: boolean }>;
+  loadServices:        () => Promise<void>;
+  saveService:         (definition: ServiceDefinition, credentialValue?: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteService:       (id: string) => Promise<{ ok: boolean }>;
+  openServiceEditor:   (def: ServiceDefinition | null, hasCred: boolean) => void;
+  closeServiceEditor:  () => void;
 
   // Docker
   detectDocker:         () => Promise<void>;
@@ -292,6 +329,48 @@ export interface AppState {
   loadThemeSetting:  () => Promise<void>;
   setTheme:          (theme: 'dark' | 'light' | 'system') => Promise<void>;
 
+  // Usage / Observability
+  loadUsageView:     () => Promise<void>;
+  handleUsageEvent:  (event: UsageEvent) => void;
+  clearUsage:        () => Promise<void>;
+  exportUsage:       () => Promise<void>;
+
+  // Timeline
+  loadTimelineConversations: (projectSlug?: string) => Promise<void>;
+  loadTimeline:              (filePath: string) => Promise<void>;
+  setTimelineSelectedTurn:   (index: number | null) => void;
+
+  // Analytics
+  loadAnalyticsDashboard:      () => Promise<void>;
+  loadConversationAnalytics:   (filePath: string) => Promise<void>;
+  setAnalyticsProjectSlug:     (slug: string | null) => void;
+
+  // Live tailing
+  handleLiveEvent:      (event: LiveEvent) => void;
+  setLiveDetailSession: (sessionId: string | null) => void;
+
+  // Budget enforcement
+  handleBudgetAlert:  (alert: BudgetAlert) => void;
+  respondBudgetAlert: (alertId: string, action: 'kill' | 'extend') => Promise<void>;
+  dismissBudgetAlert: () => void;
+
+  // Rewind
+  setRewindSession: (sessionId: string | null) => void;
+  loadCheckpoints: (sessionId: string) => Promise<void>;
+  searchCheckpoints: (query: string) => Promise<void>;
+  selectCheckpoint: (checkpoint: Checkpoint | null) => void;
+  loadCheckpointDiff: (checkpoint: Checkpoint) => Promise<void>;
+  executeRewind: (checkpointId: string) => Promise<{ ok: boolean; rewindContext?: string; error?: string }>;
+
+  // Replay
+  setReplayConversation: (id: string | null) => void;
+  loadReplay: (filePath: string, sessionId?: string) => Promise<void>;
+  replayPlay: () => void;
+  replayPause: () => void;
+  replayStep: (direction: 1 | -1) => void;
+  replaySeek: (turnIndex: number) => void;
+  setReplaySpeed: (speed: PlaybackSpeed) => void;
+
   // Approvals
   handleApprovalRequest:  (approval: PendingApproval) => void;
   handleApprovalResolved: (payload: { id: string }) => void;
@@ -318,12 +397,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   policies:         [],
   policiesLoaded:   false,
   activePolicyDoc:  null,
-  skills:           [],
   mcpServers:       [],
   secrets:                [],
   services:               [],
   serviceCatalog:         [],
   servicesLoaded:         false,
+  serviceEditorDef:       null,
+  serviceEditorHasCred:   false,
   dockerAvailable:  false,
   sandboxEnabled:   true,
   defaultDockerImage: 'node:20',
@@ -334,6 +414,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   feedUnread:          0,
   soundNotifications:  true,
   theme:               'dark',
+  usageEvents:         [],
+  usageSummary:        null,
+  usageLoading:        false,
+  timelineConversations: [],
+  timelineData:          null,
+  timelineSelectedTurn:  null,
+  timelineLoading:       false,
+  analyticsConv:          null,
+  analyticsDashboard:     null,
+  analyticsLoading:       false,
+  analyticsProjectSlug:   null,
+  liveEvents:          new Map(),
+  liveSessionStats:    new Map(),
+  liveDetailSessionId: null,
+  activeBudgetAlert:   null,
+  rewindSessionId:          null,
+  rewindCheckpoints:        [],
+  rewindSelectedCheckpoint: null,
+  rewindDiff:               null,
+  rewindLoading:            false,
+  rewindSearchQuery:        '',
+  replayConversationId:     null,
+  replayTurns:              [],
+  replayCurrentIndex:       0,
+  replayIsPlaying:          false,
+  replaySpeed:              1 as PlaybackSpeed,
+  replayCheckpointIndices:  [],
   pendingApprovals: [],
   lastActivityTs:   new Map(),
   _statusTick:      0,
@@ -346,11 +453,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   policyGenerating: false,
   policyEditorIsOverride: false,
   policyEditorPolicy:     null,
-  skillEditorOpen:  false,
-  skillEditorSkill: null,
-  skillDetailOpen:  false,
-  skillDetailSkill: null,
-  skillInstallFlash: null,
   mcpEditorOpen:     false,
   mcpEditorServer:   null,
   mcpDetailOpen:     false,
@@ -403,7 +505,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         harnessId:     row.harness_id || null,
         harnessCommand: row.harness_command || null,
         policy:        row.policy_set || 'Default',
-        policyId:      row.policy_set || 'default',
+        policyIds:     (() => { try { const v = row.policy_set; if (!v) return []; if (v.startsWith('[')) return JSON.parse(v); return [v] } catch { return [] } })(),
         policyOverride: (() => { try { return row.policy_override ? JSON.parse(row.policy_override) : null } catch { return null } })(),
         projectDir:    row.project_dir || null,
         repoRoot:      row.repo_root || null,
@@ -440,7 +542,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       harnessId:     null,
       harnessCommand: null,
       policy:        'None',
-      policyId:      '',
+      policyIds:     [],
       policyOverride: null,
       projectDir:    null,
       repoRoot:      null,
@@ -694,13 +796,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     // ── Policy enforcement ──────────────────────────────────────────────
     let enforcedHarnessCommand = session.harnessCommand;
 
-    if (session.harnessId && session.policyId && window.latch?.enforcePolicy) {
+    if (session.harnessId && session.policyIds?.length && window.latch?.enforcePolicy) {
       // Register session with authz server for runtime interception
       if (window.latch?.authzRegister) {
         await window.latch.authzRegister({
           sessionId: session.id,
           harnessId: session.harnessId,
-          policyId: session.policyId,
+          policyIds: session.policyIds,
           policyOverride: session.policyOverride,
         });
       }
@@ -716,7 +818,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       terminalManager.writeln(tabId, `\x1b[2mEnforcing policy: ${session.policy}...\x1b[0m`);
       const enforceResult = await window.latch.enforcePolicy({
-        policyId:       session.policyId,
+        policyIds:      session.policyIds,
         policyOverride: session.policyOverride,
         harnessId:      session.harnessId,
         harnessCommand: session.harnessCommand ?? '',
@@ -734,6 +836,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // ── Gateway start ──────────────────────────────────────────────────
     let gatewayEnv: Record<string, string> = {}
+    let gatewaySandboxCommand: string | undefined
+    let gatewaySandboxArgs: string[] | undefined
     const sessionState = get().sessions.get(sessionId)
     if (sessionState?.gateway?.enabled && window.latch?.startGateway) {
       terminalManager.writeln(tabId, `\x1b[2mGateway: starting proxy and sandbox...\x1b[0m`)
@@ -741,13 +845,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         sessionId,
         serviceIds: sessionState.gateway.serviceIds,
         maxDataTier: sessionState.gateway.maxDataTier,
-        policyId: session.policyId,
+        policyIds: session.policyIds,
         policyOverride: session.policyOverride,
         workspacePath: worktreePath ?? projectDir ?? null,
         enableTls: false,
       })
       if (gatewayResult?.ok) {
         gatewayEnv = gatewayResult.gatewayEnv ?? {}
+        gatewaySandboxCommand = gatewayResult.sandboxCommand
+        gatewaySandboxArgs = gatewayResult.sandboxArgs
         set((s) => {
           const sessions = new Map(s.sessions)
           const sess = sessions.get(sessionId)
@@ -807,6 +913,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sessionId: tabId, cwd, cols, rows,
         ...(Object.keys(env).length ? { env } : {}),
         ...(useDockerPty ? { dockerContainerId } : {}),
+        ...(gatewaySandboxCommand && gatewaySandboxArgs ? { sandboxCommand: gatewaySandboxCommand, sandboxArgs: gatewaySandboxArgs } : {}),
       });
       if (result?.ok) {
         get().setTabPtyReady(tabId, true);
@@ -883,7 +990,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         repo_root:      repoRoot,
         worktree_path:  worktreePath,
         branch_ref:     branchRef,
-        policy_set:     session.policyId,
+        policy_set:     session.policyIds?.length ? JSON.stringify(session.policyIds) : null,
         harness_id:     session.harnessId,
         harness_command: session.harnessCommand,
         goal:           session.goal || null,
@@ -976,7 +1083,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Policy check: if the session policy disallows bash, block ad-hoc shell tabs
     if (!label && session) {
-      const policyDoc = get().policies.find((p) => p.id === session.policyId);
+      const policyDoc = get().policies.find((p) => session.policyIds?.includes(p.id));
       const effective = session.policyOverride ?? policyDoc;
       if (effective && effective.permissions?.allowBash === false) {
         // Find an existing tab to display the error
@@ -1083,8 +1190,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadPolicyPanel: async () => {
     const { activeSessionId, sessions } = get();
-    const policyId = sessions.get(activeSessionId ?? '')?.policyId ?? 'default';
-    const result   = await window.latch?.getPolicy?.({ id: policyId });
+    const policyIds = sessions.get(activeSessionId ?? '')?.policyIds ?? [];
+    const firstId = policyIds[0];
+    if (!firstId) { set({ activePolicyDoc: null }); return }
+    const result = await window.latch?.getPolicy?.({ id: firstId });
     set({ activePolicyDoc: result?.ok ? result.policy : null });
   },
 
@@ -1120,7 +1229,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           await window.latch?.authzRegister?.({
             sessionId: session.id,
             harnessId: session.harnessId,
-            policyId: session.policyId,
+            policyIds: session.policyIds,
             policyOverride: policy,
           });
         }
@@ -1152,47 +1261,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       await window.latch?.authzRegister?.({
         sessionId: session.id,
         harnessId: session.harnessId,
-        policyId: session.policyId,
+        policyIds: session.policyIds,
         policyOverride: null,
       });
     }
 
     await get().loadPolicyPanel();
-  },
-
-  // ── Skills ───────────────────────────────────────────────────────────────────
-
-  loadSkills: async () => {
-    const result = await window.latch?.listSkills?.();
-    set({ skills: result?.skills ?? [] });
-  },
-
-  openSkillEditor: (skill) => {
-    set({ skillEditorOpen: true, skillEditorSkill: skill });
-  },
-
-  closeSkillEditor: () => {
-    set({ skillEditorOpen: false, skillEditorSkill: null });
-  },
-
-  openSkillDetail: (skill) => {
-    set({ skillDetailOpen: true, skillDetailSkill: skill });
-  },
-
-  closeSkillDetail: () => {
-    set({ skillDetailOpen: false, skillDetailSkill: null });
-  },
-
-  saveSkill: async (skill) => {
-    const result = await window.latch?.saveSkill?.(skill);
-    if (!result?.ok) return;
-    get().closeSkillEditor();
-    await get().loadSkills();
-  },
-
-  deleteSkill: async (id) => {
-    await window.latch?.deleteSkill?.({ id });
-    await get().loadSkills();
   },
 
   // ── MCP Servers ──────────────────────────────────────────────────────────────
@@ -1267,6 +1341,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = await window.latch?.deleteService?.({ id });
     if (result?.ok) await get().loadServices();
     return result ?? { ok: false };
+  },
+
+  openServiceEditor: (def, hasCred) => {
+    set({ serviceEditorDef: def, serviceEditorHasCred: hasCred, activeView: 'create-service' });
+  },
+
+  closeServiceEditor: () => {
+    set({ serviceEditorDef: null, serviceEditorHasCred: false, activeView: 'services' });
   },
 
   // ── Docker ───────────────────────────────────────────────────────────────────
@@ -1417,6 +1499,288 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearFeed: async () => {
     await window.latch?.clearFeed?.();
     set({ feedItems: [], feedUnread: 0 });
+  },
+
+  // ── Usage / Observability ───────────────────────────────────────────────
+
+  loadUsageView: async () => {
+    set({ usageLoading: true });
+    const [listResult, summaryResult] = await Promise.all([
+      window.latch?.listUsage?.({ limit: 200 }),
+      window.latch?.getUsageSummary?.({ days: 30 }),
+    ]);
+    set({
+      usageEvents: listResult?.events ?? [],
+      usageSummary: summaryResult?.summary ?? null,
+      usageLoading: false,
+    });
+  },
+
+  handleUsageEvent: (event) => {
+    set((s) => {
+      const usageEvents = [event, ...s.usageEvents].slice(0, 500);
+      let usageSummary = s.usageSummary;
+      if (usageSummary) {
+        usageSummary = {
+          ...usageSummary,
+          todayCostUsd: usageSummary.todayCostUsd + event.costUsd,
+          todayInputTokens: usageSummary.todayInputTokens + event.inputTokens,
+          todayOutputTokens: usageSummary.todayOutputTokens + event.outputTokens,
+        };
+      }
+      return { usageEvents, usageSummary };
+    });
+  },
+
+  clearUsage: async () => {
+    await window.latch?.clearUsage?.();
+    set({ usageEvents: [], usageSummary: null });
+  },
+
+  exportUsage: async () => {
+    await window.latch?.exportUsage?.({ format: 'json' });
+  },
+
+  // ── Timeline ───────────────────────────────────────────────────────────
+
+  loadTimelineConversations: async (projectSlug?: string) => {
+    const result = await window.latch?.listTimelineConversations?.({ projectSlug })
+    if (result?.ok) {
+      set({ timelineConversations: result.conversations })
+    }
+  },
+
+  loadTimeline: async (filePath: string) => {
+    set({ timelineLoading: true, timelineSelectedTurn: null })
+    const result = await window.latch?.loadTimeline?.({ filePath })
+    const data = result?.data ?? null
+    set({
+      timelineData: data,
+      timelineLoading: false,
+      timelineSelectedTurn: data && data.turns.length > 0 ? 0 : null,
+    })
+  },
+
+  setTimelineSelectedTurn: (index: number | null) => {
+    set({ timelineSelectedTurn: index })
+  },
+
+  // ── Analytics ──────────────────────────────────────────────────────────
+
+  loadAnalyticsDashboard: async () => {
+    set({ analyticsLoading: true })
+    const result = await window.latch?.getAnalyticsDashboard?.()
+    set({
+      analyticsDashboard: result?.dashboard ?? null,
+      analyticsLoading: false,
+    })
+  },
+
+  loadConversationAnalytics: async (filePath: string) => {
+    set({ analyticsLoading: true })
+    const result = await window.latch?.getConversationAnalytics?.({ filePath })
+    set({
+      analyticsConv: result?.analytics ?? null,
+      analyticsLoading: false,
+    })
+  },
+
+  setAnalyticsProjectSlug: (slug) => {
+    set({ analyticsProjectSlug: slug, analyticsConv: null })
+  },
+
+  // ── Live Tailing ──────────────────────────────────────────────────────
+
+  handleLiveEvent: (event) => {
+    set((s) => {
+      const liveEvents = new Map(s.liveEvents)
+      const sessionEvents = [...(liveEvents.get(event.sessionId) ?? []), event].slice(-1000)
+      liveEvents.set(event.sessionId, sessionEvents)
+
+      const liveSessionStats = new Map(s.liveSessionStats)
+      const existing: LiveSessionStats = liveSessionStats.get(event.sessionId) ?? {
+        sessionId: event.sessionId,
+        totalCostUsd: 0,
+        turnCount: 0,
+        startedAt: event.timestamp,
+        lastEventAt: event.timestamp,
+        filesTouched: new Map(),
+        cacheHitRatio: 0,
+        totalInputTokens: 0,
+        totalCacheReadTokens: 0,
+      }
+
+      existing.lastEventAt = event.timestamp
+
+      if (event.kind === 'tool-call') {
+        if (event.costUsd) existing.totalCostUsd += event.costUsd
+        if (event.inputTokens) existing.totalInputTokens += event.inputTokens
+
+        if (event.target && event.toolName) {
+          const isFile = event.target.includes('/') || event.target.includes('.')
+          if (isFile) {
+            const fileStat = existing.filesTouched.get(event.target) ?? { reads: 0, writes: 0 }
+            const writeTools = new Set(['Write', 'Edit', 'NotebookEdit'])
+            if (writeTools.has(event.toolName)) {
+              fileStat.writes++
+            } else {
+              fileStat.reads++
+            }
+            existing.filesTouched.set(event.target, fileStat)
+          }
+        }
+      }
+
+      if (event.kind === 'status-change' && event.sessionStatus === 'active') {
+        existing.turnCount++
+      }
+
+      liveSessionStats.set(event.sessionId, existing)
+
+      return { liveEvents, liveSessionStats }
+    })
+  },
+
+  setLiveDetailSession: (sessionId) => {
+    set({ liveDetailSessionId: sessionId })
+  },
+
+  handleBudgetAlert: (alert: BudgetAlert) => {
+    set({ activeBudgetAlert: alert })
+  },
+
+  respondBudgetAlert: async (alertId: string, action: 'kill' | 'extend') => {
+    await window.latch?.respondBudgetAlert?.({ alertId, action })
+    set({ activeBudgetAlert: null })
+  },
+
+  dismissBudgetAlert: () => {
+    set({ activeBudgetAlert: null })
+  },
+
+  // ── Rewind ───────────────────────────────────────────────────────────────
+
+  setRewindSession: (sessionId) => {
+    set({ rewindSessionId: sessionId, rewindCheckpoints: [], rewindSelectedCheckpoint: null, rewindDiff: null, rewindSearchQuery: '' })
+    if (sessionId) get().loadCheckpoints(sessionId)
+  },
+
+  loadCheckpoints: async (sessionId) => {
+    set({ rewindLoading: true })
+    const res = await window.latch?.listCheckpoints?.({ sessionId })
+    set({ rewindCheckpoints: res?.checkpoints ?? [], rewindLoading: false })
+  },
+
+  searchCheckpoints: async (query) => {
+    const { rewindSessionId } = get()
+    set({ rewindSearchQuery: query })
+    if (!query.trim()) {
+      if (rewindSessionId) get().loadCheckpoints(rewindSessionId)
+      return
+    }
+    set({ rewindLoading: true })
+    const res = await window.latch?.searchCheckpoints?.({ query, sessionId: rewindSessionId ?? undefined })
+    set({ rewindCheckpoints: res?.checkpoints ?? [], rewindLoading: false })
+  },
+
+  selectCheckpoint: (checkpoint) => {
+    set({ rewindSelectedCheckpoint: checkpoint, rewindDiff: null })
+    if (checkpoint) get().loadCheckpointDiff(checkpoint)
+  },
+
+  loadCheckpointDiff: async (checkpoint) => {
+    const { sessions, rewindSessionId } = get()
+    if (!rewindSessionId) return
+    const session = sessions.get(rewindSessionId)
+    const cwd = session?.worktreePath ?? session?.projectDir
+    if (!cwd) return
+    const res = await window.latch?.gitDiff?.({ cwd, from: checkpoint.commitHash })
+    set({ rewindDiff: res?.ok ? res.diff : null })
+  },
+
+  executeRewind: async (checkpointId) => {
+    const { rewindSessionId } = get()
+    if (!rewindSessionId) return { ok: false, error: 'No session selected' }
+    const res = await window.latch?.rewind?.({ sessionId: rewindSessionId, checkpointId })
+    if (res?.ok) {
+      get().loadCheckpoints(rewindSessionId)
+      set({ rewindSelectedCheckpoint: null, rewindDiff: null })
+    }
+    return res ?? { ok: false, error: 'IPC failed' }
+  },
+
+  // ── Replay ───────────────────────────────────────────────────────────────
+
+  setReplayConversation: (id) => {
+    get().replayPause()
+    set({
+      replayConversationId: id,
+      replayTurns: [],
+      replayCurrentIndex: 0,
+      replayIsPlaying: false,
+      replayCheckpointIndices: [],
+    })
+  },
+
+  loadReplay: async (filePath, sessionId?) => {
+    get().replayPause()
+    if (!filePath) {
+      set({ replayConversationId: null, replayTurns: [], replayCurrentIndex: 0, replayCheckpointIndices: [] })
+      return
+    }
+    const result = await window.latch?.loadTimeline?.({ filePath })
+    const data = result?.data ?? null
+    if (!data) return
+
+    // Load checkpoint indices if we have a session
+    let checkpointIndices: number[] = []
+    if (sessionId) {
+      const cpResult = await window.latch?.listCheckpoints?.({ sessionId })
+      if (cpResult?.ok && cpResult.checkpoints.length > 0) {
+        checkpointIndices = cpResult.checkpoints
+          .map((cp: any) => data.turns.findIndex((t: any) => t.index === cp.turnEnd))
+          .filter((i: number) => i >= 0)
+          .sort((a: number, b: number) => a - b)
+      }
+    }
+
+    set({
+      replayConversationId: data.conversation.id,
+      replayTurns: data.turns,
+      replayCurrentIndex: 0,
+      replayIsPlaying: false,
+      replayCheckpointIndices: checkpointIndices,
+    })
+  },
+
+  replayPlay: () => {
+    set({ replayIsPlaying: true })
+  },
+
+  replayPause: () => {
+    set({ replayIsPlaying: false })
+  },
+
+  replayStep: (direction) => {
+    const { replayCurrentIndex, replayTurns } = get()
+    const next = replayCurrentIndex + direction
+    if (next >= 0 && next < replayTurns.length) {
+      set({ replayCurrentIndex: next })
+    }
+    if (next >= replayTurns.length) {
+      set({ replayIsPlaying: false })
+    }
+  },
+
+  replaySeek: (turnIndex) => {
+    const { replayTurns } = get()
+    if (turnIndex >= 0 && turnIndex < replayTurns.length) {
+      set({ replayCurrentIndex: turnIndex })
+    }
+  },
+
+  setReplaySpeed: (speed) => {
+    set({ replaySpeed: speed })
   },
 
   loadSoundSetting: async () => {

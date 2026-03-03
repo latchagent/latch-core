@@ -805,7 +805,8 @@ function generateOpenClawApprovals(targetDir: string): void {
 export async function enforcePolicy(
   policyStore: PolicyStore,
   payload: {
-    policyId: string
+    policyIds?: string[]
+    policyId?: string // backward compat
     policyOverride?: PolicyDocument | null
     harnessId: string
     harnessCommand: string
@@ -817,15 +818,24 @@ export async function enforcePolicy(
   }
 ): Promise<{ ok: boolean; harnessCommand?: string; configPath?: string; error?: string }> {
   const { policyOverride, harnessId, harnessCommand, worktreePath, projectDir, authzPort, authzSecret, sessionId } = payload
+  const policyIds = payload.policyIds ?? (payload.policyId ? [payload.policyId] : [])
 
-  // Merge ALL top-level policies using strictest-wins semantics.
-  // All policies are always active — session overrides are applied on top.
+  // Merge selected policies using strictest-wins semantics.
+  // Session overrides are applied on top.
   const allResult = policyStore.listPolicies()
   if (!allResult.ok || !allResult.policies?.length) {
     return { ok: false, error: 'No policies available for enforcement.' }
   }
 
-  const basePolicy = computeStrictestBaseline(allResult.policies, harnessId)
+  const selected = policyIds.length
+    ? allResult.policies.filter(p => policyIds.includes(p.id))
+    : allResult.policies
+  if (!selected.length) {
+    // No policies selected — allow everything (no enforcement needed)
+    return { ok: true, harnessCommand }
+  }
+
+  const basePolicy = computeStrictestBaseline(selected, harnessId)
   const effective = resolvePolicy(basePolicy, policyOverride)
 
   const targetDir = worktreePath ?? projectDir

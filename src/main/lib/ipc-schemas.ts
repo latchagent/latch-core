@@ -15,6 +15,8 @@ export const PtyCreateSchema = z.object({
   rows: z.number().int().min(1).max(10000),
   env: z.record(z.string(), z.string().max(10000)).optional(),
   dockerContainerId: z.string().regex(/^[a-f0-9]{12}([a-f0-9]{52})?$/).optional(),
+  sandboxCommand: z.string().max(512).optional(),
+  sandboxArgs: z.array(z.string().max(512)).optional(),
 })
 
 export const PtyWriteSchema = z.object({
@@ -151,7 +153,7 @@ export const DockerStartSchema = z.object({
 export const AuthzRegisterSchema = z.object({
   sessionId: z.string().min(1).max(200),
   harnessId: z.string().min(1).max(100),
-  policyId: z.string().min(1).max(200),
+  policyIds: z.array(z.string().min(1).max(200)),
   policyOverride: z.any().nullable().optional(),
 })
 

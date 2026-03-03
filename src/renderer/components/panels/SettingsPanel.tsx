@@ -165,6 +165,128 @@ function ApiKeySection() {
   )
 }
 
+// ─── 1Password section ───────────────────────────────────────────────────────
+
+function OnePasswordSection() {
+  const [status, setStatus] = useState<{ available: boolean; connected: boolean; appInstalled: boolean; cliInstalled: boolean }>({
+    available: false, connected: false, appInstalled: false, cliInstalled: false,
+  })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    window.latch?.opStatus?.().then((s: any) => {
+      if (s) setStatus(s)
+      setLoaded(true)
+    })
+  }, [])
+
+  const handleConnect = async () => {
+    setBusy(true)
+    setError('')
+    const result = await window.latch?.opConnect?.()
+    setBusy(false)
+    if (result?.ok) {
+      setStatus(prev => ({ ...prev, available: true, connected: true }))
+    } else {
+      setError(result?.error ?? 'Connection failed')
+    }
+  }
+
+  const handleDisconnect = async () => {
+    setBusy(true)
+    await window.latch?.opDisconnect?.()
+    setBusy(false)
+    setStatus(prev => ({ ...prev, connected: false }))
+  }
+
+  if (!loaded) return null
+
+  // Not installed at all
+  if (!status.appInstalled && !status.cliInstalled) {
+    return (
+      <div className="panel-card">
+        <div className="panel-title">1Password</div>
+        <div className="panel-meta">
+          Connect to 1Password to use existing credentials for services.
+        </div>
+        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 4, background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)' }}>
+          1Password not detected. Install{' '}
+          <a
+            href="#"
+            style={{ color: 'var(--accent)' }}
+            onClick={(e) => { e.preventDefault(); window.latch?.openExternal?.('https://1password.com/downloads') }}
+          >
+            1Password 8+
+          </a>
+          {' '}to enable this integration.
+        </div>
+      </div>
+    )
+  }
+
+  // App installed but CLI not found
+  if (status.appInstalled && !status.cliInstalled) {
+    return (
+      <div className="panel-card">
+        <div className="panel-title">1Password</div>
+        <div className="panel-meta">
+          Connect to 1Password to use existing credentials for services.
+        </div>
+        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 4, background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          1Password app detected, but the CLI tool is needed:
+          <ol style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12 }}>
+            <li>Open <strong>1Password → Settings → Developer</strong></li>
+            <li>Turn on <strong>"Integrate with 1Password CLI"</strong></li>
+            <li>If not prompted to install, run: <code style={{ background: 'var(--bg-primary)', padding: '1px 4px', borderRadius: 3 }}>brew install --cask 1password-cli</code></li>
+          </ol>
+        </div>
+      </div>
+    )
+  }
+
+  // CLI available — show connect/disconnect
+  return (
+    <div className="panel-card">
+      <div className="panel-title">1Password</div>
+      <div className="panel-meta">
+        Connect to 1Password to use existing credentials for services.
+        Secrets stay managed in 1Password — Latch stores only a reference.
+      </div>
+
+      <div className="providers-status-row" style={{ marginTop: 12 }}>
+        <span className={`providers-status ${status.connected ? 'is-ok' : ''}`}>
+          {status.connected ? 'Connected' : 'Not connected'}
+        </span>
+        {status.connected ? (
+          <button
+            className="panel-action is-danger"
+            onClick={handleDisconnect}
+            disabled={busy}
+            style={{ marginTop: 0, padding: '2px 8px', fontSize: 11 }}
+          >
+            Disconnect
+          </button>
+        ) : (
+          <button
+            className="panel-action is-primary"
+            onClick={handleConnect}
+            disabled={busy}
+            style={{ marginTop: 0, padding: '4px 12px', fontSize: 12 }}
+          >
+            {busy ? 'Connecting...' : 'Connect'}
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--red)' }}>{error}</div>
+      )}
+    </div>
+  )
+}
+
 // ─── Sandbox section ─────────────────────────────────────────────────────────
 
 function SandboxSection() {
@@ -219,6 +341,124 @@ function SandboxSection() {
         )}
       </div>
     </>
+  )
+}
+
+// ─── Budget section ─────────────────────────────────────────────────────────
+
+function BudgetSection() {
+  const [sessionBudget, setSessionBudget] = useState('')
+  const [projectBudget, setProjectBudget] = useState('')
+  const [sloCost, setSloCost] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      const [sb, pb, slo] = await Promise.all([
+        window.latch?.getSetting?.({ key: 'default-session-budget' }),
+        window.latch?.getSetting?.({ key: 'daily-project-budget' }),
+        window.latch?.getSetting?.({ key: 'slo-session-cost-p95' }),
+      ])
+      if (sb?.ok && sb.value) setSessionBudget(sb.value)
+      if (pb?.ok && pb.value) setProjectBudget(pb.value)
+      if (slo?.ok && slo.value) setSloCost(slo.value)
+      setLoaded(true)
+    }
+    load()
+  }, [])
+
+  const handleSave = async () => {
+    const saves: Promise<any>[] = []
+    if (sessionBudget.trim()) {
+      saves.push(window.latch?.setSetting?.({ key: 'default-session-budget', value: sessionBudget.trim() }))
+    } else {
+      saves.push(window.latch?.deleteSetting?.({ key: 'default-session-budget' }))
+    }
+    if (projectBudget.trim()) {
+      saves.push(window.latch?.setSetting?.({ key: 'daily-project-budget', value: projectBudget.trim() }))
+    } else {
+      saves.push(window.latch?.deleteSetting?.({ key: 'daily-project-budget' }))
+    }
+    if (sloCost.trim()) {
+      saves.push(window.latch?.setSetting?.({ key: 'slo-session-cost-p95', value: sloCost.trim() }))
+    } else {
+      saves.push(window.latch?.deleteSetting?.({ key: 'slo-session-cost-p95' }))
+    }
+    await Promise.all(saves)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div className="panel-card">
+      <div className="budget-field">
+        <label className="cp-toggle-text" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
+          Default session budget (USD)
+        </label>
+        <input
+          type="number"
+          className="wizard-input"
+          placeholder="e.g. 10"
+          value={sessionBudget}
+          onChange={(e) => setSessionBudget(e.target.value)}
+          min="0"
+          step="0.5"
+          style={{ maxWidth: 160 }}
+        />
+        <div className="settings-toggle-desc">
+          Maximum spend per session. Leave blank for no limit. Can be overridden per session.
+        </div>
+      </div>
+
+      <div className="budget-field" style={{ marginTop: 16 }}>
+        <label className="cp-toggle-text" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
+          Daily project budget (USD)
+        </label>
+        <input
+          type="number"
+          className="wizard-input"
+          placeholder="e.g. 50"
+          value={projectBudget}
+          onChange={(e) => setProjectBudget(e.target.value)}
+          min="0"
+          step="1"
+          style={{ maxWidth: 160 }}
+        />
+        <div className="settings-toggle-desc">
+          Maximum spend per project per day across all sessions.
+        </div>
+      </div>
+
+      <div className="budget-field" style={{ marginTop: 16 }}>
+        <label className="cp-toggle-text" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
+          SLO: 95th percentile session cost (USD)
+        </label>
+        <input
+          type="number"
+          className="wizard-input"
+          placeholder="e.g. 8"
+          value={sloCost}
+          onChange={(e) => setSloCost(e.target.value)}
+          min="0"
+          step="0.5"
+          style={{ maxWidth: 160 }}
+        />
+        <div className="settings-toggle-desc">
+          Target P95 session cost. Triggers a Radar signal when breached.
+        </div>
+      </div>
+
+      <button
+        className="panel-action is-primary"
+        onClick={handleSave}
+        style={{ marginTop: 16 }}
+      >
+        {saved ? 'Saved!' : 'Save budgets'}
+      </button>
+    </div>
   )
 }
 
@@ -278,8 +518,16 @@ export default function SettingsPanel() {
       <div className="view-section-label">Model Providers</div>
       <ApiKeySection />
 
+      {/* ── 1Password ───────────────────────────────────────────── */}
+      <div className="view-section-label">1Password</div>
+      <OnePasswordSection />
+
       {/* ── Sandbox ──────────────────────────────────────────────── */}
       <SandboxSection />
+
+      {/* ── Budgets ──────────────────────────────────────────────── */}
+      <div className="view-section-label">Budgets</div>
+      <BudgetSection />
 
       {/* ── General ─────────────────────────────────────────────── */}
       <div className="view-section-label">General</div>

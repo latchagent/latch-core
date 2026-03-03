@@ -1,5 +1,5 @@
 import React from 'react'
-import { Terminal, Broadcast, Lock, Lightning, Robot, HardDrives, Gear, ShieldWarning, BookOpenText, Target, Plugs, ShieldCheck } from '@phosphor-icons/react'
+import { Terminal, Broadcast, Lock, Robot, HardDrives, Gear, BookOpenText, Target, Plugs, ShieldCheck, ChartBar, GitBranch, TrendUp, Pulse, PlayCircle, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { useAppStore, useAgentStatus } from '../store/useAppStore'
 import StatusDot from './StatusDot'
 import type { SessionRecord, AppView } from '../../types'
@@ -77,6 +77,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* ── Navigation ─────────────────────────────────────────── */}
       <nav className="sidebar-nav">
+        {/* ── Home ─────────────────────────────── */}
         <button
           className={`sidebar-nav-item${activeView === 'home' && !activeSessionId ? ' is-active' : ''}`}
           onClick={() => setActiveView('home')}
@@ -92,6 +93,66 @@ export default function Sidebar() {
           Feed
           {feedUnread > 0 && <span className="sidebar-badge">{feedUnread > 99 ? '99+' : feedUnread}</span>}
         </button>
+
+        {/* ── Observe ──────────────────────────── */}
+        <div className="sidebar-nav-group-label">Observe</div>
+        <button
+          className={`sidebar-nav-item${activeView === 'live' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('live')}
+        >
+          <Pulse className="sidebar-nav-icon" weight="light" />
+          Live
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'replay' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('replay')}
+        >
+          <PlayCircle className="sidebar-nav-icon" weight="light" />
+          Replay
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'usage' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('usage')}
+        >
+          <ChartBar className="sidebar-nav-icon" weight="light" />
+          Usage
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'timeline' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('timeline')}
+        >
+          <GitBranch className="sidebar-nav-icon" weight="light" />
+          Timeline
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'analytics' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('analytics')}
+        >
+          <TrendUp className="sidebar-nav-icon" weight="light" />
+          Analytics
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'radar' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('radar')}
+        >
+          <Target className="sidebar-nav-icon" weight="light" />
+          Radar
+          {radarSignals.length > 0 && (
+            <span className={`sidebar-badge${radarSignals.some((s) => s.level === 'high') ? ' is-alert' : ''}`}>
+              {radarSignals.length}
+            </span>
+          )}
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'rewind' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('rewind')}
+        >
+          <ArrowCounterClockwise className="sidebar-nav-icon" weight="light" />
+          Rewind
+        </button>
+
+        {/* ── Govern ───────────────────────────── */}
+        <div className="sidebar-nav-group-label">Govern</div>
         <button
           className={`sidebar-nav-item${activeView === 'policies' ? ' is-active' : ''}`}
           onClick={() => setActiveView('policies')}
@@ -100,12 +161,22 @@ export default function Sidebar() {
           Policies
         </button>
         <button
-          className={`sidebar-nav-item${activeView === 'skills' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('skills')}
+          className={`sidebar-nav-item${activeView === 'gateway' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('gateway')}
         >
-          <Lightning className="sidebar-nav-icon" weight="light" />
-          Skills
+          <ShieldCheck className="sidebar-nav-icon" weight="light" />
+          Gateway
         </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'services' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('services')}
+        >
+          <Plugs className="sidebar-nav-icon" weight="light" />
+          Services
+        </button>
+
+        {/* ── Build ────────────────────────────── */}
+        <div className="sidebar-nav-group-label">Build</div>
         <button
           className={`sidebar-nav-item${activeView === 'agents' ? ' is-active' : ''}`}
           onClick={() => setActiveView('agents')}
@@ -119,32 +190,6 @@ export default function Sidebar() {
         >
           <HardDrives className="sidebar-nav-icon" weight="light" />
           MCP
-        </button>
-        <button
-          className={`sidebar-nav-item${activeView === 'services' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('services')}
-        >
-          <Plugs className="sidebar-nav-icon" weight="light" />
-          Services
-        </button>
-        <button
-          className={`sidebar-nav-item${activeView === 'gateway' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('gateway')}
-        >
-          <ShieldCheck className="sidebar-nav-icon" weight="light" />
-          Gateway
-        </button>
-        <button
-          className={`sidebar-nav-item${activeView === 'radar' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('radar')}
-        >
-          <Target className="sidebar-nav-icon" weight="light" />
-          Radar
-          {radarSignals.length > 0 && (
-            <span className={`sidebar-badge${radarSignals.some((s) => s.level === 'high') ? ' is-alert' : ''}`}>
-              {radarSignals.length}
-            </span>
-          )}
         </button>
       </nav>
 

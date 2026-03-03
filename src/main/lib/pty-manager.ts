@@ -1,3 +1,4 @@
+import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as pty from 'node-pty'
 
@@ -51,14 +52,19 @@ class PtyManager {
 
   private getShell(): string {
     if (process.platform === 'win32') return 'powershell.exe'
-    return process.env.SHELL || '/bin/zsh'
+    const candidates = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']
+    for (const sh of candidates) {
+      if (sh && fs.existsSync(sh)) return sh
+    }
+    return '/bin/sh'
   }
 
   create(sessionId: string, options: { cwd?: string; cols?: number; rows?: number; env?: Record<string, string>; dockerContainerId?: string; sandboxCommand?: string; sandboxArgs?: string[] } = {}): PtyRecord {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
 
-    const cwd   = options.cwd || os.homedir()
+    const requestedCwd = options.cwd || os.homedir()
+    const cwd   = (requestedCwd && fs.existsSync(requestedCwd)) ? requestedCwd : os.homedir()
     const cols  = options.cols || 100
     const rows  = options.rows || 32
 
@@ -69,24 +75,36 @@ class PtyManager {
       args = ['exec', '-it', options.dockerContainerId, '/bin/sh']
     } else if (options.sandboxCommand && options.sandboxArgs) {
       command = options.sandboxCommand
-      args = options.sandboxArgs
+      args = [...options.sandboxArgs, this.getShell()]
     } else {
       command = this.getShell()
       args = []
     }
 
-    const safeKeys = ['PATH', 'HOME', 'USER', 'SHELL', 'TERM', 'LANG', 'LC_ALL', 'TMPDIR', 'XDG_RUNTIME_DIR', 'DISPLAY', 'COLORTERM', 'TERM_PROGRAM', 'LATCH_COMMS_URL', 'LATCH_AUTHZ_SECRET', 'LATCH_HARNESS_ID', 'LATCH_SESSION_ID', 'LATCH_FEED_URL']
+    const safeKeys = [
+      'PATH', 'HOME', 'USER', 'SHELL', 'TERM', 'LANG', 'LC_ALL', 'TMPDIR',
+      'XDG_RUNTIME_DIR', 'DISPLAY', 'COLORTERM', 'TERM_PROGRAM',
+      'LATCH_COMMS_URL', 'LATCH_AUTHZ_SECRET', 'LATCH_HARNESS_ID',
+      'LATCH_SESSION_ID', 'LATCH_FEED_URL',
+      // macOS-critical
+      '__CF_USER_TEXT_ENCODING', 'LOGNAME', 'COMMAND_MODE', 'SSH_AUTH_SOCK',
+      // General shell init
+      'PWD', 'SHLVL', 'EDITOR', 'VISUAL', 'PAGER', 'LESS',
+    ]
     const baseEnv: Record<string, string> = {}
     for (const key of safeKeys) {
       if (process.env[key]) baseEnv[key] = process.env[key]!
     }
+
+    const finalEnv = { ...baseEnv, TERM: 'xterm-256color', ...options.env }
+    console.log('[pty] spawn:', { command, args, cwd, envKeys: Object.keys(finalEnv) })
 
     const ptyProcess = pty.spawn(command, args, {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
-      env: { ...baseEnv, TERM: 'xterm-256color', ...options.env }
+      env: finalEnv,
     })
 
     ptyProcess.onData((data: string) => {

@@ -605,26 +605,6 @@ export default function DocsView() {
             </p>
           </FeatureCard>
 
-          <FeatureCard
-            icon="✦"
-            title="Skills"
-            summary="Reusable instruction packages that teach agents how to work in your codebase. Scoped per-harness, following the agentskills.io specification."
-            detailId="skills"
-            expanded={isExpanded('skills')}
-            onToggle={toggle}
-          >
-            <p>
-              Skills are stored in SQLite and synced to harness-native locations — Claude Code's
-              <code> .claude/skills/</code> directory, Codex's equivalent. Each skill has a name,
-              description, body (the actual instructions), tags for organization, and a harness
-              scope (which harnesses should receive it).
-            </p>
-            <p>
-              The <code>SkillsStore</code> handles CRUD operations while <code>syncSkills</code> writes
-              the skill files to the appropriate directories. Skills can be imported from
-              existing repo files or written from scratch in the Skills editor.
-            </p>
-          </FeatureCard>
         </div>
       </section>
 

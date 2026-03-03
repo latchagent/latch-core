@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react'
-import { Terminal, FolderOpen, Lock, Lightning } from '@phosphor-icons/react'
+import { Terminal, FolderOpen, Lock } from '@phosphor-icons/react'
 import { useAppStore } from '../store/useAppStore'
 
 export default function WelcomeScreen() {
@@ -45,10 +45,6 @@ export default function WelcomeScreen() {
 
   const handleOpenPolicies = () => {
     setActiveView('policies')
-  }
-
-  const handleBrowseSkills = () => {
-    setActiveView('skills')
   }
 
   return (
@@ -106,11 +102,6 @@ export default function WelcomeScreen() {
             <span className="welcome-card-shortcut"><kbd>&#8984;</kbd><kbd>P</kbd></span>
           </button>
 
-          <button className="welcome-card" onClick={handleBrowseSkills}>
-            <Lightning className="welcome-card-icon" weight="light" />
-            <span className="welcome-card-label">Skills</span>
-            <span className="welcome-card-shortcut"><kbd>&#8984;</kbd><kbd>K</kbd></span>
-          </button>
         </div>
       </div>
     </div>

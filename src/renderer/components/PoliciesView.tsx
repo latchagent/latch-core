@@ -66,12 +66,12 @@ export default function PoliciesView() {
           {policies.map((policy) => (
             <div
               key={policy.id}
-              className={`policy-list-item${session?.policyId === policy.id ? ' is-active' : ''}`}
+              className={`policy-list-item${session?.policyIds?.includes(policy.id) ? ' is-active' : ''}`}
             >
               <div className="policy-list-left">
                 <div className="policy-list-name">
                   {policy.name}
-                  {session?.policyId === policy.id && (
+                  {session?.policyIds?.includes(policy.id) && (
                     <span className="policy-active-badge">Active</span>
                   )}
                 </div>

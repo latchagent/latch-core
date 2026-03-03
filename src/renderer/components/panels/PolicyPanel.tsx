@@ -101,7 +101,7 @@ export default function PolicyPanel() {
         {policies.map((policy) => (
           <div
             key={policy.id}
-            className={`policy-list-item${session?.policyId === policy.id ? ' is-active' : ''}`}
+            className={`policy-list-item${session?.policyIds?.includes(policy.id) ? ' is-active' : ''}`}
           >
             <div className="panel-title">{policy.name}</div>
             <div className="panel-meta">{policy.description}</div>

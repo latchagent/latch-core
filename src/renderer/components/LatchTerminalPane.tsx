@@ -47,7 +47,6 @@ const LAUNCHER_OPTIONS = [
   { label: 'New Session',  value: 'new-session',  description: 'Start a new agent session' },
   { label: 'Open Project', value: 'open-project', description: 'Browse for a project directory' },
   { label: 'Policies',     value: 'policies',     description: 'Manage security policies' },
-  { label: 'Skills',       value: 'skills',       description: 'Manage agent skills' },
   { label: 'MCP Servers',  value: 'mcp',          description: 'Manage MCP server configs' },
   { label: 'Settings',     value: 'settings',     description: 'App settings' },
 ]
@@ -88,7 +87,6 @@ async function showLauncher(runner: CommandRunner): Promise<void> {
       break
     }
     case 'policies':
-    case 'skills':
     case 'mcp':
     case 'settings':
       store.setActiveView(choice as any)

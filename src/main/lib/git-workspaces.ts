@@ -82,7 +82,7 @@ function normalizeBranchName(branchName: string, sessionName: string): string {
   return `${prefix}${safe}`
 }
 
-export async function createWorktree({ repoPath, branchName, sessionName }: any) {
+export async function createWorktree({ repoPath, branchName, sessionName, startPoint }: any) {
   const repoRoot = await getGitRoot(repoPath)
   if (!repoRoot) return { ok: false, error: 'Git repository not detected.' }
 
@@ -97,7 +97,9 @@ export async function createWorktree({ repoPath, branchName, sessionName }: any)
   const exists = await branchExists(repoRoot, branchRef)
   const args = exists
     ? ['worktree', 'add', workspacePath, branchRef]
-    : ['worktree', 'add', '-b', branchRef, workspacePath]
+    : startPoint
+      ? ['worktree', 'add', '-b', branchRef, workspacePath, startPoint]
+      : ['worktree', 'add', '-b', branchRef, workspacePath]
 
   await execFileAsync('git', args, { cwd: repoRoot })
 

@@ -352,11 +352,14 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
           terminalManager.writeln(tabId, '\x1b[33mSandbox enabled but Docker not detected — running without sandbox.\x1b[0m')
         }
 
-        // Resolve policy selection
-        const selectedPolicyId = (answers.policy as string) || 'none'
-        const selectedPolicy = selectedPolicyId !== 'none'
-          ? policies.find(p => p.id === selectedPolicyId)
-          : null
+        // Resolve policy selection — now multiselect (string[])
+        const selectedPolicyIds = Array.isArray(answers.policy)
+          ? answers.policy as string[]
+          : []
+        const selectedPolicyNames = selectedPolicyIds
+          .map(id => policies.find(p => p.id === id)?.name)
+          .filter(Boolean)
+          .join(', ') || 'None'
 
         // Apply harness + docker + policy to session in store
         useAppStore.setState((s) => {
@@ -370,8 +373,8 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
                 harness: harness.label,
                 harnessCommand: harness.recommendedCommand,
               } : {}),
-              policyId: selectedPolicy ? selectedPolicy.id : '',
-              policy: selectedPolicy ? selectedPolicy.name : 'None',
+              policyIds: selectedPolicyIds,
+              policy: selectedPolicyNames,
               docker,
               gateway: gatewayConfig,
             })
@@ -392,6 +395,15 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
           projectDir: isOpenClaw ? undefined : projectDir,
           mcpServerIds: mcpServerIds.length > 0 ? mcpServerIds : undefined,
         })
+
+        // Save per-session budget if specified
+        const budgetVal = answers.budget as string
+        if (budgetVal && parseFloat(budgetVal) > 0) {
+          window.latch?.setSetting?.({
+            key: `session-budget:${sessionId}`,
+            value: budgetVal,
+          })
+        }
       }, onCancel)
 
       wizardRef.current = wizard

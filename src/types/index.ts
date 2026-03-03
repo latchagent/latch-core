@@ -491,7 +491,7 @@ export interface SessionRecord {
   harnessId: string | null;
   harnessCommand: string | null;
   policy: string;
-  policyId: string;
+  policyIds: string[];
   policyOverride: PolicyDocument | null;
   projectDir: string | null;
   repoRoot: string | null;
@@ -544,6 +544,84 @@ export interface HookToolPayload {
   tool_input: Record<string, unknown>;
 }
 
+// ── Live Tailing ────────────────────────────────────────────────────────────
+
+export type LiveEventKind = 'tool-call' | 'thinking' | 'anomaly' | 'status-change'
+export type LiveSessionStatus = 'active' | 'thinking' | 'idle' | 'rate-limited'
+
+export interface LiveEvent {
+  id: string
+  sessionId: string
+  timestamp: string
+  kind: LiveEventKind
+
+  toolName?: string
+  target?: string
+  costUsd?: number
+  durationMs?: number
+  status?: 'running' | 'success' | 'error'
+  inputTokens?: number
+  outputTokens?: number
+
+  thinkingSummary?: string
+
+  anomalyKind?: string
+  anomalyMessage?: string
+
+  sessionStatus?: LiveSessionStatus
+}
+
+export interface LiveSessionStats {
+  sessionId: string
+  totalCostUsd: number
+  turnCount: number
+  startedAt: string
+  lastEventAt: string
+  filesTouched: Map<string, { reads: number; writes: number }>
+  cacheHitRatio: number
+  totalInputTokens: number
+  totalCacheReadTokens: number
+}
+
+// ── Budget Enforcement ─────────────────────────────────────────────────────
+
+export interface BudgetAlert {
+  id: string
+  sessionId: string
+  kind: 'warning' | 'exceeded'
+  currentCostUsd: number
+  limitUsd: number
+  timestamp: string
+}
+
+// ── Leak Detection ─────────────────────────────────────────────────────────
+
+export interface LeakMatch {
+  kind: string        // 'aws-key', 'github-token', 'private-key', 'high-entropy', etc.
+  preview: string     // redacted preview: "AKIA****XXXX"
+  filePath?: string
+  line?: number
+}
+
+// ── Checkpoints (Agent Rewind) ─────────────────────────────────────────────
+
+export interface Checkpoint {
+  id: string
+  sessionId: string
+  number: number
+  commitHash: string
+  turnStart: number
+  turnEnd: number
+  summary: string
+  filesChanged: string[]
+  costUsd: number
+  timestamp: string
+}
+
+// ── Session Replay ────────────────────────────────────────────────────────
+
+export type PlaybackSpeed = 0.5 | 1 | 2 | 4
+
 // ─── Approval ────────────────────────────────────────────────────────────────
 
 export type ApprovalDecision = 'approve' | 'deny'
@@ -594,6 +672,199 @@ export interface FeedItem {
   harnessId: string;
 }
 
+// ─── Usage / Observability ────────────────────────────────────────────────────
+
+export interface UsageEvent {
+  id: string;
+  sessionId: string | null;
+  harnessId: string;
+  model: string;
+  timestamp: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
+  toolName: string | null;
+  sourceFile: string;
+  requestId: string | null;
+}
+
+export interface UsageDaySummary {
+  date: string;
+  harnessId: string;
+  model: string;
+  totalInput: number;
+  totalOutput: number;
+  totalCacheWrite: number;
+  totalCacheRead: number;
+  totalCostUsd: number;
+  eventCount: number;
+}
+
+export interface UsageSessionSummary {
+  sessionId: string | null;
+  sessionName: string | null;
+  harnessId: string;
+  totalInput: number;
+  totalOutput: number;
+  totalCacheWrite: number;
+  totalCacheRead: number;
+  totalCostUsd: number;
+  eventCount: number;
+  models: string[];
+  firstEvent: string;
+  lastEvent: string;
+}
+
+export interface UsageModelSummary {
+  model: string;
+  totalCostUsd: number;
+  eventCount: number;
+}
+
+export interface UsageSummary {
+  todayCostUsd: number;
+  todayInputTokens: number;
+  todayOutputTokens: number;
+  cacheEfficiency: number;
+  dailySummaries: UsageDaySummary[];
+  sessionSummaries: UsageSessionSummary[];
+  modelSummaries: UsageModelSummary[];
+}
+
+// ─── Timeline (Phase 2) ─────────────────────────────────────────────────────
+
+export type TimelineActionType = 'read' | 'write' | 'bash' | 'search' | 'agent' | 'error' | 'respond' | 'prompt'
+
+export interface TimelineToolCall {
+  name: string
+  id: string
+  inputSummary: string
+  resultSummary: string | null
+  isError: boolean
+}
+
+export interface TimelineTurn {
+  index: number
+  requestId: string | null
+  timestamp: string
+  durationMs: number | null
+  model: string
+  stopReason: string | null
+  costUsd: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  thinkingSummary: string | null
+  textSummary: string | null
+  toolCalls: TimelineToolCall[]
+  actionType: TimelineActionType
+}
+
+export interface TimelineConversation {
+  id: string
+  filePath: string
+  projectSlug: string
+  projectName: string
+  lastModified: string
+  sizeBytes: number
+  promptPreview: string | null
+  totalCostUsd: number
+  totalTokens: number
+  turnCount: number
+}
+
+export interface TimelineData {
+  conversation: TimelineConversation
+  turns: TimelineTurn[]
+  totalCostUsd: number
+  totalDurationMs: number
+  turnCount: number
+  models: string[]
+}
+
+// ─── Analytics (Phase 4) ────────────────────────────────────────────────────
+
+export type WorkPhase = 'planning' | 'implementation' | 'debugging' | 'coordination' | 'responding'
+
+export interface PhaseCostBucket {
+  phase: WorkPhase
+  costUsd: number
+  turns: number
+  tokens: number
+  pct: number
+}
+
+export interface ContextPressurePoint {
+  turnIndex: number
+  timestamp: string
+  cumulativeInput: number
+  cumulativeOutput: number
+  cumulativeCacheRead: number
+  cumulativeCacheWrite: number
+  cacheHitRatio: number
+}
+
+export interface RateLimitGap {
+  afterTurnIndex: number
+  timestamp: string
+  gapMs: number
+  gapLabel: string
+}
+
+// ─── Loop Detection (Phase 3) ───────────────────────────────────────────────
+
+export type LoopKind = 'repeated-read' | 'repeated-failure' | 'write-cycle' | 'cost-spike'
+
+export interface LoopPattern {
+  kind: LoopKind
+  label: string
+  description: string
+  turnIndices: number[]
+  repetitions: number
+  wastedCostUsd: number
+  target: string
+}
+
+export interface ConversationAnalytics {
+  phaseCosts: PhaseCostBucket[]
+  contextPressure: ContextPressurePoint[]
+  rateLimitGaps: RateLimitGap[]
+  peakInputTokens: number
+  avgCacheHitRatio: number
+  longestGapMs: number
+  loops: LoopPattern[]
+  totalWastedCostUsd: number
+}
+
+export interface ProjectHealthMetrics {
+  projectSlug: string
+  projectName: string
+  lifetimeCostUsd: number
+  lifetimeTokens: number
+  conversationCount: number
+  totalTurns: number
+  avgCostPerConversation: number
+  modelBreakdown: { model: string; costUsd: number; turns: number }[]
+  weeklySpend: { week: string; costUsd: number; conversations: number }[]
+  phaseBreakdown: PhaseCostBucket[]
+}
+
+export interface AnalyticsDashboard {
+  projects: ProjectHealthMetrics[]
+  totalCostUsd: number
+  totalConversations: number
+  totalTurns: number
+}
+
+// ─── 1Password ──────────────────────────────────────────────────────────────
+
+export interface OpVault { id: string; name: string }
+export interface OpItem { id: string; title: string; category: string; vaultId: string }
+export interface OpField { id: string; label: string; type: string; sectionLabel?: string }
+
 // ─── Updater ─────────────────────────────────────────────────────────────────
 
 export type UpdateStatus =
@@ -616,7 +887,7 @@ export interface UpdateState {
 
 export type RailPanel = 'activity' | 'policy' | 'services' | 'gateway';
 
-export type AppView = 'home' | 'policies' | 'skills' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway';
+export type AppView = 'home' | 'policies' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'create-service' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway' | 'usage' | 'timeline' | 'analytics' | 'live' | 'replay' | 'rewind';
 
 // ─── Window.latch API ─────────────────────────────────────────────────────────
 // These types mirror the contextBridge API from the preload script.
@@ -625,7 +896,7 @@ export interface LatchAPI {
   platform: string;
   versions: Record<string, string>;
 
-  createPty(payload: { sessionId: string; cwd?: string; cols: number; rows: number; env?: Record<string, string>; dockerContainerId?: string }): Promise<{ ok: boolean; pid?: number; cwd?: string; shell?: string; error?: string }>;
+  createPty(payload: { sessionId: string; cwd?: string; cols: number; rows: number; env?: Record<string, string>; dockerContainerId?: string; sandboxCommand?: string; sandboxArgs?: string[] }): Promise<{ ok: boolean; pid?: number; cwd?: string; shell?: string; error?: string }>;
   writePty(payload: { sessionId: string; data: string }): Promise<{ ok: boolean }>;
   resizePty(payload: { sessionId: string; cols: number; rows: number }): Promise<{ ok: boolean }>;
   killPty(payload: { sessionId: string }): Promise<{ ok: boolean }>;
@@ -652,7 +923,7 @@ export interface LatchAPI {
   savePolicy(policy: PolicyDocument): Promise<{ ok: boolean; error?: string }>;
   deletePolicy(payload: { id: string }): Promise<{ ok: boolean }>;
   enforcePolicy(payload: {
-    policyId: string;
+    policyIds: string[];
     policyOverride?: PolicyDocument | null;
     harnessId: string;
     harnessCommand: string;
@@ -723,7 +994,7 @@ export interface LatchAPI {
   exportActivity(payload?: { sessionId?: string; format?: 'json' | 'csv' }): Promise<{ ok: boolean; filePath?: string; count?: number; error?: string }>;
   getRadarSignals(): Promise<{ ok: boolean; signals: RadarSignal[] }>;
   getAuthzPort(): Promise<{ ok: boolean; port: number }>;
-  authzRegister(payload: { sessionId: string; harnessId: string; policyId: string; policyOverride?: PolicyDocument | null }): Promise<{ ok: boolean }>;
+  authzRegister(payload: { sessionId: string; harnessId: string; policyIds: string[]; policyOverride?: PolicyDocument | null }): Promise<{ ok: boolean }>;
   authzUnregister(payload: { sessionId: string }): Promise<{ ok: boolean }>;
   onActivityEvent(callback: (event: ActivityEvent) => void): () => void;
   onRadarSignal(callback: (signal: RadarSignal) => void): () => void;
@@ -792,10 +1063,45 @@ export interface LatchAPI {
   refreshCredential(payload: { serviceId: string }): Promise<{ ok: boolean; error?: string }>;
   getCredentialStatus(payload: { serviceId: string }): Promise<{ ok: boolean; expired: boolean; expiresAt: string | null; lastValidated: string | null }>;
 
+  // 1Password integration (uses `op` CLI bundled with 1Password 8+)
+  opStatus(): Promise<{ available: boolean; connected: boolean }>;
+  opConnect(): Promise<{ ok: boolean; error?: string }>;
+  opDisconnect(): Promise<{ ok: boolean }>;
+  opListVaults(): Promise<{ ok: boolean; vaults: OpVault[]; error?: string }>;
+  opListItems(payload: { vaultId: string }): Promise<{ ok: boolean; items: OpItem[]; error?: string }>;
+  opGetItemFields(payload: { itemId: string; vaultId: string }): Promise<{ ok: boolean; fields: OpField[]; error?: string }>;
+
   // Feed
   listFeed(payload?: { sessionId?: string; limit?: number }): Promise<{ ok: boolean; items: FeedItem[]; total: number }>;
   clearFeed(payload?: { sessionId?: string }): Promise<{ ok: boolean }>;
   onFeedUpdate(callback: (item: FeedItem) => void): () => void;
+
+  // Usage / Observability
+  listUsage(payload?: { sessionId?: string; limit?: number; offset?: number }): Promise<{ ok: boolean; events: UsageEvent[]; total: number }>;
+  getUsageSummary(payload?: { days?: number; sessionId?: string }): Promise<{ ok: boolean; summary: UsageSummary }>;
+  clearUsage(payload?: { sessionId?: string }): Promise<{ ok: boolean }>;
+  exportUsage(payload?: { sessionId?: string; format?: 'json' | 'csv' }): Promise<{ ok: boolean; filePath?: string; count?: number; error?: string }>;
+  onUsageEvent(callback: (event: UsageEvent) => void): () => void;
+  onUsageBackfillProgress(callback: (progress: { current: number; total: number }) => void): () => void;
+  onLiveEvent(callback: (event: LiveEvent) => void): () => void;
+  onBudgetAlert(callback: (alert: BudgetAlert) => void): () => void;
+  respondBudgetAlert(payload: { alertId: string; action: 'kill' | 'extend' }): Promise<{ ok: boolean }>;
+
+  // Rewind / Checkpoints
+  listCheckpoints(payload: { sessionId: string }): Promise<{ ok: boolean; checkpoints: Checkpoint[] }>;
+  searchCheckpoints(payload: { query: string; sessionId?: string }): Promise<{ ok: boolean; checkpoints: Checkpoint[] }>;
+  gitLog(payload: { cwd: string; limit?: number }): Promise<{ ok: boolean; commits: { hash: string; message: string; timestamp: string }[]; error?: string }>;
+  gitDiff(payload: { cwd: string; from: string; to?: string }): Promise<{ ok: boolean; diff: string; error?: string }>;
+  rewind(payload: { sessionId: string; checkpointId: string }): Promise<{ ok: boolean; rewindContext?: string; error?: string }>;
+  forkFromCheckpoint(payload: { checkpointId: string; sourceSessionId: string }): Promise<{ ok: boolean; workspacePath?: string; branchRef?: string; repoRoot?: string; error?: string }>;
+
+  // Timeline
+  listTimelineConversations(payload: { projectSlug?: string }): Promise<{ ok: boolean; conversations: TimelineConversation[] }>;
+  loadTimeline(payload: { filePath: string }): Promise<{ ok: boolean; data: TimelineData | null; error?: string }>;
+
+  // Analytics
+  getConversationAnalytics(payload: { filePath: string }): Promise<{ ok: boolean; analytics: ConversationAnalytics | null; error?: string }>;
+  getAnalyticsDashboard(): Promise<{ ok: boolean; dashboard: AnalyticsDashboard | null; error?: string }>;
 }
 
 // Extend the Window interface so TypeScript knows about window.latch.

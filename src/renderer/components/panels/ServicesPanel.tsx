@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
-import ServiceEditor from '../modals/ServiceEditor'
 import type { ServiceDefinition } from '../../../types'
 
 export default function ServicesPanel() {
@@ -9,9 +8,7 @@ export default function ServicesPanel() {
   const servicesLoaded = useAppStore(s => s.servicesLoaded)
   const loadServices = useAppStore(s => s.loadServices)
   const deleteService = useAppStore(s => s.deleteService)
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [editingService, setEditingService] = useState<ServiceDefinition | null>(null)
-  const [editingHasCredential, setEditingHasCredential] = useState(false)
+  const openServiceEditor = useAppStore(s => s.openServiceEditor)
   const [validating, setValidating] = useState<string | null>(null)
   const [validationResults, setValidationResults] = useState<Record<string, boolean | null>>({})
 
@@ -22,15 +19,11 @@ export default function ServicesPanel() {
   if (!servicesLoaded) return <div className="view-container"><p className="text-muted">Loading services...</p></div>
 
   const handleNewService = () => {
-    setEditingService(null)
-    setEditingHasCredential(false)
-    setEditorOpen(true)
+    openServiceEditor(null, false)
   }
 
   const handleEditService = (definition: ServiceDefinition, hasCredential: boolean) => {
-    setEditingService(definition)
-    setEditingHasCredential(hasCredential)
-    setEditorOpen(true)
+    openServiceEditor(definition, hasCredential)
   }
 
   const handleDeleteService = async (id: string, name: string) => {
@@ -39,9 +32,7 @@ export default function ServicesPanel() {
   }
 
   const handleCatalogClick = (catalog: ServiceDefinition) => {
-    setEditingService({ ...catalog, id: `custom-${Date.now()}` })
-    setEditingHasCredential(false)
-    setEditorOpen(true)
+    openServiceEditor({ ...catalog, id: `custom-${Date.now()}` }, false)
   }
 
   const handleValidate = async (serviceId: string) => {
@@ -56,12 +47,6 @@ export default function ServicesPanel() {
     } finally {
       setValidating(null)
     }
-  }
-
-  const handleEditorClose = () => {
-    setEditorOpen(false)
-    setEditingService(null)
-    loadServices()
   }
 
   return (
@@ -156,9 +141,6 @@ export default function ServicesPanel() {
         </>
       )}
 
-      {editorOpen && (
-        <ServiceEditor onClose={handleEditorClose} initial={editingService} hasExistingCredential={editingHasCredential} />
-      )}
     </div>
   )
 }

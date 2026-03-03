@@ -536,11 +536,8 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
     ? defaultHarness
     : undefined
 
-  // Build policy options — "None" is always available
-  const policyOptions: WizardOption[] = [
-    { label: `${DIM}None (no policy)${RESET}`, value: 'none' },
-    ...policies.map(p => ({ label: p.name, value: p.id })),
-  ]
+  // Build policy options for multiselect
+  const policyOptions: WizardOption[] = policies.map(p => ({ label: p.name, value: p.id }))
 
   const steps: WizardStep[] = [
     {
@@ -559,11 +556,11 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
     },
     {
       id: 'policy',
-      prompt: 'Policy',
-      type: 'select',
+      prompt: 'Policies',
+      type: 'multiselect',
       options: policyOptions,
-      default: policies.length > 0 ? policies[0].id : 'none',
-      hint: 'Select a policy to enforce guardrails for this session',
+      default: 'all',
+      hint: 'Space to toggle, Enter to confirm',
       skip: policies.length === 0,
     },
     {
@@ -591,6 +588,12 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
       prompt: 'What are you trying to build?',
       type: 'text',
       hint: 'e.g. Build a REST API for user authentication',
+    },
+    {
+      id: 'budget',
+      prompt: 'Session budget (USD)',
+      type: 'text',
+      hint: 'Leave blank to use default. e.g. 10',
     },
     {
       id: 'branch',

@@ -133,13 +133,27 @@ export class SecretStore {
 
   // ── Resolution (main-process only — never expose via IPC) ────────────────
 
-  /** Resolve a secret key to its decrypted value. Returns null if not found. */
+  /** Resolve a secret key to its decrypted value (sync — does NOT resolve op:// refs). */
   resolve(key: string): string | null {
     const row = this.db.prepare('SELECT value FROM secrets WHERE key = ?').get(key) as
       | { value: string }
       | undefined
     if (!row) return null
     return this._decrypt(row.value)
+  }
+
+  /**
+   * Resolve a secret key, following op:// references through the 1Password SDK.
+   * Falls back to the sync path for non-op:// values.
+   */
+  async resolveAsync(key: string): Promise<string | null> {
+    const raw = this.resolve(key)
+    if (!raw) return null
+    if (raw.startsWith('op://')) {
+      const { opResolve } = await import('../lib/op-connect')
+      return opResolve(raw)
+    }
+    return raw
   }
 
   /** Resolve multiple keys at once. Returns map of key → decrypted value. */
@@ -149,6 +163,16 @@ export class SecretStore {
       const value = this.resolve(key)
       if (value !== null) result.set(key, value)
     }
+    return result
+  }
+
+  /** Resolve multiple keys, following op:// references. */
+  async resolveManyAsync(keys: string[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>()
+    await Promise.all(keys.map(async (key) => {
+      const value = await this.resolveAsync(key)
+      if (value !== null) result.set(key, value)
+    }))
     return result
   }
 
@@ -163,6 +187,24 @@ export class SecretStore {
     return values
   }
 
+  /** Get all decrypted values, resolving op:// references. */
+  async allValuesAsync(): Promise<string[]> {
+    const rows = this.db.prepare('SELECT value FROM secrets').all() as { value: string }[]
+    const values: string[] = []
+    for (const row of rows) {
+      const v = this._decrypt(row.value)
+      if (!v) continue
+      if (v.startsWith('op://')) {
+        const { opResolve } = await import('../lib/op-connect')
+        const resolved = await opResolve(v)
+        if (resolved) values.push(resolved)
+      } else {
+        values.push(v)
+      }
+    }
+    return values
+  }
+
   /** Get all secrets as key → decrypted value map. Used for PTY env injection. */
   allKeyValues(): Record<string, string> {
     const rows = this.db.prepare('SELECT key, value FROM secrets').all() as { key: string; value: string }[]
@@ -171,6 +213,24 @@ export class SecretStore {
       const v = this._decrypt(row.value)
       if (v) result[row.key] = v
     }
+    return result
+  }
+
+  /** Get all secrets as key → value map, resolving op:// references. */
+  async allKeyValuesAsync(): Promise<Record<string, string>> {
+    const rows = this.db.prepare('SELECT key, value FROM secrets').all() as { key: string; value: string }[]
+    const result: Record<string, string> = {}
+    await Promise.all(rows.map(async (row) => {
+      const v = this._decrypt(row.value)
+      if (!v) return
+      if (v.startsWith('op://')) {
+        const { opResolve } = await import('../lib/op-connect')
+        const resolved = await opResolve(v)
+        if (resolved) result[row.key] = resolved
+      } else {
+        result[row.key] = v
+      }
+    }))
     return result
   }
 

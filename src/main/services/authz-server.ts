@@ -277,7 +277,7 @@ function toolDetailStr(toolName: string, toolInput: Record<string, unknown>): st
 interface RegisteredSession {
   sessionId: string
   harnessId: string
-  policyId: string
+  policyIds: string[]
   policyOverride: PolicyDocument | null
 }
 
@@ -410,8 +410,8 @@ export class AuthzServer {
   }
 
   /** Register a session for authorization. */
-  registerSession(sessionId: string, harnessId: string, policyId: string, policyOverride?: PolicyDocument | null): void {
-    this.sessions.set(sessionId, { sessionId, harnessId, policyId, policyOverride: policyOverride ?? null })
+  registerSession(sessionId: string, harnessId: string, policyIds: string[], policyOverride?: PolicyDocument | null): void {
+    this.sessions.set(sessionId, { sessionId, harnessId, policyIds, policyOverride: policyOverride ?? null })
   }
 
   /** Unregister a session. Auto-deny all pending approvals for this session. */
@@ -647,8 +647,8 @@ export class AuthzServer {
     res.end(JSON.stringify({ ok: true }))
   }
 
-  /** Resolve secret keys for latch-mcp-wrap. */
-  private processSecretsResolve(body: string, res: http.ServerResponse): void {
+  /** Resolve secret keys for latch-mcp-wrap (resolves op:// refs via 1Password). */
+  private async processSecretsResolve(body: string, res: http.ServerResponse): Promise<void> {
     if (!this.secretStore) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'SecretStore unavailable' }))
@@ -671,10 +671,10 @@ export class AuthzServer {
     }
 
     const resolved: Record<string, string> = {}
-    for (const key of payload.keys) {
-      const value = this.secretStore.resolve(String(key))
+    await Promise.all(payload.keys.map(async (key) => {
+      const value = await this.secretStore!.resolveAsync(String(key))
       if (value !== null) resolved[key] = value
-    }
+    }))
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ resolved }))
@@ -707,11 +707,16 @@ export class AuthzServer {
     const toolInput = (payload.tool_input ?? payload.args ?? {}) as Record<string, unknown>
     const { actionClass, risk } = classifyTool(toolName)
 
-    // Resolve effective policy (same merge logic as processAuthorize)
+    // Resolve effective policy — filter to session's selected policies
     const allResult = this.policyStore.listPolicies()
     let basePolicy: PolicyDocument
     if (allResult.ok && allResult.policies?.length) {
-      basePolicy = computeStrictestBaseline(allResult.policies, registered.harnessId)
+      const selected = registered.policyIds?.length
+        ? allResult.policies.filter(p => registered.policyIds.includes(p.id))
+        : allResult.policies
+      basePolicy = selected.length
+        ? computeStrictestBaseline(selected, registered.harnessId)
+        : { id: '__none__', name: 'No Policy', description: '', permissions: { allowBash: true, allowNetwork: true, allowFileWrite: true, confirmDestructive: false, blockedGlobs: [] }, harnesses: {} }
     } else {
       basePolicy = {
         id: '__emergency__',
@@ -864,8 +869,8 @@ export class AuthzServer {
     const toolInput = (payload.tool_input ?? payload.args ?? {}) as Record<string, unknown>
     const { actionClass, risk } = classifyTool(toolName)
 
-    // Resolve effective policy.
-    // All top-level policies are merged using strictest-wins semantics:
+    // Resolve effective policy — filter to session's selected policies.
+    // Selected policies are merged using strictest-wins semantics:
     //   - Boolean permissions: AND (false if ANY policy says false)
     //   - confirmDestructive: OR (true if ANY policy says true)
     //   - Tool rules: deny > prompt > allow per pattern
@@ -874,7 +879,12 @@ export class AuthzServer {
     let basePolicy: PolicyDocument
 
     if (allResult.ok && allResult.policies?.length) {
-      basePolicy = computeStrictestBaseline(allResult.policies, registered.harnessId)
+      const selected = registered.policyIds?.length
+        ? allResult.policies.filter(p => registered.policyIds.includes(p.id))
+        : allResult.policies
+      basePolicy = selected.length
+        ? computeStrictestBaseline(selected, registered.harnessId)
+        : { id: '__none__', name: 'No Policy', description: '', permissions: { allowBash: true, allowNetwork: true, allowFileWrite: true, confirmDestructive: false, blockedGlobs: [] }, harnesses: {} }
     } else {
       // No policies exist at all — use emergency deny-all
       basePolicy = {

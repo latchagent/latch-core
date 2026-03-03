@@ -6,7 +6,7 @@
  *  - Register global event listeners (PTY data, window resize) once on mount.
  *  - Boot the application (load harnesses + sessions from DB).
  *  - Render the two-column layout: Sidebar | Terminal area.
- *  - Mount modal overlays (PolicyEditor, SkillEditor).
+ *  - Mount modal overlays (PolicyEditor).
  */
 
 import React, { useEffect } from 'react'
@@ -20,21 +20,26 @@ import TerminalArea    from './components/TerminalArea'
 import WelcomeScreen       from './components/WelcomeScreen'
 import LatchTerminalPane   from './components/LatchTerminalPane'
 import PoliciesView    from './components/PoliciesView'
-import SkillsView      from './components/SkillsView'
 import AgentsView      from './components/AgentsView'
 import McpView         from './components/McpView'
 import FeedView         from './components/FeedView'
 import RadarView        from './components/RadarView'
+import UsageView        from './components/UsageView'
+import TimelineView     from './components/TimelineView'
+import AnalyticsView    from './components/AnalyticsView'
+import LiveView         from './components/LiveView'
+import ReplayView       from './components/ReplayView'
+import RewindView       from './components/RewindView'
 import DocsView         from './components/DocsView'
-import CreatePolicyView from './components/CreatePolicyView'
+import CreatePolicyView  from './components/CreatePolicyView'
+import CreateServiceView from './components/CreateServiceView'
 import ServicesView     from './components/panels/ServicesPanel'
 import GatewayView      from './components/panels/GatewayPanel'
 import SettingsView     from './components/panels/SettingsPanel'
 import PolicyEditor    from './components/modals/PolicyEditor'
-import SkillEditor     from './components/modals/SkillEditor'
-import SkillDetail     from './components/modals/SkillDetail'
 import McpEditor       from './components/modals/McpEditor'
 import McpDetail       from './components/modals/McpDetail'
+import BudgetAlertDialog from './components/modals/BudgetAlertDialog'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -69,14 +74,16 @@ export default function App() {
     handleFeedUpdate,
     handleApprovalRequest,
     handleApprovalResolved,
+    handleUsageEvent,
+    handleLiveEvent,
+    handleBudgetAlert,
+    activeBudgetAlert,
     loadHarnesses,
     loadSessions,
     loadSoundSetting,
     loadThemeSetting,
     detectDocker,
     appBooting,
-    skillEditorOpen,
-    skillDetailOpen,
     mcpEditorOpen,
     mcpDetailOpen,
   } = useAppStore()
@@ -111,6 +118,22 @@ export default function App() {
       handleFeedUpdate(item)
     })
 
+    // Register usage listener
+    const disposeUsageEvent = window.latch?.onUsageEvent?.((event) => {
+      handleUsageEvent(event)
+    })
+
+    // Register live event listener
+    const disposeLiveEvent = window.latch?.onLiveEvent?.((event) => {
+      handleLiveEvent(event)
+    })
+
+    // Register budget alert listener
+    const disposeBudgetAlert = window.latch?.onBudgetAlert?.((alert) => {
+      handleBudgetAlert(alert)
+      if (useAppStore.getState().soundNotifications) playNotificationSound()
+    })
+
     // Register approval listeners
     const disposeApprovalRequest = window.latch?.onApprovalRequest?.((approval) => {
       handleApprovalRequest(approval)
@@ -138,6 +161,9 @@ export default function App() {
       disposeActivityEvent?.()
       disposeRadarSignal?.()
       disposeFeedUpdate?.()
+      disposeUsageEvent?.()
+      disposeLiveEvent?.()
+      disposeBudgetAlert?.()
       disposeApprovalRequest?.()
       disposeApprovalResolved?.()
     }
@@ -170,11 +196,6 @@ export default function App() {
       if (e.key === 'p') {
         e.preventDefault()
         useAppStore.getState().setActiveView('policies')
-      }
-
-      if (e.key === 'i') {
-        e.preventDefault()
-        useAppStore.getState().setActiveView('skills')
       }
 
       if (e.key === 't') {
@@ -222,8 +243,6 @@ export default function App() {
   let mainContent: React.ReactNode
   if (activeView === 'policies') {
     mainContent = <PoliciesView />
-  } else if (activeView === 'skills') {
-    mainContent = <SkillsView />
   } else if (activeView === 'agents') {
     mainContent = <AgentsView />
   } else if (activeView === 'mcp') {
@@ -234,12 +253,26 @@ export default function App() {
     mainContent = <DocsView />
   } else if (activeView === 'radar') {
     mainContent = <RadarView />
+  } else if (activeView === 'usage') {
+    mainContent = <UsageView />
+  } else if (activeView === 'timeline') {
+    mainContent = <TimelineView />
+  } else if (activeView === 'analytics') {
+    mainContent = <AnalyticsView />
+  } else if (activeView === 'live') {
+    mainContent = <LiveView />
+  } else if (activeView === 'replay') {
+    mainContent = <ReplayView />
+  } else if (activeView === 'rewind') {
+    mainContent = <RewindView />
   } else if (activeView === 'services') {
     mainContent = <ServicesView />
   } else if (activeView === 'gateway') {
     mainContent = <GatewayView />
   } else if (activeView === 'create-policy') {
     mainContent = <CreatePolicyView />
+  } else if (activeView === 'create-service') {
+    mainContent = <CreateServiceView />
   } else if (activeView === 'edit-policy') {
     mainContent = <PolicyEditor />
   } else if (activeView === 'settings') {
@@ -262,10 +295,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       {/* ── Modal overlays ──────────────────────────────────────────────── */}
-      {skillEditorOpen  && <SkillEditor />}
-      {skillDetailOpen  && <SkillDetail />}
       {mcpEditorOpen    && <McpEditor />}
       {mcpDetailOpen    && <McpDetail />}
+      {activeBudgetAlert && <BudgetAlertDialog />}
       {/* ── App shell ───────────────────────────────────────────────────── */}
       <div className="app no-rail">
         <Sidebar />
