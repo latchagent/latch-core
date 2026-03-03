@@ -175,7 +175,7 @@ function scanConversationPreview(filePath: string): {
       // Collect assistant usage entries
       if (obj.type === 'assistant' && obj.message?.usage) {
         const model = obj.message.model
-        if (!model || model === 'synthetic') continue
+        if (!model || model === 'synthetic' || model === '<synthetic>') continue
         const usage = obj.message.usage
         const entry: UsageEntry = {
           model,
@@ -257,7 +257,7 @@ export function parseTimeline(filePath: string): TimelineData {
     if (obj.type === 'assistant' && obj.message?.usage) {
       const msg = obj.message
       // Skip synthetic/internal bookkeeping entries (no real API call)
-      if (!msg.model || msg.model === 'synthetic') continue
+      if (!msg.model || msg.model === 'synthetic' || msg.model === '<synthetic>') continue
       const usage = msg.usage ?? {}
 
       let thinkingText: string | null = null

@@ -44,9 +44,9 @@ export const SessionCreateSchema = z.object({
   repo_root: z.string().max(2048).nullable().optional(),
   worktree_path: z.string().max(2048).nullable().optional(),
   branch_ref: z.string().max(500).nullable().optional(),
-  policy_set: z.string().max(200).optional(),
+  policy_set: z.string().max(200).nullable().optional(),
   policy_override: z.any().optional(),
-  goal: z.string().max(50000).optional(),
+  goal: z.string().max(50000).nullable().optional(),
 }).passthrough()
 
 export const SessionUpdateSchema = z.object({

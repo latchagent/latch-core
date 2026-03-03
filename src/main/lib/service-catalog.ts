@@ -160,6 +160,30 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     },
   },
   {
+    id: 'linear',
+    name: 'Linear',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: ['token'] },
+    injection: {
+      env: { LINEAR_API_KEY: '${credential.token}' },
+      files: {},
+      proxy: {
+        domains: ['api.linear.app', 'linear.app'],
+        headers: { Authorization: '${credential.token}' },
+      },
+    },
+    dataTier: {
+      defaultTier: 'internal',
+      redaction: { patterns: ['lin_api_[a-zA-Z0-9]+'], fields: [] },
+    },
+    skill: {
+      description: 'Linear project management API access. Auth is automatic.',
+      capabilities: ['Linear GraphQL API', 'Issue management', 'Project tracking'],
+      constraints: ['Never print API keys', 'Use GraphQL API for all operations'],
+    },
+  },
+  {
     id: 'aws',
     name: 'AWS',
     category: 'cloud',

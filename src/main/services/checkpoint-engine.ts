@@ -175,6 +175,30 @@ export function checkpointOnFileWrite(sessionId: string, filePath: string): void
 }
 
 /**
+ * Called by the live-tailer when a human prompt is submitted.
+ * Flushes any pending writes immediately and creates a checkpoint
+ * of the current working tree state (even if no files changed —
+ * so the user can fork from any prompt boundary).
+ */
+export function checkpointOnPrompt(sessionId: string): void {
+  if (!_opts) return
+
+  const state = getOrCreateState(sessionId)
+  if (!state) return
+
+  // If there are pending file writes, flush them immediately
+  if (state.debounceTimer) {
+    clearTimeout(state.debounceTimer)
+    state.debounceTimer = null
+  }
+  if (state.pendingFiles.size > 0) {
+    flushCheckpoint(state).catch(err => {
+      console.warn('[checkpoint-engine] Prompt flush error:', err)
+    })
+  }
+}
+
+/**
  * Update turn index and thinking summary from live events.
  * Called when live-tailer processes thinking or tool-call events.
  */

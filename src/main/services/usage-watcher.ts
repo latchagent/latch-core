@@ -32,7 +32,7 @@ const watchers: fs.FSWatcher[] = []
  * e.g. /Users/foo/code/myproject → -Users-foo-code-myproject
  */
 function claudeSlug(repoRoot: string): string {
-  return repoRoot.replace(/\//g, '-')
+  return repoRoot.replace(/[/.]/g, '-')
 }
 
 /**

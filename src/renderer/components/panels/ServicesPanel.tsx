@@ -32,7 +32,7 @@ export default function ServicesPanel() {
   }
 
   const handleCatalogClick = (catalog: ServiceDefinition) => {
-    openServiceEditor({ ...catalog, id: `custom-${Date.now()}` }, false)
+    openServiceEditor(catalog, false)
   }
 
   const handleValidate = async (serviceId: string) => {

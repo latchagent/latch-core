@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "icons": "node scripts/generate-icons.mjs",
-    "postinstall": "electron-rebuild -f -w node-pty,better-sqlite3"
+    "postinstall": "electron-rebuild -f -w node-pty,better-sqlite3 && chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null; true"
   },
   "build": {
     "appId": "com.latch.desktop",

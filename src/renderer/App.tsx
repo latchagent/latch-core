@@ -40,6 +40,7 @@ import PolicyEditor    from './components/modals/PolicyEditor'
 import McpEditor       from './components/modals/McpEditor'
 import McpDetail       from './components/modals/McpDetail'
 import BudgetAlertDialog from './components/modals/BudgetAlertDialog'
+import EndSessionDialog from './components/modals/EndSessionDialog'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -86,6 +87,7 @@ export default function App() {
     appBooting,
     mcpEditorOpen,
     mcpDetailOpen,
+    endDialogSessionId,
   } = useAppStore()
 
   // ── Boot ──────────────────────────────────────────────────────────────────
@@ -309,6 +311,7 @@ export default function App() {
       {mcpEditorOpen    && <McpEditor />}
       {mcpDetailOpen    && <McpDetail />}
       {activeBudgetAlert && <BudgetAlertDialog />}
+      {endDialogSessionId && <EndSessionDialog />}
       {/* ── App shell ───────────────────────────────────────────────────── */}
       <div className="app no-rail">
         <Sidebar />

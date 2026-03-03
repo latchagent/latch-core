@@ -14,13 +14,14 @@ interface SessionItemProps {
 }
 
 function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps) {
-  const isResumable = session.needsReconnect && !session.showWizard && !!session.resumeId
-  const isDisconnected = session.needsReconnect && !session.showWizard && !session.resumeId
+  const isMerged = session.status === 'merged'
+  const isResumable = !isMerged && session.needsReconnect && !session.showWizard && !!session.resumeId
+  const isDisconnected = !isMerged && session.needsReconnect && !session.showWizard && !session.resumeId
   const status = useAgentStatus(session.id)
 
   return (
     <div
-      className={`session-item${isActive ? ' is-active' : ''}${isResumable ? ' is-resumable' : ''}${isDisconnected ? ' session-disconnected' : ''}`}
+      className={`session-item${isActive ? ' is-active' : ''}${isResumable ? ' is-resumable' : ''}${isMerged ? ' is-merged' : ''}${isDisconnected ? ' session-disconnected' : ''}`}
       onClick={onClick}
     >
       <div className="session-item-content">
@@ -29,11 +30,13 @@ function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps)
           {session.name}
         </span>
         <span className="session-meta">
-          {isResumable
-            ? `${session.harness || 'Claude'} · resumable`
-            : isDisconnected
-              ? `${session.harness || 'Shell'} · disconnected`
-              : (session.harness || 'Shell')}
+          {isMerged
+            ? `${session.harness || 'Claude'} · merged`
+            : isResumable
+              ? `${session.harness || 'Claude'} · resumable`
+              : isDisconnected
+                ? `${session.harness || 'Shell'} · disconnected`
+                : (session.harness || 'Shell')}
         </span>
       </div>
       <button

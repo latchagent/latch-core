@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PlayCircle, PauseCircle, SkipBack, SkipForward,
-  ArrowLeft, ArrowCounterClockwise, GitFork,
+  ArrowLeft, ArrowCounterClockwise, GitFork, MagnifyingGlass,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../store/useAppStore'
 import type { TimelineTurn, TimelineActionType, PlaybackSpeed, Checkpoint } from '../../types'
@@ -31,6 +31,32 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)
+}
+
+/** Parse a unified diff string into per-file chunks. */
+function parseDiffByFile(raw: string): Map<string, string> {
+  const result = new Map<string, string>()
+  const chunks = raw.split(/^(?=diff --git )/m)
+  for (const chunk of chunks) {
+    if (!chunk.startsWith('diff --git ')) continue
+    const nameMatch = chunk.match(/^diff --git a\/.+ b\/(.+)$/m)
+    if (nameMatch) result.set(nameMatch[1], chunk)
+  }
+  return result
+}
+
+/**
+ * Match a filesChanged path (often absolute) against diff-parsed relative paths.
+ * E.g. "/Users/foo/project/src/main.ts" should match the "src/main.ts" key.
+ */
+function findChunkForPath(chunks: Map<string, string>, filePath: string): string | undefined {
+  // Direct match first (relative paths)
+  if (chunks.has(filePath)) return chunks.get(filePath)
+  // Try matching by suffix — filesChanged stores absolute paths, diff uses relative
+  for (const [relPath, chunk] of chunks) {
+    if (filePath.endsWith('/' + relPath) || filePath === relPath) return chunk
+  }
+  return undefined
 }
 
 const ACTION_COLORS: Record<TimelineActionType, string> = {
@@ -98,13 +124,58 @@ function ActionLegend({ turns }: { turns: TimelineTurn[] }) {
   )
 }
 
+type FilterChip = 'checkpoints' | 'writes' | 'errors' | 'prompts'
+
+const FILTER_CHIPS: { id: FilterChip; label: string }[] = [
+  { id: 'checkpoints', label: 'Checkpoints' },
+  { id: 'writes', label: 'Writes' },
+  { id: 'errors', label: 'Errors' },
+  { id: 'prompts', label: 'Prompts' },
+]
+
+function turnMatchesChips(
+  turn: TimelineTurn,
+  chips: Set<FilterChip>,
+  checkpointIndices: number[],
+  index: number,
+): boolean {
+  if (chips.size === 0) return true
+  if (chips.has('checkpoints') && checkpointIndices.includes(index)) return true
+  if (chips.has('writes') && turn.actionType === 'write') return true
+  if (chips.has('errors') && turn.actionType === 'error') return true
+  if (chips.has('prompts') && turn.actionType === 'prompt') return true
+  return false
+}
+
+function turnMatchesSearch(
+  turn: TimelineTurn,
+  query: string,
+  checkpoint: Checkpoint | undefined,
+): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  if (turn.textSummary?.toLowerCase().includes(q)) return true
+  if (turn.thinkingSummary?.toLowerCase().includes(q)) return true
+  for (const tc of turn.toolCalls) {
+    if (tc.name.toLowerCase().includes(q)) return true
+    if (tc.inputSummary?.toLowerCase().includes(q)) return true
+  }
+  if (checkpoint) {
+    if (checkpoint.summary.toLowerCase().includes(q)) return true
+    for (const fp of checkpoint.filesChanged) {
+      if (fp.toLowerCase().includes(q)) return true
+    }
+  }
+  return false
+}
+
 const SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 1, 2, 4]
 
-/** Duration (ms) to display a turn during auto-play. Compress gaps > 10s. */
+/** Duration (ms) to display a turn during auto-play. Compress gaps > 5s. */
 function turnDisplayMs(turn: TimelineTurn, speed: PlaybackSpeed): number {
-  const raw = turn.durationMs ?? 2_000
-  const capped = raw > 10_000 ? 2_000 : raw
-  return Math.max(capped / speed, 200)
+  const raw = turn.durationMs ?? 800
+  const capped = raw > 5_000 ? 800 : raw
+  return Math.max(capped / speed, 100)
 }
 
 // ── Root ────────────────────────────────────────────────────────────────────
@@ -143,6 +214,21 @@ export default function ReplayView() {
   const [forkGoal, setForkGoal] = useState('')
   const [forkLoading, setForkLoading] = useState(false)
   const [forkError, setForkError] = useState('')
+
+  // Filter state
+  const [filterSearch, setFilterSearch] = useState('')
+  const [filterChips, setFilterChips] = useState<Set<FilterChip>>(new Set())
+
+  const toggleChip = (chip: FilterChip) => {
+    setFilterChips(prev => {
+      const next = new Set(prev)
+      if (next.has(chip)) next.delete(chip)
+      else next.add(chip)
+      return next
+    })
+  }
+
+  const isFiltering = filterSearch.length > 0 || filterChips.size > 0
 
   // Load conversations on mount
   useEffect(() => {
@@ -246,12 +332,14 @@ export default function ReplayView() {
 
   // Handle conversation selection — match by worktreePath first (Claude Code uses CWD slug)
   const handleConversationSelect = (filePath: string) => {
+    setFilterSearch('')
+    setFilterChips(new Set())
     const conv = timelineConversations.find(c => c.filePath === filePath)
     let sessionId: string | undefined
     if (conv) {
       for (const [id, s] of sessions) {
         const cwd = s.worktreePath ?? s.repoRoot
-        if (cwd && cwd.replace(/\//g, '-') === conv.projectSlug) {
+        if (cwd && cwd.replace(/[/.]/g, '-') === conv.projectSlug) {
           sessionId = id
           break
         }
@@ -266,7 +354,7 @@ export default function ReplayView() {
     for (const [, s] of sessions) {
       const cwd = s.worktreePath ?? s.repoRoot
       if (cwd) {
-        const slug = cwd.replace(/\//g, '-')
+        const slug = cwd.replace(/[/.]/g, '-')
         if (!s.name.startsWith('Session ')) map.set(slug, s.name)
         else if (!map.has(slug)) map.set(slug, s.name)
       }
@@ -279,6 +367,30 @@ export default function ReplayView() {
   const runningCost = playedTurns.reduce((sum, t) => sum + t.costUsd, 0)
   const runningTokens = playedTurns.reduce((sum, t) => sum + t.inputTokens + t.outputTokens, 0)
   const currentTurn = replayTurns[replayCurrentIndex] ?? null
+
+  // Filtered stream items (turns + gap markers)
+  const filteredStream = useMemo(() => {
+    if (!isFiltering) return null // null = show all, no filtering
+    const items: Array<{ type: 'turn'; turn: TimelineTurn; index: number } | { type: 'gap'; count: number }> = []
+    let hiddenRun = 0
+    for (let i = 0; i < playedTurns.length; i++) {
+      const turn = playedTurns[i]
+      const cp = replayCheckpointMap.get(i)
+      const matchesChip = turnMatchesChips(turn, filterChips, replayCheckpointIndices, i)
+      const matchesText = turnMatchesSearch(turn, filterSearch, cp)
+      if (matchesChip && matchesText) {
+        if (hiddenRun > 0) {
+          items.push({ type: 'gap', count: hiddenRun })
+          hiddenRun = 0
+        }
+        items.push({ type: 'turn', turn, index: i })
+      } else {
+        hiddenRun++
+      }
+    }
+    if (hiddenRun > 0) items.push({ type: 'gap', count: hiddenRun })
+    return items
+  }, [playedTurns, filterSearch, filterChips, replayCheckpointIndices, replayCheckpointMap, isFiltering])
 
   // Player view (when a replay is loaded)
   if (replayTurns.length > 0) {
@@ -298,28 +410,78 @@ export default function ReplayView() {
         {/* Stats bar */}
         <div className="replay-stats-bar">
           <span className="replay-stat">Turn {replayCurrentIndex + 1} / {replayTurns.length}</span>
-          <span className="replay-stat">{formatCost(runningCost)}</span>
-          <span className="replay-stat">{formatTokens(runningTokens)} tokens</span>
-          {currentTurn && (
-            <span className="replay-stat replay-stat-phase" style={{ color: ACTION_COLORS[currentTurn.actionType] }}>
-              {ACTION_LABELS[currentTurn.actionType]}
-            </span>
-          )}
+          <span className="replay-stat">{formatCost(runningCost)} <span className="replay-stat-suffix">total spend</span></span>
+          <span className="replay-stat">{formatTokens(runningTokens)} <span className="replay-stat-suffix">total tokens</span></span>
         </div>
 
         {/* Main content: two panels */}
         <div className="replay-panels">
           {/* Left: Activity stream */}
-          <div className="replay-stream" ref={streamRef}>
-            {playedTurns.map((turn, i) => (
-              <TurnCard
-                key={turn.index}
-                turn={turn}
-                isActive={i === replayCurrentIndex}
-                isCheckpoint={replayCheckpointIndices.includes(i)}
-                onClick={() => replaySeek(i)}
-              />
-            ))}
+          <div className="replay-stream-container">
+            {/* Filter bar */}
+            <div className="replay-filter-bar">
+              <div className="replay-filter-search">
+                <MagnifyingGlass size={14} weight="light" className="replay-filter-search-icon" />
+                <input
+                  type="text"
+                  className="replay-filter-input"
+                  placeholder="Search files, summaries..."
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                />
+                {isFiltering && (
+                  <span className="replay-filter-count">
+                    {filteredStream ? filteredStream.filter(i => i.type === 'turn').length : playedTurns.length} / {playedTurns.length}
+                  </span>
+                )}
+              </div>
+              <div className="replay-filter-chips">
+                {FILTER_CHIPS.map(chip => (
+                  <button
+                    key={chip.id}
+                    className={`replay-filter-chip${filterChips.has(chip.id) ? ' is-active' : ''}`}
+                    onClick={() => toggleChip(chip.id)}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Turn stream */}
+            <div className="replay-stream" ref={streamRef}>
+              {filteredStream ? (
+                filteredStream.map((item, idx) =>
+                  item.type === 'gap' ? (
+                    <div
+                      key={`gap-${idx}`}
+                      className="replay-filter-gap"
+                      onClick={() => { setFilterSearch(''); setFilterChips(new Set()) }}
+                    >
+                      {item.count} turn{item.count === 1 ? '' : 's'} hidden
+                    </div>
+                  ) : (
+                    <TurnCard
+                      key={item.turn.index}
+                      turn={item.turn}
+                      isActive={item.index === replayCurrentIndex}
+                      isCheckpoint={replayCheckpointIndices.includes(item.index)}
+                      onClick={() => replaySeek(item.index)}
+                    />
+                  ),
+                )
+              ) : (
+                playedTurns.map((turn, i) => (
+                  <TurnCard
+                    key={turn.index}
+                    turn={turn}
+                    isActive={i === replayCurrentIndex}
+                    isCheckpoint={replayCheckpointIndices.includes(i)}
+                    onClick={() => replaySeek(i)}
+                  />
+                ))
+              )}
+            </div>
           </div>
 
           {/* Right: Turn detail */}
@@ -330,6 +492,7 @@ export default function ReplayView() {
                   turn={currentTurn}
                   checkpoint={replayCheckpointMap.get(replayCurrentIndex) ?? null}
                   sessionId={replaySessionId}
+                  cwd={replaySessionId ? (sessions.get(replaySessionId)?.worktreePath ?? sessions.get(replaySessionId)?.repoRoot) : null}
                   onRewind={handleReplayRewind}
                   onFork={handleReplayFork}
                 />
@@ -482,7 +645,7 @@ function TurnCard({
       onClick={onClick}
     >
       <div className="replay-turn-header">
-        <span className="replay-turn-badge" style={{ background: ACTION_COLORS[turn.actionType] }}>
+        <span className="replay-turn-badge" style={{ '--_badge-color': ACTION_COLORS[turn.actionType] } as React.CSSProperties}>
           {ACTION_LABELS[turn.actionType]}
         </span>
         <span className="replay-turn-num">#{turn.index + 1}</span>
@@ -510,17 +673,65 @@ function TurnCard({
 
 // ── Turn Detail (Right Panel) ───────────────────────────────────────────────
 
-function TurnDetail({ turn, checkpoint, sessionId, onRewind, onFork }: {
+function TurnDetail({ turn, checkpoint, sessionId, cwd, onRewind, onFork }: {
   turn: TimelineTurn
   checkpoint?: Checkpoint | null
   sessionId?: string | null
+  cwd?: string | null
   onRewind?: (cp: Checkpoint) => void
   onFork?: (cp: Checkpoint) => void
 }) {
+  const [diffCache, setDiffCache] = useState<Map<string, Map<string, string>>>(new Map())
+  const [diffLoading, setDiffLoading] = useState<string | null>(null)
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
+
+  // Reset expanded files when checkpoint changes
+  useEffect(() => {
+    setExpandedFiles(new Set())
+  }, [checkpoint?.id])
+
+  const fetchDiff = async (cp: Checkpoint) => {
+    if (diffCache.has(cp.id) || diffLoading) return
+    if (!cwd) return
+    setDiffLoading(cp.id)
+    try {
+      let result = await window.latch.gitDiff({ cwd, from: cp.commitHash + '^', to: cp.commitHash })
+      // Fallback for root commits (no parent) — diff against empty tree
+      if (!result.ok) {
+        result = await window.latch.gitDiff({ cwd, from: '4b825dc642cb6eb9a060e54bf899d69f82cf7891', to: cp.commitHash })
+      }
+      if (result.ok && result.diff) {
+        setDiffCache(prev => new Map(prev).set(cp.id, parseDiffByFile(result.diff)))
+      }
+    } finally {
+      setDiffLoading(null)
+    }
+  }
+
+  const toggleFile = (cp: Checkpoint, filePath: string) => {
+    if (!diffCache.has(cp.id)) fetchDiff(cp)
+    setExpandedFiles(prev => {
+      const next = new Set(prev)
+      if (next.has(filePath)) next.delete(filePath)
+      else next.add(filePath)
+      return next
+    })
+  }
+
+  const renderDiffLines = (chunk: string) => {
+    return chunk.split('\n').map((line, i) => {
+      let cls = ''
+      if (line.startsWith('+') && !line.startsWith('+++')) cls = 'diff-add'
+      else if (line.startsWith('-') && !line.startsWith('---')) cls = 'diff-remove'
+      else if (line.startsWith('@@')) cls = 'diff-header'
+      return <div key={i} className={cls}>{line}</div>
+    })
+  }
+
   return (
     <div className="replay-turn-detail">
       <div className="replay-detail-header">
-        <span className="replay-detail-badge" style={{ background: ACTION_COLORS[turn.actionType] }}>
+        <span className="replay-detail-badge" style={{ '--_badge-color': ACTION_COLORS[turn.actionType] } as React.CSSProperties}>
           {ACTION_LABELS[turn.actionType]}
         </span>
         <span className="replay-detail-turn">Turn #{turn.index + 1}</span>
@@ -611,6 +822,38 @@ function TurnDetail({ turn, checkpoint, sessionId, onRewind, onFork }: {
             <span>{checkpoint.filesChanged.length} file{checkpoint.filesChanged.length === 1 ? '' : 's'} changed</span>
             {checkpoint.costUsd > 0 && <span>{formatCost(checkpoint.costUsd)}</span>}
           </div>
+
+          {/* Expandable per-file diffs */}
+          {checkpoint.filesChanged.length > 0 && (
+            <div className="replay-checkpoint-files">
+              {checkpoint.filesChanged.map(fp => {
+                const isExpanded = expandedFiles.has(fp)
+                const fileChunks = diffCache.get(checkpoint.id)
+                const chunk = fileChunks ? findChunkForPath(fileChunks, fp) : undefined
+                return (
+                  <div key={fp} className="replay-checkpoint-file-row">
+                    <button
+                      className="replay-checkpoint-file-toggle"
+                      onClick={() => toggleFile(checkpoint, fp)}
+                    >
+                      <span className={`replay-checkpoint-file-chevron${isExpanded ? ' is-open' : ''}`}>&#9654;</span>
+                      <span className="replay-checkpoint-file-path">{cwd && fp.startsWith(cwd) ? fp.slice(cwd.length + 1) : fp}</span>
+                      {diffLoading === checkpoint.id && !fileChunks && (
+                        <span className="replay-checkpoint-file-loading">loading...</span>
+                      )}
+                    </button>
+                    {isExpanded && chunk && (
+                      <pre className="replay-checkpoint-diff">{renderDiffLines(chunk)}</pre>
+                    )}
+                    {isExpanded && fileChunks && !chunk && (
+                      <pre className="replay-checkpoint-diff"><div className="diff-header">No diff available for this file</div></pre>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <div className="replay-detail-checkpoint-actions">
             <button className="replay-checkpoint-action-btn is-rewind" onClick={() => onRewind(checkpoint)}>
               <ArrowCounterClockwise size={14} weight="bold" />

@@ -36,6 +36,12 @@ export default function Topbar({ session }: TopbarProps) {
       <div className="status">
         Session: <span className="status-strong">{name}</span>
       </div>
+      {session?.branchRef && (
+        <div className="status">
+          Branch: <span className="status-strong">{session.branchRef}</span>
+          {session.worktreePath && <span className="topbar-badge">worktree</span>}
+        </div>
+      )}
       <div className="status">
         Sandbox: <span className={`status-strong ${sandboxClass}`}>{sandboxLabel}</span>
       </div>
@@ -43,7 +49,7 @@ export default function Topbar({ session }: TopbarProps) {
         <button
           className="topbar-end-btn"
           onClick={() => endSession(session.id)}
-          title="End session (Ctrl+C)"
+          title={session.branchRef ? 'End session (pause or merge)' : 'End session (Ctrl+C)'}
         >
           <StopCircle size={14} weight="bold" />
           End

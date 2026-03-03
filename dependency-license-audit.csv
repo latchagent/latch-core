@@ -1,0 +1,289 @@
+name,version,ecosystem,license_declared,license_resolved,description,risk_classification,depended_on_by
+serde,1.0.228,Rust,NOASSERTION,MIT OR Apache-2.0,Serialization/deserialization framework for Rust,PERMISSIVE - OK,469
+log,0.4.29,Rust,NOASSERTION,MIT OR Apache-2.0,Lightweight logging facade for Rust,PERMISSIVE - OK,257
+serde_json,1.0.149,Rust,NOASSERTION,MIT OR Apache-2.0,JSON serialization/deserialization via serde,PERMISSIVE - OK,183
+smallvec,1.15.1,Rust,NOASSERTION,MIT OR Apache-2.0,Stack-allocated vector that spills to heap,PERMISSIVE - OK,181
+anyhow,1.0.101,Rust,NOASSERTION,MIT OR Apache-2.0,Flexible error handling with context,PERMISSIVE - OK,176
+rand_core,0.6.4,Rust,NOASSERTION,MIT OR Apache-2.0,Core traits for random number generation,PERMISSIVE - OK,168
+wasmparser,0.244.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WebAssembly binary format parser,PERMISSIVE - OK,161
+id-arena,2.3.0,Rust,NOASSERTION,MIT OR Apache-2.0,Arena allocator with typed IDs,PERMISSIVE - OK,159
+leb128fmt,0.1.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,LEB128 variable-length integer encoding,PERMISSIVE - OK,159
+wasm-encoder,0.244.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WebAssembly binary format encoder,PERMISSIVE - OK,158
+wit-parser,0.244.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WIT (WebAssembly Interface Type) parser,PERMISSIVE - OK,158
+wasm-metadata,0.244.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WebAssembly module metadata reader/writer,PERMISSIVE - OK,157
+wit-bindgen-core,0.51.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,Core library for WIT binding generation,PERMISSIVE - OK,156
+wit-component,0.244.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WebAssembly component model tooling,PERMISSIVE - OK,156
+wit-bindgen-rust,0.51.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,Rust binding generator for WIT,PERMISSIVE - OK,155
+wit-bindgen-rust-macro,0.51.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,Proc-macro for WIT Rust bindings,PERMISSIVE - OK,154
+wit-bindgen,0.51.0,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,Language binding generator for WIT,PERMISSIVE - OK,153
+bytes,1.11.1,Rust,NOASSERTION,MIT,Efficient byte buffer for network programming,PERMISSIVE - OK,151
+r-efi,5.3.0,Rust,NOASSERTION,MIT OR Apache-2.0 OR LGPL-2.1+,UEFI reference definitions for Rust,WEAK COPYLEFT (LGPL) - OK if dynamically linked,151
+wasip2,1.0.2+wasi-0.2.9,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WASI Preview 2 API bindings,PERMISSIVE - OK,151
+find-msvc-tools,0.1.9,Rust,NOASSERTION,MIT,Locates MSVC build tools on Windows,PERMISSIVE - OK,150
+zerocopy-derive,0.8.39,Rust,NOASSERTION,BSD-2-Clause OR MIT OR Apache-2.0,Derive macros for zero-copy parsing,PERMISSIVE - OK,132
+zerocopy,0.8.39,Rust,NOASSERTION,BSD-2-Clause OR MIT OR Apache-2.0,Zero-copy parsing and serialization,PERMISSIVE - OK,129
+socket2,0.6.2,Rust,NOASSERTION,MIT OR Apache-2.0,Cross-platform low-level socket API,PERMISSIVE - OK,112
+libm,0.2.16,Rust,NOASSERTION,MIT OR Apache-2.0,Pure Rust math library (libm port),PERMISSIVE - OK,110
+redox_syscall,0.5.18,Rust,NOASSERTION,MIT,Redox OS system call interface,PERMISSIVE - OK,109
+zeroize,1.8.2,Rust,NOASSERTION,MIT OR Apache-2.0,Securely zeroes memory on drop,PERMISSIVE - OK,105
+rand_chacha,0.9.0,Rust,NOASSERTION,MIT OR Apache-2.0,ChaCha-based cryptographic RNG,PERMISSIVE - OK,98
+zeroize_derive,1.4.3,Rust,NOASSERTION,MIT OR Apache-2.0,Derive macro for secure memory zeroing,PERMISSIVE - OK,97
+rand,0.9.2,Rust,NOASSERTION,MIT OR Apache-2.0,Random number generation library,PERMISSIVE - OK,96
+num-traits,0.2.19,Rust,NOASSERTION,MIT OR Apache-2.0,Numeric traits for generic math,PERMISSIVE - OK,95
+typenum,1.19.0,Rust,NOASSERTION,MIT OR Apache-2.0,Type-level numbers for compile-time computation,PERMISSIVE - OK,92
+ppv-lite86,0.2.21,Rust,NOASSERTION,MIT OR Apache-2.0,SIMD intrinsics abstraction layer,PERMISSIVE - OK,90
+synstructure,0.13.2,Rust,NOASSERTION,MIT,Helper for writing custom derive macros,PERMISSIVE - OK,89
+parking_lot,0.12.5,Rust,NOASSERTION,MIT OR Apache-2.0,High-performance synchronization primitives,PERMISSIVE - OK,88
+stable_deref_trait,1.2.1,Rust,NOASSERTION,MIT OR Apache-2.0,Trait for stable pointer dereferencing,PERMISSIVE - OK,87
+thiserror-impl,1.0.69,Rust,NOASSERTION,MIT OR Apache-2.0,Proc-macro impl for thiserror,PERMISSIVE - OK,86
+thiserror,1.0.69,Rust,NOASSERTION,MIT OR Apache-2.0,Derive macro for std::error::Error,PERMISSIVE - OK,84
+generic-array,0.14.7,Rust,NOASSERTION,MIT,Generic array types with const generics,PERMISSIVE - OK,83
+subtle,2.6.1,Rust,NOASSERTION,BSD-3-Clause,Constant-time cryptographic operations,PERMISSIVE - OK,79
+crypto-common,0.1.7,Rust,NOASSERTION,MIT OR Apache-2.0,Common traits for cryptographic algorithms,PERMISSIVE - OK,78
+futures-util,0.3.31,Rust,NOASSERTION,MIT OR Apache-2.0,Utilities for working with futures/async,PERMISSIVE - OK,76
+regex-syntax,0.8.9,Rust,NOASSERTION,MIT OR Apache-2.0,Regular expression parser,PERMISSIVE - OK,76
+mio,1.1.1,Rust,NOASSERTION,MIT,Low-level non-blocking I/O library,PERMISSIVE - OK,75
+zerofrom-derive,0.1.6,Rust,NOASSERTION,Unicode-3.0,Derive for zero-copy deserialization (ICU4X),PERMISSIVE - OK,75
+displaydoc,0.2.5,Rust,NOASSERTION,MIT OR Apache-2.0,Derive Display via doc comments,PERMISSIVE - OK,74
+winapi-i686-pc-windows-gnu,0.4.0,Rust,NOASSERTION,MIT OR Apache-2.0,Import libraries for Windows i686-gnu,PERMISSIVE - OK,74
+winapi-x86_64-pc-windows-gnu,0.4.0,Rust,NOASSERTION,MIT OR Apache-2.0,Import libraries for Windows x86_64-gnu,PERMISSIVE - OK,74
+winapi,0.3.9,Rust,NOASSERTION,MIT OR Apache-2.0,Raw FFI bindings to Windows APIs,PERMISSIVE - OK,73
+yoke-derive,0.8.1,Rust,NOASSERTION,Unicode-3.0,Derive macro for zero-copy data structures (ICU4X),PERMISSIVE - OK,73
+zerofrom,0.1.6,Rust,NOASSERTION,Unicode-3.0,Zero-copy cloning trait (ICU4X),PERMISSIVE - OK,73
+regex-automata,0.4.14,Rust,NOASSERTION,MIT OR Apache-2.0,Low-level regex automata engine,PERMISSIVE - OK,72
+signal-hook-registry,1.4.8,Rust,NOASSERTION,MIT OR Apache-2.0,OS signal handler registration,PERMISSIVE - OK,72
+yoke,0.8.1,Rust,NOASSERTION,Unicode-3.0,Zero-copy data borrowing framework (ICU4X),PERMISSIVE - OK,71
+zerovec-derive,0.11.2,Rust,NOASSERTION,Unicode-3.0,Derive for zero-copy vectors (ICU4X),PERMISSIVE - OK,70
+base64,0.22.1,Rust,NOASSERTION,MIT OR Apache-2.0,Base64 encoding/decoding,PERMISSIVE - OK,68
+tokio,1.49.0,Rust,NOASSERTION,MIT,Async runtime for Rust,PERMISSIVE - OK,68
+zerovec,0.11.5,Rust,NOASSERTION,Unicode-3.0,Zero-copy vector types (ICU4X),PERMISSIVE - OK,68
+aho-corasick,1.1.4,Rust,NOASSERTION,MIT OR Unlicense,Multi-pattern string search algorithm,PERMISSIVE - OK,64
+byteorder,1.5.0,Rust,NOASSERTION,MIT OR Unlicense,Big/little-endian byte order read/write,PERMISSIVE - OK,64
+either,1.15.0,Rust,NOASSERTION,MIT OR Apache-2.0,Enum with Left/Right variants,PERMISSIVE - OK,64
+toml,0.8.2,Rust,NOASSERTION,MIT OR Apache-2.0,TOML configuration file parser,PERMISSIVE - OK,64
+litemap,0.8.1,Rust,NOASSERTION,Unicode-3.0,Sorted key-value map (ICU4X),PERMISSIVE - OK,63
+tinystr,0.8.2,Rust,NOASSERTION,Unicode-3.0,Small string optimized for short text (ICU4X),PERMISSIVE - OK,63
+tokio-macros,2.6.0,Rust,NOASSERTION,MIT,Proc-macros for tokio async runtime,PERMISSIVE - OK,63
+tracing-core,0.1.36,Rust,NOASSERTION,MIT,Core primitives for application tracing,PERMISSIVE - OK,63
+typing-extensions,4.15.0,Python,NOASSERTION,PSF-2.0,Backports of typing module features,PERMISSIVE - OK,63
+writeable,0.6.2,Rust,NOASSERTION,Unicode-3.0,Efficient string writing trait (ICU4X),PERMISSIVE - OK,63
+serde_spanned,0.6.8,Rust,NOASSERTION,MIT OR Apache-2.0,Serde support for spanned values,PERMISSIVE - OK,61
+toml_datetime,0.6.3,Rust,NOASSERTION,MIT OR Apache-2.0,TOML datetime type,PERMISSIVE - OK,61
+tracing-attributes,0.1.31,Rust,NOASSERTION,MIT,Attribute macros for tracing instrumentation,PERMISSIVE - OK,61
+winnow,0.5.40,Rust,NOASSERTION,MIT,Streaming parser combinator library,PERMISSIVE - OK,61
+block-buffer,0.10.4,Rust,NOASSERTION,MIT OR Apache-2.0,Fixed-size buffer for block processing,PERMISSIVE - OK,60
+digest,0.10.7,Rust,NOASSERTION,MIT OR Apache-2.0,Traits for cryptographic hash functions,PERMISSIVE - OK,59
+icu_provider,2.1.1,Rust,NOASSERTION,Unicode-3.0,Data provider for ICU4X internationalization,PERMISSIVE - OK,59
+tracing,0.1.44,Rust,NOASSERTION,MIT,Application-level tracing framework,PERMISSIVE - OK,59
+icu_collections,2.1.1,Rust,NOASSERTION,Unicode-3.0,Collection types for ICU4X,PERMISSIVE - OK,58
+icu_properties_data,2.1.2,Rust,NOASSERTION,Unicode-3.0,Unicode property data for ICU4X,PERMISSIVE - OK,58
+regex,1.12.3,Rust,NOASSERTION,MIT OR Apache-2.0,Regular expression engine,PERMISSIVE - OK,58
+const-oid,0.9.6,Rust,NOASSERTION,MIT OR Apache-2.0,Const-friendly ASN.1 OID type,PERMISSIVE - OK,57
+icu_normalizer_data,2.1.1,Rust,NOASSERTION,Unicode-3.0,Unicode normalization data for ICU4X,PERMISSIVE - OK,56
+icu_properties,2.1.2,Rust,NOASSERTION,Unicode-3.0,Unicode property queries for ICU4X,PERMISSIVE - OK,56
+spin,0.9.8,Rust,NOASSERTION,MIT,Spinlock-based synchronization primitives,PERMISSIVE - OK,56
+windows-core,0.62.2,Rust,NOASSERTION,MIT OR Apache-2.0,Core Windows API support library,PERMISSIVE - OK,56
+icu_normalizer,2.1.1,Rust,NOASSERTION,Unicode-3.0,Unicode text normalization (ICU4X),PERMISSIVE - OK,54
+numpy,2.4.2,Python,NOASSERTION,BSD-3-Clause,Numerical computing with N-dimensional arrays,PERMISSIVE - OK,54
+cpufeatures,0.2.17,Rust,NOASSERTION,MIT OR Apache-2.0,CPU feature detection at runtime,PERMISSIVE - OK,53
+crossbeam-utils,0.8.21,Rust,NOASSERTION,MIT OR Apache-2.0,Concurrent programming utilities,PERMISSIVE - OK,53
+utf8_iter,1.0.4,Rust,NOASSERTION,MIT OR Apache-2.0,UTF-8 byte iterator,PERMISSIVE - OK,53
+valuable,0.1.1,Rust,NOASSERTION,MIT,Object-safe value inspection trait,PERMISSIVE - OK,53
+idna_adapter,1.2.1,Rust,NOASSERTION,MIT OR Apache-2.0,IDNA adapter for URL processing,PERMISSIVE - OK,52
+lazy_static,1.5.0,Rust,NOASSERTION,MIT OR Apache-2.0,Lazily initialized static variables,PERMISSIVE - OK,52
+toml_edit,0.20.2,Rust,NOASSERTION,MIT OR Apache-2.0,Format-preserving TOML editor,PERMISSIVE - OK,51
+futures-executor,0.3.31,Rust,NOASSERTION,MIT OR Apache-2.0,Executor for running futures,PERMISSIVE - OK,50
+idna,1.1.0,Rust,NOASSERTION,MIT OR Apache-2.0,Internationalized domain name processing,PERMISSIVE - OK,50
+http,0.2.12,Rust,NOASSERTION,MIT OR Apache-2.0,"HTTP types (request, response, headers)",PERMISSIVE - OK,49
+itertools,0.14.0,Rust,NOASSERTION,MIT OR Apache-2.0,Extra iterator adaptors and methods,PERMISSIVE - OK,49
+phf_shared,0.10.0,Rust,NOASSERTION,MIT,Shared code for perfect hash function maps,PERMISSIVE - OK,49
+url,2.5.8,Rust,NOASSERTION,MIT OR Apache-2.0,URL parser (WHATWG standard),PERMISSIVE - OK,48
+packaging,26,Python,NOASSERTION,Apache-2.0 OR BSD-2-Clause,Python package version utilities,PERMISSIVE - OK,47
+num-integer,0.1.46,Rust,NOASSERTION,MIT OR Apache-2.0,Integer trait extensions and algorithms,PERMISSIVE - OK,46
+idna,3.11,Python,NOASSERTION,BSD-3-Clause,Internationalized domain names support,PERMISSIVE - OK,44
+nom,7.1.3,Rust,NOASSERTION,MIT,Parser combinator framework,PERMISSIVE - OK,44
+rustc_version,0.4.1,Rust,NOASSERTION,MIT OR Apache-2.0,Query rustc compiler version,PERMISSIVE - OK,43
+simd-adler32,0.3.8,Rust,NOASSERTION,MIT,SIMD-accelerated Adler-32 checksum,PERMISSIVE - OK,43
+num-conv,0.2.0,Rust,NOASSERTION,MIT OR Apache-2.0,Numeric type conversions,PERMISSIVE - OK,42
+phf_generator,0.8.0,Rust,NOASSERTION,MIT,Perfect hash function generator,PERMISSIVE - OK,42
+proc-macro-crate,2.0.2,Rust,NOASSERTION,MIT OR Apache-2.0,Find crate names from proc-macros,PERMISSIVE - OK,42
+iana-time-zone,0.1.65,Rust,NOASSERTION,MIT OR Apache-2.0,System IANA timezone detection,PERMISSIVE - OK,41
+certifi,2026.2.25,Python,NOASSERTION,MPL-2.0,Mozilla CA certificate bundle for Python,WEAK COPYLEFT (MPL) - file-level copyleft only,40
+libloading,0.8.9,Rust,NOASSERTION,ISC,Dynamic library loading (dlopen/LoadLibrary),PERMISSIVE - OK,40
+powerfmt,0.2.0,Rust,NOASSERTION,MIT OR Apache-2.0,Power formatting utilities,PERMISSIVE - OK,40
+pyyaml,6.0.3,Python,NOASSERTION,MIT,YAML parser and emitter for Python,PERMISSIVE - OK,40
+strsim,0.11.1,Rust,NOASSERTION,MIT,"String similarity metrics (Levenshtein, etc.)",PERMISSIVE - OK,40
+deranged,0.5.6,Rust,NOASSERTION,MIT OR Apache-2.0,Ranged integer types,PERMISSIVE - OK,39
+icu_locale_core,2.1.1,Rust,NOASSERTION,Unicode-3.0,Locale data types for ICU4X,PERMISSIVE - OK,39
+potential_utf,0.1.4,Rust,NOASSERTION,MIT OR Apache-2.0,Potentially-valid UTF-8/16 types,PERMISSIVE - OK,39
+time-macros,0.2.27,Rust,NOASSERTION,MIT OR Apache-2.0,Proc-macros for the time crate,PERMISSIVE - OK,39
+uuid,1.20.0,Rust,NOASSERTION,MIT OR Apache-2.0,UUID generation and parsing,PERMISSIVE - OK,39
+zerotrie,0.2.3,Rust,NOASSERTION,Unicode-3.0,Zero-copy trie for ICU4X,PERMISSIVE - OK,39
+target-lexicon,0.12.16,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,Target triple parsing,PERMISSIVE - OK,38
+urllib3,2.6.3,Python,NOASSERTION,MIT,HTTP client library with connection pooling,PERMISSIVE - OK,38
+android_system_properties,0.1.5,Rust,NOASSERTION,MIT OR Apache-2.0,Android system property access,PERMISSIVE - OK,37
+cfg-expr,0.15.8,Rust,NOASSERTION,MIT OR Apache-2.0,Cfg expression parser/evaluator,PERMISSIVE - OK,37
+rustls-pki-types,1.14.0,Rust,NOASSERTION,MIT OR Apache-2.0,PKI types for Rustls TLS,PERMISSIVE - OK,37
+version-compare,0.2.0,Rust,NOASSERTION,MIT,Semantic version comparison,PERMISSIVE - OK,37
+web-time,1.1.0,Rust,NOASSERTION,MIT OR Apache-2.0,Cross-platform time (web + native),PERMISSIVE - OK,37
+foreign-types-shared,0.1.1,Rust,NOASSERTION,MIT OR Apache-2.0,Shared FFI type wrappers,PERMISSIVE - OK,36
+minimal-lexical,0.2.1,Rust,NOASSERTION,MIT OR Apache-2.0,Minimal float parsing,PERMISSIVE - OK,36
+ring,0.17.14,Rust,NOASSERTION,ISC AND MIT AND OpenSSL,"Cryptographic operations (TLS, hashing, signing)",PERMISSIVE - OK,36
+system-deps,6.2.2,Rust,NOASSERTION,MIT OR Apache-2.0,Declare native system library dependencies,PERMISSIVE - OK,36
+untrusted,0.9.0,Rust,NOASSERTION,ISC,Safe handling of untrusted input,PERMISSIVE - OK,36
+gio-sys,0.18.1,Rust,NOASSERTION,MIT,FFI bindings to GIO (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,35
+glib-sys,0.18.1,Rust,NOASSERTION,MIT,FFI bindings to GLib (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,35
+charset-normalizer,3.4.4,Python,NOASSERTION,MIT,Character encoding detection,PERMISSIVE - OK,34
+foreign-types,0.3.2,Rust,NOASSERTION,MIT OR Apache-2.0,Safe wrappers for foreign types,PERMISSIVE - OK,34
+requests,2.32.5,Python,NOASSERTION,Apache-2.0,HTTP library for Python,PERMISSIVE - OK,34
+time,0.3.47,Rust,NOASSERTION,MIT OR Apache-2.0,Date and time library,PERMISSIVE - OK,34
+bytemuck,1.25.0,Rust,NOASSERTION,Zlib OR MIT OR Apache-2.0,Safe transmutation of plain data types,PERMISSIVE - OK,33
+gobject-sys,0.18.0,Rust,NOASSERTION,MIT,FFI bindings to GObject (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,33
+rustc-hash,1.1.0,Rust,NOASSERTION,MIT OR Apache-2.0,Fast non-cryptographic hash (FxHash),PERMISSIVE - OK,33
+glam,0.25.0,Rust,NOASSERTION,MIT OR Apache-2.0,"3D math library (vectors, matrices, quaternions)",PERMISSIVE - OK,32
+ident_case,1.0.1,Rust,NOASSERTION,MIT OR Apache-2.0,Identifier case conversion,PERMISSIVE - OK,32
+libredox,0.1.12,Rust,NOASSERTION,MIT,Redox OS library bindings,PERMISSIVE - OK,32
+tokio-util,0.7.18,Rust,NOASSERTION,MIT,Utilities for working with Tokio,PERMISSIVE - OK,32
+toml_parser,1.0.8+spec-1.1.0,Rust,NOASSERTION,MIT OR Apache-2.0,TOML file parser,PERMISSIVE - OK,32
+crc32fast,1.5.0,Rust,NOASSERTION,MIT OR Apache-2.0,Fast CRC32 checksum computation,PERMISSIVE - OK,31
+iana-time-zone-haiku,0.1.2,Rust,NOASSERTION,MIT OR Apache-2.0,Haiku OS timezone detection,PERMISSIVE - OK,31
+fastrand,2.3.0,Rust,NOASSERTION,MIT OR Apache-2.0,Fast non-cryptographic random number generator,PERMISSIVE - OK,30
+memoffset,0.9.1,Rust,NOASSERTION,MIT,Offset-of macro for struct fields,PERMISSIVE - OK,30
+siphasher,0.3.11,Rust,NOASSERTION,MIT OR Apache-2.0,SipHash hashing algorithm,PERMISSIVE - OK,30
+flate2,1.1.9,Rust,NOASSERTION,MIT OR Apache-2.0,DEFLATE/gzip/zlib compression,PERMISSIVE - OK,29
+httparse,1.10.1,Rust,NOASSERTION,MIT OR Apache-2.0,Zero-copy HTTP/1.x parser,PERMISSIVE - OK,29
+objc2-encode,4.0.3,Rust,NOASSERTION,MIT,Objective-C type encoding,PERMISSIVE - OK,29
+filelock,3.25.0,Python,NOASSERTION,Unlicense,Platform-independent file locking,PERMISSIVE - OK,28
+markupsafe,3.0.3,Python,NOASSERTION,BSD-3-Clause,HTML/XML safe string markup,PERMISSIVE - OK,28
+num-bigint,0.4.6,Rust,NOASSERTION,MIT OR Apache-2.0,Arbitrary-precision integers,PERMISSIVE - OK,28
+paste,1.0.15,Rust,NOASSERTION,MIT OR Apache-2.0,Macro for pasting identifiers together,PERMISSIVE - OK,28
+portable-atomic,1.13.1,Rust,NOASSERTION,MIT OR Apache-2.0,Portable atomic operations,PERMISSIVE - OK,28
+fsspec,2026.2.0,Python,NOASSERTION,BSD-3-Clause,Filesystem specification interface,PERMISSIVE - OK,27
+phf,0.10.1,Rust,NOASSERTION,MIT,Compile-time perfect hash function maps,PERMISSIVE - OK,27
+wasip3,0.4.0+wasi-0.3.0-rc-2026-01-06,Rust,NOASSERTION,Apache-2.0 WITH LLVM-exception,WASI Preview 3 API bindings,PERMISSIVE - OK,27
+chrono,0.4.43,Rust,NOASSERTION,MIT OR Apache-2.0,Date and time library for Rust,PERMISSIVE - OK,26
+convert_case,0.10.0,Rust,NOASSERTION,MIT,"Case conversion (camelCase, snake_case, etc.)",PERMISSIVE - OK,26
+sha2,0.10.9,Rust,NOASSERTION,MIT OR Apache-2.0,"SHA-2 hash functions (SHA-256, SHA-512)",PERMISSIVE - OK,26
+tqdm,4.67.3,Python,NOASSERTION,MIT OR MPL-2.0,Progress bar for loops and CLI,WEAK COPYLEFT (MPL) - file-level copyleft only,26
+vcpkg,0.2.15,Rust,NOASSERTION,MIT OR Apache-2.0,Finds native deps installed via vcpkg,PERMISSIVE - OK,26
+block2,0.5.1,Rust,NOASSERTION,MIT,Objective-C block support,PERMISSIVE - OK,25
+bytemuck_derive,1.10.2,Rust,NOASSERTION,Zlib OR MIT OR Apache-2.0,Derive macros for bytemuck,PERMISSIVE - OK,25
+home,0.5.12,Rust,NOASSERTION,MIT OR Apache-2.0,Home directory detection,PERMISSIVE - OK,25
+ipnet,2.11.0,Rust,NOASSERTION,MIT OR Apache-2.0,IP network address types,PERMISSIVE - OK,25
+objc-sys,0.3.5,Rust,NOASSERTION,MIT,Raw Objective-C runtime bindings,PERMISSIVE - OK,25
+phf_codegen,0.10.0,Rust,NOASSERTION,MIT,Code generator for perfect hash maps,PERMISSIVE - OK,25
+rustls,0.23.36,Rust,NOASSERTION,MIT OR Apache-2.0 OR ISC,Modern TLS library in pure Rust,PERMISSIVE - OK,25
+rustls-webpki,0.103.9,Rust,NOASSERTION,ISC,WebPKI X.509 certificate verification,PERMISSIVE - OK,25
+arrayvec,0.7.6,Rust,NOASSERTION,MIT OR Apache-2.0,Stack-allocated fixed-capacity vector,PERMISSIVE - OK,24
+base64ct,1.8.3,Rust,NOASSERTION,MIT OR Apache-2.0,Constant-time base64 encoding,PERMISSIVE - OK,24
+concurrent-queue,2.5.0,Rust,NOASSERTION,MIT OR Apache-2.0,Concurrent multi-producer multi-consumer queue,PERMISSIVE - OK,24
+new_debug_unreachable,1.0.6,Rust,NOASSERTION,MIT,Debug-only unreachable! macro,PERMISSIVE - OK,24
+objc2,0.5.2,Rust,NOASSERTION,MIT,Safe Objective-C interop for Rust,PERMISSIVE - OK,24
+parking,2.2.1,Rust,NOASSERTION,MIT OR Apache-2.0,Thread parking primitive,PERMISSIVE - OK,24
+proc-macro-error-attr,1.0.4,Rust,NOASSERTION,MIT OR Apache-2.0,Error reporting for proc-macros,PERMISSIVE - OK,24
+unicode-segmentation,1.12.0,Rust,NOASSERTION,MIT OR Apache-2.0,Unicode text segmentation (grapheme clusters),PERMISSIVE - OK,24
+colorama,0.4.6,Python,NOASSERTION,BSD-3-Clause,Cross-platform colored terminal output,PERMISSIVE - OK,23
+pem-rfc7468,0.7.0,Rust,NOASSERTION,MIT OR Apache-2.0,PEM encoding (RFC 7468),PERMISSIVE - OK,23
+proc-macro-error,1.0.4,Rust,NOASSERTION,MIT OR Apache-2.0,Better error reporting for proc-macros,PERMISSIVE - OK,23
+sha1,0.10.6,Rust,NOASSERTION,MIT OR Apache-2.0,SHA-1 hash function,PERMISSIVE - OK,23
+time-core,0.1.8,Rust,NOASSERTION,MIT OR Apache-2.0,Core time crate internals,PERMISSIVE - OK,23
+tower-service,0.3.3,Rust,NOASSERTION,MIT,Trait for async request/response services,PERMISSIVE - OK,23
+web-sys,0.3.85,Rust,NOASSERTION,MIT OR Apache-2.0,Bindings to Web APIs for WebAssembly,PERMISSIVE - OK,23
+alloc-no-stdlib,2.0.4,Rust,NOASSERTION,BSD-3-Clause,Allocator interface without stdlib,PERMISSIVE - OK,22
+cfg_aliases,0.2.1,Rust,NOASSERTION,MIT,Cfg alias convenience macro,PERMISSIVE - OK,22
+der,0.7.10,Rust,NOASSERTION,MIT OR Apache-2.0,ASN.1 DER encoding/decoding,PERMISSIVE - OK,22
+icu_locid,1.5.0,Rust,NOASSERTION,Unicode-3.0,Unicode locale identifiers (ICU4X),PERMISSIVE - OK,22
+icu_provider_macros,1.5.0,Rust,NOASSERTION,Unicode-3.0,Data provider macros for ICU4X,PERMISSIVE - OK,22
+jinja2,3.1.6,Python,NOASSERTION,BSD-3-Clause,Template engine for Python,PERMISSIVE - OK,22
+objc2-foundation,0.2.2,Rust,NOASSERTION,MIT,Rust bindings to Apple Foundation framework,PERMISSIVE - OK,22
+alloc-stdlib,0.2.2,Rust,NOASSERTION,BSD-3-Clause,Stdlib-based allocator wrapper,PERMISSIVE - OK,21
+cexpr,0.6.0,Rust,NOASSERTION,MIT OR Apache-2.0,C expression parser for bindgen,PERMISSIVE - OK,21
+clang-sys,1.8.1,Rust,NOASSERTION,Apache-2.0,Bindings to libclang,PERMISSIVE - OK,21
+glib-macros,0.18.5,Rust,NOASSERTION,MIT,Proc-macros for GLib Rust bindings,PERMISSIVE - OK,21
+glob,0.3.3,Rust,NOASSERTION,MIT OR Apache-2.0,File path glob pattern matching,PERMISSIVE - OK,21
+hex,0.4.3,Rust,NOASSERTION,MIT OR Apache-2.0,Hexadecimal encoding/decoding,PERMISSIVE - OK,21
+icu_locid_transform_data,1.5.0,Rust,NOASSERTION,Unicode-3.0,Locale transform data for ICU4X,PERMISSIVE - OK,21
+spki,0.7.3,Rust,NOASSERTION,MIT OR Apache-2.0,X.509 SubjectPublicKeyInfo types,PERMISSIVE - OK,21
+wasm-bindgen-backend,0.2.99,Rust,NOASSERTION,MIT OR Apache-2.0,Backend for wasm-bindgen code gen,PERMISSIVE - OK,21
+atomic-waker,1.1.2,Rust,NOASSERTION,MIT OR Apache-2.0,Atomic waker for async notification,PERMISSIVE - OK,20
+cairo-sys-rs,0.18.2,Rust,NOASSERTION,MIT,FFI bindings to Cairo (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,20
+gdk-pixbuf-sys,0.18.0,Rust,NOASSERTION,MIT,FFI bindings to GdkPixbuf (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,20
+glib,0.18.5,Rust,NOASSERTION,MIT,Safe Rust bindings for GLib (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,20
+icu_locid_transform,1.5.0,Rust,NOASSERTION,Unicode-3.0,Locale canonicalization for ICU4X,PERMISSIVE - OK,20
+jni-sys,0.3.0,Rust,NOASSERTION,MIT OR Apache-2.0,JNI FFI type definitions,PERMISSIVE - OK,20
+malloc_buf,0.0.6,Rust,NOASSERTION,MIT,Buffer backed by malloc/free,PERMISSIVE - OK,20
+num-rational,0.4.2,Rust,NOASSERTION,MIT OR Apache-2.0,Rational number type,PERMISSIVE - OK,20
+pango-sys,0.18.0,Rust,NOASSERTION,MIT,FFI bindings to Pango (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,20
+pkcs8,0.10.2,Rust,NOASSERTION,MIT OR Apache-2.0,PKCS#8 private key format,PERMISSIVE - OK,20
+serde_urlencoded,0.7.1,Rust,NOASSERTION,MIT OR Apache-2.0,URL query string serialization,PERMISSIVE - OK,20
+block,0.1.6,Rust,NOASSERTION,MIT,Objective-C block FFI support,PERMISSIVE - OK,19
+core-graphics-types,0.2.0,Rust,NOASSERTION,MIT OR Apache-2.0,Core Graphics type definitions,PERMISSIVE - OK,19
+h2,0.3.27,Rust,NOASSERTION,MIT,HTTP/2 protocol implementation,PERMISSIVE - OK,19
+http-body,1.0.1,Rust,NOASSERTION,MIT,Trait for HTTP request/response bodies,PERMISSIVE - OK,19
+objc,0.2.7,Rust,NOASSERTION,MIT,Objective-C runtime bindings,PERMISSIVE - OK,19
+same-file,1.0.6,Rust,NOASSERTION,MIT OR Unlicense,Check if two file paths are the same file,PERMISSIVE - OK,19
+six,1.17.0,Python,NOASSERTION,MIT,Python 2/3 compatibility utilities,PERMISSIVE - OK,19
+utf16_iter,1.0.5,Rust,NOASSERTION,MIT OR Apache-2.0,UTF-16 code unit iterator,PERMISSIVE - OK,19
+write16,1.0.0,Rust,NOASSERTION,MIT OR Apache-2.0,UTF-16 write trait,PERMISSIVE - OK,19
+crunchy,0.2.4,Rust,NOASSERTION,MIT,Unroll loops at compile time,PERMISSIVE - OK,18
+gdk-sys,0.18.2,Rust,NOASSERTION,MIT,FFI bindings to GDK (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,18
+hmac,0.12.1,Rust,NOASSERTION,MIT OR Apache-2.0,HMAC message authentication code,PERMISSIVE - OK,18
+rand_hc,0.2.0,Rust,NOASSERTION,MIT OR Apache-2.0,HC-128 random number generator,PERMISSIVE - OK,18
+rand_pcg,0.2.1,Rust,NOASSERTION,MIT OR Apache-2.0,PCG random number generator,PERMISSIVE - OK,18
+signature,2.2.0,Rust,NOASSERTION,MIT OR Apache-2.0,Traits for cryptographic signatures,PERMISSIVE - OK,18
+tempfile,3.25.0,Rust,NOASSERTION,MIT OR Apache-2.0,Temporary file and directory creation,PERMISSIVE - OK,18
+utf-8,0.7.6,Rust,NOASSERTION,MIT OR Apache-2.0,Incremental UTF-8 validation,PERMISSIVE - OK,18
+walkdir,2.5.0,Rust,NOASSERTION,MIT OR Unlicense,Recursive directory traversal,PERMISSIVE - OK,18
+winapi-util,0.1.11,Rust,NOASSERTION,MIT OR Unlicense,Windows API utility functions,PERMISSIVE - OK,18
+async-trait,0.1.89,Rust,NOASSERTION,MIT OR Apache-2.0,Async functions in trait definitions,PERMISSIVE - OK,17
+bindgen,0.69.5,Rust,NOASSERTION,BSD-3-Clause,Auto-generates Rust FFI bindings from C/C++ headers,PERMISSIVE - OK,17
+click,8.3.1,Python,NOASSERTION,BSD-3-Clause,Command-line interface toolkit,PERMISSIVE - OK,17
+dunce,1.0.5,Rust,NOASSERTION,CC0-1.0,Simplifies Windows UNC paths,PERMISSIVE - OK,17
+half,2.7.1,Rust,NOASSERTION,MIT OR Apache-2.0,Half-precision (f16) floating point,PERMISSIVE - OK,17
+native-tls,0.2.16,Rust,NOASSERTION,MIT OR Apache-2.0,Platform-native TLS (SChannel/SecureTransport/OpenSSL),PERMISSIVE - OK,17
+nix,0.26.4,Rust,NOASSERTION,MIT,Unix/POSIX API bindings for Rust,PERMISSIVE - OK,17
+pygments,2.19.2,Python,NOASSERTION,BSD-2-Clause,Syntax highlighting library,PERMISSIVE - OK,17
+schannel,0.1.28,Rust,NOASSERTION,MIT,Windows SChannel TLS bindings,PERMISSIVE - OK,17
+sha1_smol,1.0.1,Rust,NOASSERTION,BSD-3-Clause,Minimal SHA-1 implementation,PERMISSIVE - OK,17
+try-lock,0.2.5,Rust,NOASSERTION,MIT,Lightweight non-blocking lock,PERMISSIVE - OK,17
+windows,0.58.0,Rust,NOASSERTION,MIT OR Apache-2.0,Rust bindings for the Windows API,PERMISSIVE - OK,17
+block-padding,0.3.3,Rust,NOASSERTION,MIT OR Apache-2.0,Block cipher padding schemes,PERMISSIVE - OK,16
+crc-catalog,2.4.0,Rust,NOASSERTION,MIT OR Apache-2.0,CRC algorithm parameter catalog,PERMISSIVE - OK,16
+crossbeam-epoch,0.9.18,Rust,NOASSERTION,MIT OR Apache-2.0,Epoch-based memory reclamation,PERMISSIVE - OK,16
+encoding_rs,0.8.35,Rust,NOASSERTION,MIT OR Apache-2.0 OR BSD-3-Clause,Character encoding conversion (WHATWG standard),PERMISSIVE - OK,16
+fdeflate,0.3.7,Rust,NOASSERTION,MIT OR Apache-2.0,Fast DEFLATE decompression,PERMISSIVE - OK,16
+foreign-types-macros,0.2.3,Rust,NOASSERTION,MIT OR Apache-2.0,Macros for foreign type wrappers,PERMISSIVE - OK,16
+gio,0.18.4,Rust,NOASSERTION,MIT,Safe Rust bindings for GIO (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,16
+mime,0.3.17,Rust,NOASSERTION,MIT OR Apache-2.0,MIME type parsing and representation,PERMISSIVE - OK,16
+mpmath,1.3.0,Python,NOASSERTION,BSD-3-Clause,Arbitrary-precision floating-point math,PERMISSIVE - OK,16
+nvidia-nvjitlink-cu12,12.8.93,Python,NOASSERTION,NVIDIA Proprietary,NVIDIA JIT linker for CUDA 12,PROPRIETARY - review redistribution terms,16
+toml_writer,1.0.6+spec-1.1.0,Rust,NOASSERTION,MIT OR Apache-2.0,TOML serialization writer,PERMISSIVE - OK,16
+want,0.3.1,Rust,NOASSERTION,MIT,Signal when a value is wanted,PERMISSIVE - OK,16
+atk-sys,0.18.2,Rust,NOASSERTION,MIT,FFI bindings to ATK accessibility (links LGPL C library),PERMISSIVE binding to LGPL C library - OK if dynamically linked,15
+crc,3.4.0,Rust,NOASSERTION,MIT OR Apache-2.0,CRC checksum computation,PERMISSIVE - OK,15
+crossbeam-deque,0.8.6,Rust,NOASSERTION,MIT OR Apache-2.0,Work-stealing deque for task scheduling,PERMISSIVE - OK,15
+inout,0.1.4,Rust,NOASSERTION,MIT OR Apache-2.0,In-place buffer processing,PERMISSIVE - OK,15
+mac,0.1.1,Rust,NOASSERTION,MIT OR Apache-2.0,Collection of useful macros,PERMISSIVE - OK,15
+nvidia-cublas-cu12,12.8.4.1,Python,NOASSERTION,NVIDIA Proprietary,NVIDIA cuBLAS linear algebra for CUDA 12,PROPRIETARY - review redistribution terms,15
+precomputed-hash,0.1.1,Rust,NOASSERTION,MIT,Pre-computed hash value wrapper,PERMISSIVE - OK,15
+proc-macro-hack,0.5.20+deprecated,Rust,NOASSERTION,MIT OR Apache-2.0,Expression-position proc-macros (deprecated),PERMISSIVE - OK,15
+profiling-procmacros,1.0.17,Rust,NOASSERTION,MIT OR Apache-2.0,Profiling instrumentation macros,PERMISSIVE - OK,15
+python-dateutil,2.9.0.post0,Python,NOASSERTION,Apache-2.0 OR BSD-3-Clause,Date/time utility extensions,PERMISSIVE - OK,15
+raw-window-handle,0.6.2,Rust,NOASSERTION,MIT OR Apache-2.0 OR Zlib,Cross-platform window handle types,PERMISSIVE - OK,15
+redox_users,0.4.6,Rust,NOASSERTION,MIT,Redox OS user/group management,PERMISSIVE - OK,15
+sympy,1.14.0,Python,NOASSERTION,BSD-3-Clause,Symbolic mathematics library,PERMISSIVE - OK,15
+tokio-stream,0.1.18,Rust,NOASSERTION,MIT,Stream utilities for Tokio,PERMISSIVE - OK,15
+webpki-roots,1.0.6,Rust,NOASSERTION,MPL-2.0,Mozilla CA root certificates for WebPKI,WEAK COPYLEFT (MPL) - file-level copyleft only,15
+zune-core,0.4.12,Rust,NOASSERTION,MIT OR Apache-2.0 OR Zlib,Core traits for image decoding,PERMISSIVE - OK,15
+torch,2.10.0,Python,NOASSERTION,BSD-3-Clause,PyTorch deep learning framework,PERMISSIVE - OK,12
+react,18.3.1,npm,NOASSERTION,MIT,UI component library for building interfaces,PERMISSIVE - OK,3
+react-dom,19.2.0,npm,NOASSERTION,MIT,React DOM renderer,PERMISSIVE - OK,3
+zustand,5.0.8,npm,NOASSERTION,MIT,Lightweight React state management,PERMISSIVE - OK,1
+better-sqlite3,11.10.0,npm,NOASSERTION,MIT,Synchronous SQLite3 bindings for Node.js,PERMISSIVE - OK,2
+@types/node,18.19.130,npm,NOASSERTION,MIT,TypeScript type definitions for Node.js,PERMISSIVE - OK,6
+typescript,5.9.3,npm,NOASSERTION,Apache-2.0,Typed superset of JavaScript,PERMISSIVE - OK,1
+vite,7.2.2,npm,NOASSERTION,MIT,Next-generation frontend build tool,PERMISSIVE - OK,3
+eslint,8.57.1,npm,NOASSERTION,MIT,Pluggable JavaScript linter,PERMISSIVE - OK,2
+tailwindcss,4.1.18,npm,NOASSERTION,MIT,Utility-first CSS framework,PERMISSIVE - OK,3
+lucide-react,0.552.0,npm,NOASSERTION,ISC,React icon library (Lucide icons),PERMISSIVE - OK,3
+openai,6.7.0,npm,NOASSERTION,Apache-2.0,Official OpenAI API client,PERMISSIVE - OK,1

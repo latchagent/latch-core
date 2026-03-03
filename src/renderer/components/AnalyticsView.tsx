@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo } from 'react'
 import { TrendUp, ArrowLeft } from '@phosphor-icons/react'
 import { useAppStore } from '../store/useAppStore'
-import type { WorkPhase, PhaseCostBucket, ContextPressurePoint, RateLimitGap, ProjectHealthMetrics, LoopPattern } from '../../types'
+import type { WorkPhase, PhaseCostBucket, ContextPressurePoint, ProjectHealthMetrics, LoopPattern } from '../../types'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -363,17 +363,6 @@ function ConversationDetail() {
         avgCacheHit={analyticsConv.avgCacheHitRatio}
       />
 
-      {/* Rate limit gaps */}
-      {analyticsConv.rateLimitGaps.length > 0 && (
-        <>
-          <div className="view-section-label">
-            Rate Limit Gaps
-            <span className="an-gap-count">{analyticsConv.rateLimitGaps.length}</span>
-          </div>
-          <RateLimitSection gaps={analyticsConv.rateLimitGaps} />
-        </>
-      )}
-
       {/* Loop detection */}
       {analyticsConv.loops.length > 0 && (
         <>
@@ -486,24 +475,6 @@ function ContextPressureSection({
           Cache Read
         </span>
       </div>
-    </div>
-  )
-}
-
-// ── Rate Limit Section ──────────────────────────────────────────────────────
-
-function RateLimitSection({ gaps }: { gaps: RateLimitGap[] }) {
-  return (
-    <div className="an-gap-list">
-      {gaps.map((g, i) => (
-        <div key={i} className="an-gap-item">
-          <span className="an-gap-duration">{g.gapLabel}</span>
-          <span className="an-gap-detail">after turn #{g.afterTurnIndex + 1}</span>
-          <span className="an-gap-time">
-            {new Date(g.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }

@@ -82,15 +82,24 @@ function normalizeBranchName(branchName: string, sessionName: string): string {
   return `${prefix}${safe}`
 }
 
-export async function createWorktree({ repoPath, branchName, sessionName, startPoint }: any) {
+export async function createWorktree({ repoPath, branchName, sessionName, startPoint, useExisting }: any) {
   const repoRoot = await getGitRoot(repoPath)
   if (!repoRoot) return { ok: false, error: 'Git repository not detected.' }
 
   const { workspacePath, repoKey, sessionSlug } = buildWorkspacePath(repoRoot, sessionName, branchName)
-  const branchRef = normalizeBranchName(branchName, sessionName)
+  const branchRef = useExisting ? branchName : normalizeBranchName(branchName, sessionName)
 
   if (await pathExists(workspacePath)) {
-    return { ok: false, error: 'Worktree path already exists.', workspacePath, branchRef }
+    // Check if it's a valid git worktree — if so, reuse it
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: workspacePath })
+      if (stdout.trim() === 'true') {
+        return { ok: true, repoRoot, repoKey, sessionSlug, workspacePath, branchRef, reused: true }
+      }
+    } catch { /* not a valid worktree — clean up and recreate */ }
+    // Stale directory — prune git worktree refs and remove the directory
+    await execFileAsync('git', ['worktree', 'prune'], { cwd: repoRoot }).catch(() => {})
+    await fs.rm(workspacePath, { recursive: true, force: true }).catch(() => {})
   }
 
   // Ensure repo has at least one commit (empty repos have no valid HEAD)
@@ -133,11 +142,107 @@ export async function listWorktrees(repoPath: string) {
   return { ok: true, repoRoot, worktrees: entries }
 }
 
+export async function listBranches(repoRoot: string, limit = 15): Promise<{ ok: boolean; branches?: string[]; error?: string }> {
+  try {
+    const { stdout } = await execFileAsync('git', [
+      'for-each-ref', '--sort=-committerdate', '--format=%(refname:short)',
+      `--count=${limit}`, 'refs/heads/'
+    ], { cwd: repoRoot })
+    const branches = stdout.trim().split('\n').filter(Boolean)
+    return { ok: true, branches }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+export async function getDefaultBranch(repoRoot: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', [
+      'symbolic-ref', 'refs/remotes/origin/HEAD', '--short'
+    ], { cwd: repoRoot })
+    return stdout.trim().replace(/^origin\//, '')
+  } catch { /* no remote HEAD configured */ }
+  for (const c of ['main', 'master']) {
+    if (await branchExists(repoRoot, c)) return c
+  }
+  return 'main'
+}
+
+export async function mergeBranch({ repoRoot, branchRef, worktreePath }: {
+  repoRoot: string; branchRef: string; worktreePath?: string | null
+}): Promise<{ ok: boolean; defaultBranch?: string; error?: string }> {
+  // 1. Remove worktree (frees the branch for checkout)
+  if (worktreePath) {
+    try {
+      await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoRoot })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes('is not a working tree')) {
+        // Force remove as fallback
+        try { await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot }) }
+        catch { /* best-effort */ }
+      }
+    }
+  }
+
+  // 2. Detect default branch
+  const defaultBranch = await getDefaultBranch(repoRoot)
+
+  // 3. Record current branch for restore
+  let originalBranch: string | null = null
+  try {
+    const { stdout } = await execFileAsync('git', ['branch', '--show-current'], { cwd: repoRoot })
+    originalBranch = stdout.trim() || null
+  } catch { /* detached HEAD is fine */ }
+
+  // 4. Checkout default branch
+  try {
+    await execFileAsync('git', ['checkout', defaultBranch], { cwd: repoRoot })
+  } catch (err: unknown) {
+    return { ok: false, defaultBranch, error: `Checkout failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+
+  // 5. Merge the feature branch
+  try {
+    await execFileAsync('git', ['merge', branchRef, '--no-edit'], { cwd: repoRoot })
+  } catch (err: unknown) {
+    // Conflict — abort merge and restore original branch
+    await execFileAsync('git', ['merge', '--abort'], { cwd: repoRoot }).catch(() => {})
+    if (originalBranch) {
+      await execFileAsync('git', ['checkout', originalBranch], { cwd: repoRoot }).catch(() => {})
+    }
+    return { ok: false, defaultBranch, error: `Merge conflict — resolve manually on branch ${branchRef}` }
+  }
+
+  // 6. Delete the merged branch
+  try { await execFileAsync('git', ['branch', '-d', branchRef], { cwd: repoRoot }) } catch { /* best-effort */ }
+
+  // 7. Restore original branch if it was different
+  if (originalBranch && originalBranch !== defaultBranch && originalBranch !== branchRef) {
+    await execFileAsync('git', ['checkout', originalBranch], { cwd: repoRoot }).catch(() => {})
+  }
+
+  return { ok: true, defaultBranch }
+}
+
 export async function removeWorktree({ repoPath, worktreePath }: any) {
-  const repoRoot = await getGitRoot(repoPath)
-  if (!repoRoot) return { ok: false, error: 'Git repository not detected.' }
   if (!worktreePath) return { ok: false, error: 'Worktree path required.' }
 
-  await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoRoot })
+  // Resolve the parent repo root — prefer explicit repoPath, fall back to
+  // deriving it from the worktree's own .git file (which points to the parent).
+  const repoRoot = await getGitRoot(repoPath || worktreePath)
+  if (!repoRoot) return { ok: false, error: 'Git repository not detected.' }
+
+  try {
+    await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoRoot })
+  } catch {
+    // Worktree may already be partially removed — force cleanup
+    try {
+      await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot })
+    } catch {
+      // Last resort: prune stale worktree entries
+      await execFileAsync('git', ['worktree', 'prune'], { cwd: repoRoot }).catch(() => {})
+    }
+  }
   return { ok: true }
 }

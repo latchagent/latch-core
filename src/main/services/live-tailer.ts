@@ -39,6 +39,8 @@ const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let _sendToRenderer: ((channel: string, payload: unknown) => void) | null = null
 let _onLeakDetected: ((sessionId: string, leak: LeakMatch) => void) | null = null
 let _onFileWrite: ((sessionId: string, filePath: string) => void) | null = null
+let _onTurnUpdate: ((sessionId: string, turnIndex: number, thinkingSummary?: string) => void) | null = null
+let _onPrompt: ((sessionId: string) => void) | null = null
 let statusInterval: ReturnType<typeof setInterval> | null = null
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ function emit(event: LiveEvent): void {
 }
 
 function claudeSlug(repoRoot: string): string {
-  return repoRoot.replace(/\//g, '-')
+  return repoRoot.replace(/[/.]/g, '-')
 }
 
 /**
@@ -156,6 +158,8 @@ function processJsonlEntry(obj: Record<string, unknown>, state: TailState): void
   // ── Human message = new turn
   if (type === 'human') {
     state.turnIndex++
+    // Flush any pending checkpoint so previous work is captured before the new prompt
+    _onPrompt?.(state.sessionId)
     if (state.status !== 'active') {
       state.status = 'active'
       emit({
@@ -227,8 +231,9 @@ function processJsonlEntry(obj: Record<string, unknown>, state: TailState): void
             _onLeakDetected?.(state.sessionId, leak)
           }
         }
-        // Notify checkpoint engine of file write
+        // Notify checkpoint engine of file write + current turn index
         _onFileWrite?.(state.sessionId, filePath || toolName)
+        _onTurnUpdate?.(state.sessionId, state.turnIndex, thinking ?? undefined)
       }
     }
 
@@ -294,19 +299,35 @@ function startTail(sessionId: string, repoRoot: string): void {
   const slug = claudeSlug(repoRoot)
   const projectDir = path.join(os.homedir(), '.claude', 'projects', slug)
 
-  if (!fs.existsSync(projectDir)) return
+  // The project directory may not exist yet — Claude Code creates it on first
+  // launch. If it's missing, watch the parent directory for it to appear.
+  if (!fs.existsSync(projectDir)) {
+    const parentDir = path.dirname(projectDir)
+    try {
+      const parentWatcher = fs.watch(parentDir, (_eventType, filename) => {
+        if (filename === path.basename(projectDir) && fs.existsSync(projectDir)) {
+          parentWatcher.close()
+          startTail(sessionId, repoRoot)
+        }
+      })
+      // Store so we can clean up
+      watchers.set(`parent:${sessionId}`, parentWatcher)
+    } catch { /* parent dir doesn't exist either — give up */ }
+    return
+  }
 
   const jsonlPath = findActiveJsonl(projectDir)
-  if (!jsonlPath) return
 
-  // Skip to end of file (we only want new data)
+  // Skip to end of file if one exists (we only want new data)
   let offset = 0
-  try {
-    offset = fs.statSync(jsonlPath).size
-  } catch { /* start from 0 */ }
+  if (jsonlPath) {
+    try {
+      offset = fs.statSync(jsonlPath).size
+    } catch { /* start from 0 */ }
+  }
 
   const state: TailState = {
-    filePath: jsonlPath,
+    filePath: jsonlPath ?? '',
     offset,
     sessionId,
     lastEventTs: Date.now(),
@@ -315,7 +336,7 @@ function startTail(sessionId: string, repoRoot: string): void {
   }
   tails.set(sessionId, state)
 
-  // Watch the project directory for changes
+  // Watch the project directory for changes (including new JSONL files)
   try {
     const watcher = fs.watch(projectDir, { recursive: true }, (_eventType, filename) => {
       if (!filename?.endsWith('.jsonl')) return
@@ -325,7 +346,7 @@ function startTail(sessionId: string, repoRoot: string): void {
       debounceTimers.set(key, setTimeout(() => {
         debounceTimers.delete(key)
 
-        // Check if the active file changed (new conversation started)
+        // Pick up a new JSONL file or detect file change
         const currentActive = findActiveJsonl(projectDir)
         if (currentActive && currentActive !== state.filePath) {
           state.filePath = currentActive
@@ -333,7 +354,7 @@ function startTail(sessionId: string, repoRoot: string): void {
           state.turnIndex = 0
         }
 
-        processNewData(state)
+        if (state.filePath) processNewData(state)
       }, DEBOUNCE_MS))
     })
     watchers.set(sessionId, watcher)
@@ -356,10 +377,12 @@ function startTail(sessionId: string, repoRoot: string): void {
  */
 function stopTail(sessionId: string): void {
   tails.delete(sessionId)
-  const watcher = watchers.get(sessionId)
-  if (watcher) {
-    try { watcher.close() } catch { /* already closed */ }
-    watchers.delete(sessionId)
+  for (const key of [sessionId, `parent:${sessionId}`]) {
+    const watcher = watchers.get(key)
+    if (watcher) {
+      try { watcher.close() } catch { /* already closed */ }
+      watchers.delete(key)
+    }
   }
   const key = `live:${sessionId}`
   if (debounceTimers.has(key)) {
@@ -397,6 +420,8 @@ export interface LiveTailerOptions {
   getSessionMap: () => Map<string, string>
   onLeakDetected?: (sessionId: string, leak: LeakMatch) => void
   onFileWrite?: (sessionId: string, filePath: string) => void
+  onTurnUpdate?: (sessionId: string, turnIndex: number, thinkingSummary?: string) => void
+  onPrompt?: (sessionId: string) => void
 }
 
 /**
@@ -406,6 +431,8 @@ export function startLiveTailer(opts: LiveTailerOptions): void {
   _sendToRenderer = opts.sendToRenderer
   _onLeakDetected = opts.onLeakDetected ?? null
   _onFileWrite = opts.onFileWrite ?? null
+  _onTurnUpdate = opts.onTurnUpdate ?? null
+  _onPrompt = opts.onPrompt ?? null
 
   // Start tailing all current sessions
   for (const [sessionId, repoRoot] of opts.getSessionMap()) {

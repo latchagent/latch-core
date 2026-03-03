@@ -8,6 +8,8 @@ interface PtyRecord {
   cwd:                string
   shell:              string
   dockerContainerId?: string
+  lastCols:           number
+  lastRows:           number
 }
 
 type SendFn = (channel: string, payload: unknown) => void
@@ -130,7 +132,7 @@ class PtyManager {
       }
     })
 
-    const record: PtyRecord = { sessionId, ptyProcess, cwd, shell: command, dockerContainerId: options.dockerContainerId }
+    const record: PtyRecord = { sessionId, ptyProcess, cwd, shell: command, dockerContainerId: options.dockerContainerId, lastCols: cols, lastRows: rows }
     this.sessions.set(sessionId, record)
     return record
   }
@@ -144,6 +146,9 @@ class PtyManager {
   resize(sessionId: string, cols: number, rows: number): void {
     const record = this.sessions.get(sessionId)
     if (!record) return
+    if (cols === record.lastCols && rows === record.lastRows) return
+    record.lastCols = cols
+    record.lastRows = rows
     record.ptyProcess.resize(cols, rows)
   }
 

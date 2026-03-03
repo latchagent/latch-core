@@ -123,7 +123,7 @@ export default function OpSecretPicker({ fieldName, onSelect, value }: OpSecretP
 
   // ── Load fields ────────────────────────────────────────────────────────
 
-  const doLoadFields = useCallback(async (itemId: string, vaultId: string) => {
+  const doLoadFields = async (itemId: string, vaultId: string) => {
     setLoadingFields(true)
     setFields([])
     setSelectedFieldLabel('')
@@ -145,7 +145,7 @@ export default function OpSecretPicker({ fieldName, onSelect, value }: OpSecretP
     } else {
       setError(result?.error ?? 'Failed to load fields')
     }
-  }, [fieldName])
+  }
 
   // ── Build & emit op:// reference ───────────────────────────────────────
 
