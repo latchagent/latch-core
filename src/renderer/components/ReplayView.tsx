@@ -1,6 +1,6 @@
 // src/renderer/components/ReplayView.tsx
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PlayCircle, PauseCircle, SkipBack, SkipForward,
   ArrowLeft, ArrowCounterClockwise, GitFork,
@@ -259,6 +259,20 @@ export default function ReplayView() {
     loadReplay(filePath, sessionId)
   }
 
+  // Build slug → session name lookup for the conversation list
+  const sessionNameBySlug = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const [, s] of sessions) {
+      if (s.repoRoot) {
+        const slug = s.repoRoot.replace(/\//g, '-')
+        // Prefer the most recently named session (last one wins)
+        if (!s.name.startsWith('Session ')) map.set(slug, s.name)
+        else if (!map.has(slug)) map.set(slug, s.name)
+      }
+    }
+    return map
+  }, [sessions])
+
   // Running stats
   const playedTurns = replayTurns.slice(0, replayCurrentIndex + 1)
   const runningCost = playedTurns.reduce((sum, t) => sum + t.costUsd, 0)
@@ -431,7 +445,7 @@ export default function ReplayView() {
               onClick={() => handleConversationSelect(conv.filePath)}
             >
               <div className="replay-conv-header">
-                <span className="replay-conv-project">{conv.projectName}</span>
+                <span className="replay-conv-project">{sessionNameBySlug.get(conv.projectSlug) ?? conv.projectName}</span>
                 <span className="replay-conv-date">
                   {new Date(conv.lastModified).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                 </span>
