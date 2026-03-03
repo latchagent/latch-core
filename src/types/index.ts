@@ -73,10 +73,17 @@ export interface OpenClawPolicyConfig {
   mcpServerRules?: McpServerRule[];
 }
 
+export interface OpenCodePolicyConfig {
+  /** Tool-level permission rules (opencode permission keys: bash, edit, read, etc.). */
+  toolRules?: ToolRule[];
+  mcpServerRules?: McpServerRule[];
+}
+
 export interface HarnessesConfig {
   claude?: ClaudePolicyConfig;
   codex?: CodexPolicyConfig;
   openclaw?: OpenClawPolicyConfig;
+  opencode?: OpenCodePolicyConfig;
 }
 
 export interface LlmEvaluatorConfig {
@@ -507,6 +514,7 @@ export interface SessionRecord {
   needsReconnect: boolean;
   showWizard: boolean;
   resumeId: string | null;
+  status: 'active' | 'merged' | null;
 }
 
 // ─── Activity / Authz ────────────────────────────────────────────────────────
@@ -937,10 +945,13 @@ export interface LatchAPI {
   onResumeIdDetected(callback: (payload: { sessionId: string; resumeId: string }) => void): () => void;
 
   getGitStatus(payload?: { cwd?: string }): Promise<{ isRepo: boolean; root: string | null }>;
-  createWorktree(payload: { repoPath: string; branchName?: string; sessionName: string }): Promise<{ ok: boolean; workspacePath?: string; branchRef?: string; error?: string }>;
+  createWorktree(payload: { repoPath: string; branchName?: string; sessionName: string; useExisting?: boolean }): Promise<{ ok: boolean; workspacePath?: string; branchRef?: string; reused?: boolean; error?: string }>;
   getGitDefaults(): Promise<{ workspaceRoot: string; branchPrefix: string }>;
   listWorktrees(payload?: { repoPath: string }): Promise<{ ok: boolean; worktrees?: GitWorktreeEntry[]; error?: string }>;
   removeWorktree(payload: { worktreePath: string }): Promise<{ ok: boolean; error?: string }>;
+  listBranches(payload: { repoPath: string; limit?: number }): Promise<{ ok: boolean; branches?: string[]; error?: string }>;
+  getDefaultBranch(payload: { repoPath: string }): Promise<{ ok: boolean; branch: string }>;
+  mergeBranch(payload: { repoRoot: string; branchRef: string; worktreePath?: string | null }): Promise<{ ok: boolean; defaultBranch?: string; error?: string }>;
 
   detectHarnesses(): Promise<{ ok: boolean; harnesses: HarnessRecord[] }>;
   openExternal(url: string): Promise<{ ok: boolean }>;
@@ -1000,6 +1011,7 @@ export interface LatchAPI {
     policyOverride?: PolicyDocument | null
     workspacePath: string | null
     enableTls?: boolean
+    harnessId?: string
   }): Promise<{
     ok: boolean
     proxyPort?: number
