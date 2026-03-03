@@ -117,12 +117,11 @@ class TerminalManager {
     this.instances.delete(tabId);
   }
 
-  /** Write PTY output data to the terminal and scroll to bottom. */
+  /** Write PTY output data to the terminal. */
   write(tabId: string, data: string): void {
     const term = this.instances.get(tabId)?.term;
     if (!term) return;
     term.write(data);
-    term.scrollToBottom();
   }
 
   /** Write a line of informational text (dimmed) to the terminal. */

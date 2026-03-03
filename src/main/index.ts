@@ -295,7 +295,8 @@ app.whenReady().then(() => {
           const sessions = result?.sessions ?? []
           const map = new Map<string, string>()
           for (const s of sessions) {
-            if (s.repo_root) map.set(s.id, s.repo_root)
+            const cwd = s.worktree_path ?? s.repo_root
+            if (cwd) map.set(s.id, cwd)
           }
           return map
         },
@@ -317,7 +318,9 @@ app.whenReady().then(() => {
         const sessions = result?.sessions ?? []
         const map = new Map<string, string>()
         for (const s of sessions) {
-          if (s.repo_root) map.set(s.id, s.repo_root)
+          // Prefer worktree_path — Claude Code uses its CWD for the project slug
+          const cwd = s.worktree_path ?? s.repo_root
+          if (cwd) map.set(s.id, cwd)
         }
         return map
       },
@@ -555,7 +558,8 @@ app.whenReady().then(() => {
     const result = sessionStore.createSession(v.data)
     track('session_created', { harness: v.data.harness_id ?? '' })
     if (result.ok && (result as any).session?.repo_root) {
-      liveTailerAddSession((result as any).session.id, (result as any).session.repo_root)
+      const s = (result as any).session
+      liveTailerAddSession(s.id, s.worktree_path ?? s.repo_root)
     }
     return result
   })
@@ -564,9 +568,11 @@ app.whenReady().then(() => {
     const v = validateIpc(SessionUpdateSchema, payload)
     if (!v.ok) return v
     const result = sessionStore.updateSession(v.data.id, v.data.updates)
-    // Start live-tailing when a session gets its repo_root (after wizard finalize)
-    if (result.ok && v.data.updates.repo_root) {
-      liveTailerAddSession(v.data.id, v.data.updates.repo_root)
+    // Start live-tailing when a session gets its repo/worktree (after wizard finalize)
+    // Prefer worktree_path — Claude Code uses CWD for the project slug
+    if (result.ok && (v.data.updates.repo_root || v.data.updates.worktree_path)) {
+      const cwd = v.data.updates.worktree_path ?? v.data.updates.repo_root
+      liveTailerAddSession(v.data.id, cwd)
     }
     return result
   })

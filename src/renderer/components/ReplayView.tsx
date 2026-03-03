@@ -244,13 +244,14 @@ export default function ReplayView() {
     }
   }
 
-  // Handle conversation selection
+  // Handle conversation selection — match by worktreePath first (Claude Code uses CWD slug)
   const handleConversationSelect = (filePath: string) => {
     const conv = timelineConversations.find(c => c.filePath === filePath)
     let sessionId: string | undefined
     if (conv) {
       for (const [id, s] of sessions) {
-        if (s.repoRoot && s.repoRoot.replace(/\//g, '-') === conv.projectSlug) {
+        const cwd = s.worktreePath ?? s.repoRoot
+        if (cwd && cwd.replace(/\//g, '-') === conv.projectSlug) {
           sessionId = id
           break
         }
@@ -263,9 +264,9 @@ export default function ReplayView() {
   const sessionNameBySlug = useMemo(() => {
     const map = new Map<string, string>()
     for (const [, s] of sessions) {
-      if (s.repoRoot) {
-        const slug = s.repoRoot.replace(/\//g, '-')
-        // Prefer the most recently named session (last one wins)
+      const cwd = s.worktreePath ?? s.repoRoot
+      if (cwd) {
+        const slug = cwd.replace(/\//g, '-')
         if (!s.name.startsWith('Session ')) map.set(slug, s.name)
         else if (!map.has(slug)) map.set(slug, s.name)
       }
