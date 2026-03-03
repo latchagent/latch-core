@@ -468,6 +468,37 @@ export class TerminalWizard {
       }
     }
 
+    // After harness selection, populate model step options dynamically
+    if (justCompleted?.id === 'harness' && this.answers.harness) {
+      const modelStep = this.steps.find(s => s.id === 'model')
+      if (modelStep) {
+        let models: any[] = []
+        if (window.latch?.listModels) {
+          try {
+            const result = await window.latch.listModels({ harnessId: this.answers.harness as string })
+            if (result?.ok) models = result.models ?? []
+          } catch { /* model discovery failed */ }
+        }
+
+        if (models.length) {
+          // Dynamic model list available — show as select
+          modelStep.type = 'select'
+          modelStep.options = [
+            { label: 'Default', value: '' },
+            ...models.map((m: any) => ({
+              label: `${m.name}${m.recommended ? ' ★' : ''} ${DIM}(${m.provider})${RESET}`,
+              value: m.id,
+            })),
+          ]
+        } else {
+          // No models discovered — show freeform text input
+          modelStep.type = 'text'
+          modelStep.hint = 'e.g. anthropic/claude-sonnet-4-20250514 (leave blank for default)'
+        }
+        modelStep.skip = false
+      }
+    }
+
     // After harness selection, skip irrelevant steps for OpenClaw
     if (justCompleted?.id === 'harness' && this.answers.harness === 'openclaw') {
       for (const step of this.steps) {
@@ -586,6 +617,14 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
       options: harnessOptions,
       default: defaultHarness,
       skip: !!autoSelectedHarness,
+    },
+    {
+      id: 'model',
+      prompt: 'Model',
+      type: 'select',
+      options: [],  // Populated dynamically after harness selection
+      hint: 'Select an LLM model (or leave blank for default)',
+      skip: true,   // Unskipped dynamically after harness step
     },
     {
       id: 'projectDir',

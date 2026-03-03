@@ -300,6 +300,25 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
         pendingProjectDir,
       })
 
+      // Pre-fetch branches when pendingProjectDir is set (skips browse step)
+      if (pendingProjectDir && window.latch?.getGitStatus && window.latch?.listBranches) {
+        const gitStatus = await window.latch.getGitStatus({ cwd: pendingProjectDir })
+        if (gitStatus?.isRepo && gitStatus.root) {
+          const branchResult = await window.latch.listBranches({ repoPath: gitStatus.root })
+          if (branchResult?.ok && branchResult.branches && branchResult.branches.length > 1) {
+            for (const step of steps) {
+              if (step.id === 'branchSelect') step.options = branchResult.branches.map(b => ({ label: b, value: b }))
+              if (step.id === 'branchMode') step.skip = false
+            }
+          }
+        } else {
+          // Not a git repo — skip all branch steps
+          for (const step of steps) {
+            if (step.id === 'branchMode' || step.id === 'branchSelect' || step.id === 'branch') step.skip = true
+          }
+        }
+      }
+
       const onCancel = () => {
         // User pressed Ctrl+C — delete the session
         useAppStore.getState().deleteSession(sessionId)
@@ -403,12 +422,21 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
 
         const isOpenClaw = harnessId === 'openclaw'
 
+        // Resolve branch from either branchSelect (existing) or branch (new)
+        const branchMode = answers.branchMode as string
+        const isExistingBranch = branchMode === 'existing'
+        const selectedBranch = isExistingBranch
+          ? (answers.branchSelect as string) || ''
+          : ((answers.branch as string) || '')
+
         await finalizeSession(sessionId, {
           skipWorktree: isOpenClaw,
           goal: (answers.goal as string) || '',
-          branchName: isOpenClaw ? '' : ((answers.branch as string) || ''),
+          branchName: isOpenClaw ? '' : selectedBranch,
           projectDir: isOpenClaw ? undefined : projectDir,
+          useExistingBranch: isExistingBranch,
           mcpServerIds: mcpServerIds.length > 0 ? mcpServerIds : undefined,
+          model: (answers.model as string) || undefined,
         })
 
         // Save per-session budget if specified

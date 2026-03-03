@@ -272,7 +272,7 @@ export interface AppState {
   resumeSession:   (id: string) => Promise<void>;
   setSessionResumeId: (sessionId: string, resumeId: string) => void;
   activateSession: (id: string) => void;
-  finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string; useExistingBranch?: boolean }) => Promise<void>;
+  finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string; useExistingBranch?: boolean; model?: string }) => Promise<void>;
   forkFromCheckpoint: (checkpointId: string, goal: string, sessionId: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>;
 
   // Tabs
@@ -833,7 +833,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds, worktreeOverride, forkContext, useExistingBranch }) => {
+  finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds, worktreeOverride, forkContext, useExistingBranch, model }) => {
     set({ sessionFinalizing: true });
     try {
     const sessions = new Map(get().sessions);
@@ -845,6 +845,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (goal       !== undefined) session.goal       = goal;
     if (branchName !== undefined) session.branchName = branchName;
     if (projectDir !== undefined) session.projectDir = projectDir;
+    if (model) (session as any).model = model;
 
     // Generate a descriptive session title from the goal (async, non-blocking).
     // We capture a promise so we can persist the title after the DB record exists.
@@ -1144,6 +1145,12 @@ export const useAppStore = create<AppState>((set, get) => ({
             window.latch.writePty({ sessionId: tabId, data: 'openclaw health > /dev/null 2>&1 || openclaw gateway &\r' });
             // Brief pause to let gateway start if needed
             await new Promise((r) => setTimeout(r, 1500));
+          }
+
+          // Append --model flag if a model was selected in the wizard
+          const selectedModel = (session as any).model as string | null
+          if (selectedModel) {
+            enforcedHarnessCommand = `${enforcedHarnessCommand} --model ${selectedModel}`
           }
 
           // Append the session goal as the initial prompt for harnesses that support it.
