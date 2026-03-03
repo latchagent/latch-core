@@ -954,6 +954,7 @@ export interface LatchAPI {
   mergeBranch(payload: { repoRoot: string; branchRef: string; worktreePath?: string | null }): Promise<{ ok: boolean; defaultBranch?: string; error?: string }>;
 
   detectHarnesses(): Promise<{ ok: boolean; harnesses: HarnessRecord[] }>;
+  installHarness(payload: { harnessId: string }): Promise<{ ok: boolean; error?: string }>;
   openExternal(url: string): Promise<{ ok: boolean }>;
 
   listSessionRecords(): Promise<{ ok: boolean; sessions: SessionRow[] }>;

@@ -25,7 +25,10 @@ import {
   listWorktrees,
   removeWorktree,
   getWorkspaceRoot,
-  getBranchPrefix
+  getBranchPrefix,
+  listBranches,
+  getDefaultBranch,
+  mergeBranch,
 } from './lib/git-workspaces'
 import { detectAllHarnesses }                   from './lib/harnesses'
 import SessionStore                              from './stores/session-store'
@@ -88,6 +91,8 @@ import { linearListRepos, linearListIssues, linearGetIssue } from './services/li
 import {
   startCheckpointEngine,
   checkpointOnFileWrite,
+  checkpointOnPrompt,
+  checkpointUpdateTurn,
   checkpointRemoveSession,
   stopCheckpointEngine,
 } from './services/checkpoint-engine'
@@ -340,6 +345,12 @@ app.whenReady().then(() => {
       onFileWrite: (sessionId, filePath) => {
         checkpointOnFileWrite(sessionId, filePath)
       },
+      onTurnUpdate: (sessionId, turnIndex, thinkingSummary) => {
+        checkpointUpdateTurn(sessionId, turnIndex, thinkingSummary)
+      },
+      onPrompt: (sessionId) => {
+        checkpointOnPrompt(sessionId)
+      },
     })
 
     // Start checkpoint engine for auto-checkpointing on agent writes
@@ -531,11 +542,52 @@ app.whenReady().then(() => {
     branchPrefix:  getBranchPrefix()
   }))
 
+  ipcMain.handle('latch:git-list-branches', async (_event: any, payload: any) => {
+    const repoRoot = await getGitRoot(payload?.repoPath)
+    if (!repoRoot) return { ok: false, error: 'Git repository not detected.' }
+    return listBranches(repoRoot, payload?.limit)
+  })
+
+  ipcMain.handle('latch:git-default-branch', async (_event: any, payload: any) => {
+    const repoRoot = await getGitRoot(payload?.repoPath)
+    if (!repoRoot) return { ok: false, branch: 'main' }
+    return { ok: true, branch: await getDefaultBranch(repoRoot) }
+  })
+
+  ipcMain.handle('latch:git-merge-branch', async (_event: any, payload: any) => {
+    return mergeBranch(payload)
+  })
+
   // ── Harness handlers ────────────────────────────────────────────────────
 
   ipcMain.handle('latch:harness-detect', async () => {
     const harnesses = await detectAllHarnesses()
     return { ok: true, harnesses }
+  })
+
+  ipcMain.handle('latch:harness-install', async (_event: any, payload: { harnessId: string }) => {
+    const { harnessId } = payload
+    if (harnessId !== 'opencode') {
+      return { ok: false, error: `Auto-install not supported for harness '${harnessId}'.` }
+    }
+
+    const { execFile } = await import('node:child_process')
+    const { promisify } = await import('node:util')
+    const exec = promisify(execFile)
+
+    // Try npm first, then brew on macOS
+    try {
+      await exec('npm', ['install', '-g', 'opencode-ai'], { timeout: 120000 })
+      return { ok: true }
+    } catch {
+      if (process.platform === 'darwin') {
+        try {
+          await exec('brew', ['install', 'opencode'], { timeout: 120000 })
+          return { ok: true }
+        } catch { /* brew also failed */ }
+      }
+      return { ok: false, error: 'Installation failed. Try running: npm i -g opencode-ai' }
+    }
   })
 
   ipcMain.handle('latch:open-external', async (_event: any, { url }: { url: string }) => {

@@ -66,9 +66,19 @@ contextBridge.exposeInMainWorld('latch', {
 
   getGitDefaults: () => ipcRenderer.invoke('latch:git-defaults'),
 
+  listBranches: (payload: { repoPath: string; limit?: number }) =>
+    ipcRenderer.invoke('latch:git-list-branches', payload),
+
+  getDefaultBranch: (payload: { repoPath: string }) =>
+    ipcRenderer.invoke('latch:git-default-branch', payload),
+
+  mergeBranch: (payload: { repoRoot: string; branchRef: string; worktreePath?: string | null }) =>
+    ipcRenderer.invoke('latch:git-merge-branch', payload),
+
   // ── Harnesses ─────────────────────────────────────────────────────────────
 
   detectHarnesses: () => ipcRenderer.invoke('latch:harness-detect'),
+  installHarness: (payload: { harnessId: string }) => ipcRenderer.invoke('latch:harness-install', payload),
   openExternal: (url: string) => ipcRenderer.invoke('latch:open-external', { url }),
 
   // ── Sessions ──────────────────────────────────────────────────────────────
