@@ -347,7 +347,7 @@ app.whenReady().then(() => {
         const result = sessionStore.listSessions() as any
         const sessions = result?.sessions ?? []
         const row = sessions.find((s: any) => s.id === sessionId)
-        return row?.worktree_path ?? row?.project_dir ?? null
+        return row?.worktree_path ?? row?.repo_root ?? row?.project_dir ?? null
       },
     })
 
