@@ -622,6 +622,36 @@ export interface Checkpoint {
 
 export type PlaybackSpeed = 0.5 | 1 | 2 | 4
 
+// ── Issues (GitHub/Linear/Latch Integration) ────────────────────────────────
+
+export type IssueProvider = 'github' | 'linear' | 'latch'
+
+export interface Issue {
+  id: string
+  provider: IssueProvider
+  ref: string
+  title: string
+  body: string
+  status: 'open' | 'in_progress' | 'done' | 'closed'
+  labels: string[]
+  assignee: string | null
+  url: string
+  repo: string
+  priority?: string
+  projectDir?: string
+  branchName?: string
+  sessionId?: string | null
+  syncedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface IssueRepo {
+  id: string
+  name: string
+  fullName: string
+}
+
 // ─── Approval ────────────────────────────────────────────────────────────────
 
 export type ApprovalDecision = 'approve' | 'deny'
@@ -887,7 +917,7 @@ export interface UpdateState {
 
 export type RailPanel = 'activity' | 'policy' | 'services' | 'gateway';
 
-export type AppView = 'home' | 'policies' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'create-service' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway' | 'usage' | 'timeline' | 'analytics' | 'live' | 'replay' | 'rewind';
+export type AppView = 'home' | 'sessions' | 'policies' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'create-service' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway' | 'usage' | 'analytics' | 'live' | 'replay' | 'rewind' | 'issues';
 
 // ─── Window.latch API ─────────────────────────────────────────────────────────
 // These types mirror the contextBridge API from the preload script.
@@ -1102,6 +1132,18 @@ export interface LatchAPI {
   // Analytics
   getConversationAnalytics(payload: { filePath: string }): Promise<{ ok: boolean; analytics: ConversationAnalytics | null; error?: string }>;
   getAnalyticsDashboard(): Promise<{ ok: boolean; dashboard: AnalyticsDashboard | null; error?: string }>;
+
+  // Issues
+  listIssueRepos(payload: { provider: string }): Promise<{ ok: boolean; repos: IssueRepo[]; error?: string }>;
+  listIssues(payload: { provider: string; repo: string; status?: string; labels?: string[] }): Promise<{ ok: boolean; issues: Issue[]; error?: string }>;
+  getIssue(payload: { provider: string; ref: string }): Promise<{ ok: boolean; issue?: Issue; error?: string }>;
+  createIssue(payload: { title: string; body?: string; projectDir?: string; branchName?: string; labels?: string[] }): Promise<{ ok: boolean; issue?: Issue; error?: string }>;
+  updateIssue(payload: { id: string; title?: string; body?: string; status?: string; projectDir?: string; branchName?: string }): Promise<{ ok: boolean; error?: string }>;
+  deleteIssue(payload: { id: string }): Promise<{ ok: boolean; error?: string }>;
+  startIssueSession(payload: { provider: string; ref: string; projectDir?: string }): Promise<{ ok: boolean; issue?: Issue; error?: string }>;
+  linkIssueSession(payload: { issueId: string; sessionId: string }): Promise<{ ok: boolean; error?: string }>;
+  syncIssue(payload: { issueId: string }): Promise<{ ok: boolean; error?: string }>;
+  listLinkedIssues(): Promise<{ ok: boolean; issues: Issue[]; error?: string }>;
 }
 
 // Extend the Window interface so TypeScript knows about window.latch.

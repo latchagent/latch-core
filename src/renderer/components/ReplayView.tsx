@@ -55,6 +55,49 @@ const ACTION_LABELS: Record<TimelineActionType, string> = {
   prompt:  'Prompt',
 }
 
+function SummaryBar({ summary }: { summary: { totalCostUsd: number; totalDurationMs: number; turnCount: number; models: string[] } }) {
+  return (
+    <div className="replay-summary-bar">
+      <span className="replay-summary-item">
+        <span className="replay-summary-value">{summary.turnCount}</span>
+        <span className="replay-summary-label">turns</span>
+      </span>
+      <span className="replay-summary-item">
+        <span className="replay-summary-value">{formatCost(summary.totalCostUsd)}</span>
+        <span className="replay-summary-label">cost</span>
+      </span>
+      <span className="replay-summary-item">
+        <span className="replay-summary-value">{formatDuration(summary.totalDurationMs)}</span>
+        <span className="replay-summary-label">duration</span>
+      </span>
+      <span className="replay-summary-item">
+        <span className="replay-summary-value">{summary.models.join(', ')}</span>
+        <span className="replay-summary-label">model</span>
+      </span>
+    </div>
+  )
+}
+
+function ActionLegend({ turns }: { turns: TimelineTurn[] }) {
+  const counts: Partial<Record<TimelineActionType, number>> = {}
+  for (const turn of turns) {
+    counts[turn.actionType] = (counts[turn.actionType] ?? 0) + 1
+  }
+  const entries = Object.entries(counts) as [TimelineActionType, number][]
+  if (entries.length === 0) return null
+
+  return (
+    <div className="replay-action-legend">
+      {entries.map(([type, count]) => (
+        <span key={type} className="replay-legend-item">
+          <span className="replay-legend-dot" style={{ background: ACTION_COLORS[type] }} />
+          {ACTION_LABELS[type]} {count}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 const SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 1, 2, 4]
 
 /** Duration (ms) to display a turn during auto-play. Compress gaps > 10s. */
@@ -74,6 +117,7 @@ export default function ReplayView() {
     replayIsPlaying,
     replaySpeed,
     replayCheckpointIndices,
+    replaySummary,
     loadTimelineConversations,
     loadReplay,
     replayPlay,
@@ -175,6 +219,10 @@ export default function ReplayView() {
           </button>
           <h1 className="view-title">Replay</h1>
         </div>
+
+        {/* Summary + legend (from Timeline) */}
+        {replaySummary && <SummaryBar summary={replaySummary} />}
+        <ActionLegend turns={replayTurns} />
 
         {/* Stats bar */}
         <div className="replay-stats-bar">

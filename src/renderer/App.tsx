@@ -25,11 +25,12 @@ import McpView         from './components/McpView'
 import FeedView         from './components/FeedView'
 import RadarView        from './components/RadarView'
 import UsageView        from './components/UsageView'
-import TimelineView     from './components/TimelineView'
 import AnalyticsView    from './components/AnalyticsView'
 import LiveView         from './components/LiveView'
 import ReplayView       from './components/ReplayView'
 import RewindView       from './components/RewindView'
+import IssuesView       from './components/IssuesView'
+import SessionsView     from './components/SessionsView'
 import DocsView         from './components/DocsView'
 import CreatePolicyView  from './components/CreatePolicyView'
 import CreateServiceView from './components/CreateServiceView'
@@ -241,7 +242,9 @@ export default function App() {
   const isSessionView = activeView === 'home' && !!activeSessionId
 
   let mainContent: React.ReactNode
-  if (activeView === 'policies') {
+  if (activeView === 'sessions') {
+    mainContent = <SessionsView />
+  } else if (activeView === 'policies') {
     mainContent = <PoliciesView />
   } else if (activeView === 'agents') {
     mainContent = <AgentsView />
@@ -255,8 +258,6 @@ export default function App() {
     mainContent = <RadarView />
   } else if (activeView === 'usage') {
     mainContent = <UsageView />
-  } else if (activeView === 'timeline') {
-    mainContent = <TimelineView />
   } else if (activeView === 'analytics') {
     mainContent = <AnalyticsView />
   } else if (activeView === 'live') {
@@ -265,6 +266,8 @@ export default function App() {
     mainContent = <ReplayView />
   } else if (activeView === 'rewind') {
     mainContent = <RewindView />
+  } else if (activeView === 'issues') {
+    mainContent = <IssuesView />
   } else if (activeView === 'services') {
     mainContent = <ServicesView />
   } else if (activeView === 'gateway') {

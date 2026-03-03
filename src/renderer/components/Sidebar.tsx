@@ -1,5 +1,5 @@
 import React from 'react'
-import { Terminal, Broadcast, Lock, Robot, HardDrives, Gear, BookOpenText, Target, Plugs, ShieldCheck, ChartBar, GitBranch, TrendUp, Pulse, PlayCircle, ArrowCounterClockwise } from '@phosphor-icons/react'
+import { Terminal, Broadcast, Lock, Robot, HardDrives, Gear, BookOpenText, Target, Plugs, ShieldCheck, ChartBar, TrendUp, Pulse, PlayCircle, ArrowCounterClockwise, Ticket, Queue } from '@phosphor-icons/react'
 import { useAppStore, useAgentStatus } from '../store/useAppStore'
 import StatusDot from './StatusDot'
 import type { SessionRecord, AppView } from '../../types'
@@ -86,6 +86,14 @@ export default function Sidebar() {
           Home
         </button>
         <button
+          className={`sidebar-nav-item${activeView === 'sessions' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('sessions')}
+        >
+          <Queue className="sidebar-nav-icon" weight="light" />
+          Sessions
+          {sessions.size > 0 && <span className="sidebar-badge">{sessions.size}</span>}
+        </button>
+        <button
           className={`sidebar-nav-item${activeView === 'feed' ? ' is-active' : ''}`}
           onClick={() => setActiveView('feed')}
         >
@@ -116,13 +124,6 @@ export default function Sidebar() {
         >
           <ChartBar className="sidebar-nav-icon" weight="light" />
           Usage
-        </button>
-        <button
-          className={`sidebar-nav-item${activeView === 'timeline' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('timeline')}
-        >
-          <GitBranch className="sidebar-nav-icon" weight="light" />
-          Timeline
         </button>
         <button
           className={`sidebar-nav-item${activeView === 'analytics' ? ' is-active' : ''}`}
@@ -190,6 +191,13 @@ export default function Sidebar() {
         >
           <HardDrives className="sidebar-nav-icon" weight="light" />
           MCP
+        </button>
+        <button
+          className={`sidebar-nav-item${activeView === 'issues' ? ' is-active' : ''}`}
+          onClick={() => setActiveView('issues')}
+        >
+          <Ticket className="sidebar-nav-icon" weight="light" />
+          Issues
         </button>
       </nav>
 

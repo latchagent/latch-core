@@ -32,7 +32,7 @@ import type {
   UsageEvent,
   UsageSummary,
   TimelineConversation,
-  TimelineData,
+  TimelineTurn,
   ConversationAnalytics,
   AnalyticsDashboard,
   LiveEvent,
@@ -40,6 +40,9 @@ import type {
   BudgetAlert,
   Checkpoint,
   PlaybackSpeed,
+  Issue,
+  IssueRepo,
+  IssueProvider,
 } from '../../types';
 import { terminalManager } from '../terminal/TerminalManager';
 import type { CatalogMcpServer } from '../data/mcp-catalog';
@@ -179,9 +182,6 @@ export interface AppState {
 
   // ── Timeline ──────────────────────────────────────────────────────────────
   timelineConversations: TimelineConversation[];
-  timelineData: TimelineData | null;
-  timelineSelectedTurn: number | null;
-  timelineLoading: boolean;
 
   // ── Analytics ─────────────────────────────────────────────────────────────
   analyticsConv: ConversationAnalytics | null;
@@ -212,6 +212,19 @@ export interface AppState {
   replayIsPlaying: boolean;
   replaySpeed: PlaybackSpeed;
   replayCheckpointIndices: number[];
+  replaySummary: { totalCostUsd: number; totalDurationMs: number; turnCount: number; models: string[] } | null;
+
+  // ── Issues ──────────────────────────────────────────────────────────────
+  issuesProvider: IssueProvider;
+  issuesRepos: IssueRepo[];
+  issuesSelectedRepo: string | null;
+  issuesList: Issue[];
+  issuesLinked: Issue[];
+  issuesLoading: boolean;
+  issuesError: string | null;
+  issueStartDialogIssue: Issue | null;
+  issueStartProjectDir: string | null;
+  issueStartBranchName: string;
 
   // ── Approvals ──────────────────────────────────────────────────────────────
   pendingApprovals: PendingApproval[];
@@ -256,7 +269,8 @@ export interface AppState {
   createSession:   (name: string) => string;
   deleteSession:   (id: string) => Promise<void>;
   activateSession: (id: string) => void;
-  finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[] }) => Promise<void>;
+  finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string }) => Promise<void>;
+  forkFromCheckpoint: (checkpointId: string, goal: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>;
 
   // Tabs
   activateTab: (sessionId: string, tabId: string) => void;
@@ -337,8 +351,6 @@ export interface AppState {
 
   // Timeline
   loadTimelineConversations: (projectSlug?: string) => Promise<void>;
-  loadTimeline:              (filePath: string) => Promise<void>;
-  setTimelineSelectedTurn:   (index: number | null) => void;
 
   // Analytics
   loadAnalyticsDashboard:      () => Promise<void>;
@@ -370,6 +382,19 @@ export interface AppState {
   replayStep: (direction: 1 | -1) => void;
   replaySeek: (turnIndex: number) => void;
   setReplaySpeed: (speed: PlaybackSpeed) => void;
+
+  // Issues
+  setIssuesProvider: (provider: IssueProvider) => void;
+  loadIssueRepos: () => Promise<void>;
+  loadIssues: (repo: string) => Promise<void>;
+  loadLinkedIssues: () => Promise<void>;
+  createLatchTask: (params: { title: string; body?: string; projectDir?: string; branchName?: string }) => Promise<void>;
+  deleteLatchTask: (id: string) => Promise<void>;
+  openIssueStartDialog: (issue: Issue) => void;
+  closeIssueStartDialog: () => void;
+  setIssueStartProjectDir: (dir: string | null) => void;
+  setIssueStartBranchName: (name: string) => void;
+  confirmIssueStart: () => Promise<void>;
 
   // Approvals
   handleApprovalRequest:  (approval: PendingApproval) => void;
@@ -418,9 +443,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   usageSummary:        null,
   usageLoading:        false,
   timelineConversations: [],
-  timelineData:          null,
-  timelineSelectedTurn:  null,
-  timelineLoading:       false,
   analyticsConv:          null,
   analyticsDashboard:     null,
   analyticsLoading:       false,
@@ -441,6 +463,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   replayIsPlaying:          false,
   replaySpeed:              1 as PlaybackSpeed,
   replayCheckpointIndices:  [],
+  replaySummary:            null,
+  issuesProvider:           'latch' as IssueProvider,
+  issuesRepos:              [],
+  issuesSelectedRepo:       null,
+  issuesList:               [],
+  issuesLinked:             [],
+  issuesLoading:            false,
+  issuesError:              null,
+  issueStartDialogIssue:    null,
+  issueStartProjectDir:     null,
+  issueStartBranchName:     '',
   pendingApprovals: [],
   lastActivityTs:   new Map(),
   _statusTick:      0,
@@ -564,6 +597,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { sessions };
     });
 
+    // Persist to DB immediately so the session survives HMR reloads and crashes
+    window.latch?.createSessionRecord?.({
+      id, name,
+      created_at: new Date().toISOString(),
+      status:     'active',
+      repo_root:      null,
+      worktree_path:  null,
+      branch_ref:     null,
+      policy_set:     null,
+      harness_id:     null,
+      harness_command: null,
+      goal:           null,
+      project_dir:    null,
+      docker_config:  null,
+    }).catch(() => { /* best-effort — finalizeSession will update */ });
+
     get().activateSession(id);
     return id;
   },
@@ -629,7 +678,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds }) => {
+  finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds, worktreeOverride, forkContext }) => {
     set({ sessionFinalizing: true });
     try {
     const sessions = new Map(get().sessions);
@@ -707,7 +756,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     let worktreePath: string | null = null;
     let branchRef:   string | null = null;
 
-    if (!skipWorktree && window.latch?.getGitStatus) {
+    if (worktreeOverride) {
+      // Use pre-created worktree (e.g. forked from checkpoint)
+      repoRoot     = worktreeOverride.repoRoot;
+      worktreePath = worktreeOverride.worktreePath;
+      branchRef    = worktreeOverride.branchRef;
+      // Skip printing here when forkContext will show it more clearly
+      if (!forkContext) {
+        terminalManager.writeln(tabId, `Git root: ${repoRoot}`);
+        terminalManager.writeln(tabId, `Worktree: ${worktreePath}`);
+        terminalManager.writeln(tabId, `Branch: ${branchRef}`);
+      }
+    } else if (!skipWorktree && window.latch?.getGitStatus) {
       const status = await window.latch.getGitStatus(projectDir ? { cwd: projectDir } : undefined);
       if (status?.isRepo) {
         repoRoot = status.root;
@@ -849,6 +909,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         policyOverride: session.policyOverride,
         workspacePath: worktreePath ?? projectDir ?? null,
         enableTls: false,
+        harnessId: session.harnessId ?? undefined,
       })
       if (gatewayResult?.ok) {
         gatewayEnv = gatewayResult.gatewayEnv ?? {}
@@ -962,6 +1023,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             const escaped = goalWithFeed.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
             launchCmd = `${enforcedHarnessCommand} $'${escaped}'`;
           }
+          if (forkContext) {
+            terminalManager.writeln(tabId, '');
+            for (const line of forkContext.split('\n')) terminalManager.writeln(tabId, line);
+            terminalManager.writeln(tabId, '');
+          }
           terminalManager.writeln(tabId, `Launching ${session.harness}...`);
           window.latch.writePty({ sessionId: tabId, data: `${launchCmd}\r` });
         }
@@ -980,24 +1046,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { sessions };
     });
 
-    // Persist to DB
-    if (window.latch?.createSessionRecord) {
-      await window.latch.createSessionRecord({
-        id:             session.id,
-        name:           session.name,
-        created_at:     new Date().toISOString(),
-        status:         'active',
-        repo_root:      repoRoot,
-        worktree_path:  worktreePath,
-        branch_ref:     branchRef,
-        policy_set:     session.policyIds?.length ? JSON.stringify(session.policyIds) : null,
-        harness_id:     session.harnessId,
-        harness_command: session.harnessCommand,
-        goal:           session.goal || null,
-        project_dir:    session.projectDir || null,
-        docker_config:  session.docker ? JSON.stringify(session.docker) : null,
-        enclave_config: sessionState?.gateway ? JSON.stringify(sessionState.gateway) : null,
-        mcp_server_ids: mcpServerIds?.length ? JSON.stringify(mcpServerIds) : null,
+    // Update DB record (created early in createSession) with finalized fields
+    if (window.latch?.updateSessionRecord) {
+      await window.latch.updateSessionRecord({
+        id: session.id,
+        updates: {
+          name:           session.name,
+          status:         'active',
+          repo_root:      repoRoot ?? null,
+          worktree_path:  worktreePath ?? null,
+          branch_ref:     branchRef ?? null,
+          policy_set:     session.policyIds?.length ? JSON.stringify(session.policyIds) : null,
+          harness_id:     session.harnessId,
+          harness_command: session.harnessCommand,
+          goal:           session.goal || null,
+          project_dir:    session.projectDir || null,
+          docker_config:  session.docker ? JSON.stringify(session.docker) : null,
+          enclave_config: sessionState?.gateway ? JSON.stringify(sessionState.gateway) : null,
+          mcp_server_ids: mcpServerIds?.length ? JSON.stringify(mcpServerIds) : null,
+        },
       });
     }
 
@@ -1550,21 +1617,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadTimeline: async (filePath: string) => {
-    set({ timelineLoading: true, timelineSelectedTurn: null })
-    const result = await window.latch?.loadTimeline?.({ filePath })
-    const data = result?.data ?? null
-    set({
-      timelineData: data,
-      timelineLoading: false,
-      timelineSelectedTurn: data && data.turns.length > 0 ? 0 : null,
-    })
-  },
-
-  setTimelineSelectedTurn: (index: number | null) => {
-    set({ timelineSelectedTurn: index })
-  },
-
   // ── Analytics ──────────────────────────────────────────────────────────
 
   loadAnalyticsDashboard: async () => {
@@ -1709,6 +1761,65 @@ export const useAppStore = create<AppState>((set, get) => ({
     return res ?? { ok: false, error: 'IPC failed' }
   },
 
+  forkFromCheckpoint: async (checkpointId, goal) => {
+    const { rewindSessionId, rewindCheckpoints, sessions } = get()
+    if (!rewindSessionId) return { ok: false, error: 'No session selected' }
+
+    const checkpoint = rewindCheckpoints.find(c => c.id === checkpointId)
+    const sourceSession = sessions.get(rewindSessionId)
+    if (!checkpoint || !sourceSession) return { ok: false, error: 'Checkpoint or source session not found' }
+
+    // 1. Create worktree from checkpoint commit
+    const result = await window.latch?.forkFromCheckpoint?.({
+      checkpointId,
+      sourceSessionId: rewindSessionId,
+    })
+    if (!result?.ok) return { ok: false, error: result?.error ?? 'Fork failed' }
+
+    // 2. Create new session (inherits harness + policy from source)
+    const newSessionId = get().createSession(`Fork of ${sourceSession.name}`)
+    const newSessions = new Map(get().sessions)
+    const newSession = newSessions.get(newSessionId)!
+    newSessions.set(newSessionId, {
+      ...newSession,
+      harnessId: sourceSession.harnessId,
+      harness: sourceSession.harness,
+      harnessCommand: sourceSession.harnessCommand,
+      policyIds: [...sourceSession.policyIds],
+      policy: sourceSession.policy,
+      policyOverride: sourceSession.policyOverride,
+    })
+    set({ sessions: newSessions })
+
+    // 3. Build fork context
+    const forkContext = [
+      `\x1b[36m━━━ FORKED SESSION ━━━\x1b[0m`,
+      `\x1b[36mSource:\x1b[0m    ${sourceSession.name} → checkpoint #${checkpoint.number} (turn ${checkpoint.turnEnd})`,
+      `\x1b[36mBranch:\x1b[0m    ${result.branchRef}`,
+      `\x1b[36mWorktree:\x1b[0m  ${result.workspacePath}`,
+      sourceSession.goal ? `\x1b[2mOriginal goal: ${sourceSession.goal}\x1b[0m` : '',
+      `\x1b[36m━━━━━━━━━━━━━━━━━━━━━\x1b[0m`,
+    ].filter(Boolean).join('\n')
+
+    // 4. Finalize with pre-made worktree
+    await get().finalizeSession(newSessionId, {
+      skipWorktree: true,
+      goal,
+      projectDir: result.workspacePath,
+      worktreeOverride: {
+        repoRoot: result.repoRoot!,
+        worktreePath: result.workspacePath!,
+        branchRef: result.branchRef!,
+      },
+      forkContext,
+    })
+
+    // Clear rewind view state
+    set({ rewindSelectedCheckpoint: null, rewindDiff: null })
+
+    return { ok: true, newSessionId }
+  },
+
   // ── Replay ───────────────────────────────────────────────────────────────
 
   setReplayConversation: (id) => {
@@ -1719,13 +1830,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       replayCurrentIndex: 0,
       replayIsPlaying: false,
       replayCheckpointIndices: [],
+      replaySummary: null,
     })
   },
 
   loadReplay: async (filePath, sessionId?) => {
     get().replayPause()
     if (!filePath) {
-      set({ replayConversationId: null, replayTurns: [], replayCurrentIndex: 0, replayCheckpointIndices: [] })
+      set({ replayConversationId: null, replayTurns: [], replayCurrentIndex: 0, replayCheckpointIndices: [], replaySummary: null })
       return
     }
     const result = await window.latch?.loadTimeline?.({ filePath })
@@ -1750,6 +1862,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       replayCurrentIndex: 0,
       replayIsPlaying: false,
       replayCheckpointIndices: checkpointIndices,
+      replaySummary: {
+        totalCostUsd: data.totalCostUsd,
+        totalDurationMs: data.totalDurationMs,
+        turnCount: data.turnCount,
+        models: data.models,
+      },
     })
   },
 
@@ -1781,6 +1899,136 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setReplaySpeed: (speed) => {
     set({ replaySpeed: speed })
+  },
+
+  // ── Issues ──────────────────────────────────────────────────────────────
+
+  setIssuesProvider: (provider) => {
+    set({ issuesProvider: provider, issuesRepos: [], issuesSelectedRepo: null, issuesList: [], issuesError: null })
+    get().loadIssueRepos()
+  },
+
+  loadIssueRepos: async () => {
+    const { issuesProvider } = get()
+    set({ issuesLoading: true, issuesError: null })
+    try {
+      const res = await window.latch?.listIssueRepos?.({ provider: issuesProvider })
+      if (res?.ok) {
+        set({ issuesRepos: res.repos ?? [], issuesLoading: false })
+      } else {
+        set({ issuesError: res?.error || 'Failed to load repos', issuesLoading: false })
+      }
+    } catch (err: any) {
+      set({ issuesError: err.message, issuesLoading: false })
+    }
+  },
+
+  loadIssues: async (repo) => {
+    const { issuesProvider } = get()
+    set({ issuesSelectedRepo: repo, issuesLoading: true, issuesError: null })
+    try {
+      const res = await window.latch?.listIssues?.({ provider: issuesProvider, repo })
+      if (res?.ok) {
+        set({ issuesList: res.issues ?? [], issuesLoading: false })
+      } else {
+        set({ issuesError: res?.error || 'Failed to load issues', issuesLoading: false })
+      }
+    } catch (err: any) {
+      set({ issuesError: err.message, issuesLoading: false })
+    }
+  },
+
+  loadLinkedIssues: async () => {
+    try {
+      const res = await window.latch?.listLinkedIssues?.()
+      if (res?.ok) set({ issuesLinked: res.issues ?? [] })
+    } catch { /* non-fatal */ }
+  },
+
+  createLatchTask: async (params) => {
+    try {
+      const res = await window.latch?.createIssue?.(params)
+      if (res?.ok) {
+        // Refresh the list
+        const { issuesSelectedRepo } = get()
+        if (issuesSelectedRepo) get().loadIssues(issuesSelectedRepo)
+        else get().loadIssues('__all__')
+      }
+    } catch { /* non-fatal */ }
+  },
+
+  deleteLatchTask: async (id) => {
+    try {
+      await window.latch?.deleteIssue?.({ id })
+      const { issuesSelectedRepo } = get()
+      if (issuesSelectedRepo) get().loadIssues(issuesSelectedRepo)
+      else get().loadIssues('__all__')
+    } catch { /* non-fatal */ }
+  },
+
+  openIssueStartDialog: (issue) => {
+    set({
+      issueStartDialogIssue: issue,
+      issueStartProjectDir: issue.projectDir || null,
+      issueStartBranchName: issue.branchName || issue.ref.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase(),
+    })
+  },
+
+  closeIssueStartDialog: () => {
+    set({ issueStartDialogIssue: null, issueStartProjectDir: null, issueStartBranchName: '' })
+  },
+
+  setIssueStartProjectDir: (dir) => set({ issueStartProjectDir: dir }),
+  setIssueStartBranchName: (name) => set({ issueStartBranchName: name }),
+
+  confirmIssueStart: async () => {
+    const { issueStartDialogIssue: issue, issueStartProjectDir: projectDir, issueStartBranchName: branchName } = get()
+    if (!issue) return
+
+    const { createSession, activateSession, setActiveView, finalizeSession } = get()
+
+    // Create session with issue context
+    const name = `${issue.ref} ${issue.title}`.slice(0, 50)
+    const sessionId = createSession(name)
+
+    // Skip wizard — we already have all inputs from the issue dialog
+    const tabId = get().sessions.get(sessionId)?.activeTabId
+    set((s) => {
+      const sessions = new Map(s.sessions)
+      const sess = sessions.get(sessionId)
+      if (sess) sessions.set(sessionId, { ...sess, showWizard: false })
+      return { sessions }
+    })
+
+    // Link issue to session
+    await window.latch?.linkIssueSession?.({ issueId: issue.id, sessionId })
+
+    // Close dialog and activate session
+    set({ issueStartDialogIssue: null, issueStartProjectDir: null, issueStartBranchName: '' })
+    activateSession(sessionId)
+    setActiveView('home')
+
+    // Wait for terminal to mount before finalizing
+    if (tabId) {
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (terminalManager.get(tabId)) resolve()
+          else requestAnimationFrame(check)
+        }
+        requestAnimationFrame(check)
+      })
+    }
+
+    // Finalize: creates PTY, worktree, launches harness
+    await finalizeSession(sessionId, {
+      skipWorktree: false,
+      goal: issue.body || issue.title,
+      branchName: branchName || undefined,
+      projectDir: projectDir || undefined,
+    })
+
+    // Refresh linked issues
+    get().loadLinkedIssues()
   },
 
   loadSoundSetting: async () => {
