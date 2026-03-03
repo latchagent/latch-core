@@ -253,6 +253,8 @@ export interface AppState {
   mcpDetailOpen:          boolean;
   mcpDetailServer:        CatalogMcpServer | McpServerRecord | null;
   mcpInstallFlash:        string | null;
+  endDialogSessionId:     string | null;
+
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   // Harnesses
@@ -263,10 +265,14 @@ export interface AppState {
   createSession:   (name: string) => string;
   deleteSession:   (id: string) => Promise<void>;
   endSession:      (id: string) => Promise<void>;
+  showEndDialog:   (id: string) => void;
+  dismissEndDialog: () => void;
+  pauseSession:    (id: string) => Promise<void>;
+  mergeAndClose:   (id: string) => Promise<{ ok: boolean; error?: string }>;
   resumeSession:   (id: string) => Promise<void>;
   setSessionResumeId: (sessionId: string, resumeId: string) => void;
   activateSession: (id: string) => void;
-  finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string }) => Promise<void>;
+  finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string; useExistingBranch?: boolean }) => Promise<void>;
   forkFromCheckpoint: (checkpointId: string, goal: string, sessionId: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>;
 
   // Tabs
@@ -479,6 +485,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mcpDetailOpen:     false,
   mcpDetailServer:   null,
   mcpInstallFlash:   null,
+  endDialogSessionId: null,
   appBooting:          true,
   sessionFinalizing:   false,
 
@@ -495,6 +502,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch {
       set({ harnesses: [], harnessesLoaded: true });
     }
+  },
+
+  installHarness: async (harnessId: string) => {
+    if (!window.latch?.installHarness) return { ok: false, error: 'Not available' }
+    const result = await window.latch.installHarness({ harnessId })
+    if (result?.ok) {
+      // Re-detect harnesses after successful install
+      await get().loadHarnesses()
+    }
+    return result
   },
 
   // ── Sessions ─────────────────────────────────────────────────────────────────
@@ -541,6 +558,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         needsReconnect: true,
         showWizard:    false,
         resumeId:      row.resume_id || null,
+        status:        row.status || null,
       };
 
       sessions.set(row.id, session);
@@ -579,6 +597,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       needsReconnect: false,
       showWizard:    true,
       resumeId:      null,
+      status:        'active',
     };
 
     set((s) => {
@@ -671,11 +690,105 @@ export const useAppStore = create<AppState>((set, get) => ({
   endSession: async (id: string) => {
     const session = get().sessions.get(id)
     if (!session) return
+    // If session has a branch + worktree, show the end dialog instead of just Ctrl+C
+    if (session.branchRef && session.worktreePath && session.repoRoot) {
+      set({ endDialogSessionId: id })
+      return
+    }
+    // No branch — just send Ctrl+C (pause)
     const tabId = session.activeTabId
     const tab = session.tabs.get(tabId)
     if (tab?.ptyReady) {
       window.latch?.writePty?.({ sessionId: tabId, data: '\x03' })
     }
+  },
+
+  showEndDialog: (id: string) => {
+    set({ endDialogSessionId: id })
+  },
+
+  dismissEndDialog: () => {
+    set({ endDialogSessionId: null })
+  },
+
+  pauseSession: async (id: string) => {
+    set({ endDialogSessionId: null })
+    const session = get().sessions.get(id)
+    if (!session) return
+    const tabId = session.activeTabId
+    const tab = session.tabs.get(tabId)
+    if (tab?.ptyReady) {
+      window.latch?.writePty?.({ sessionId: tabId, data: '\x03' })
+    }
+  },
+
+  mergeAndClose: async (id: string) => {
+    const session = get().sessions.get(id)
+    if (!session) return { ok: false, error: 'Session not found' }
+    if (!session.branchRef || !session.repoRoot) return { ok: false, error: 'No branch to merge' }
+
+    // 1. Kill all PTYs
+    for (const tab of session.tabs.values()) {
+      if (tab.ptyReady) window.latch?.killPty?.({ sessionId: tab.id })
+    }
+
+    // 2. Stop gateway if running
+    if (session.gateway?.enabled && window.latch?.stopGateway) {
+      await window.latch.stopGateway({ sessionId: id, exitReason: 'normal' })
+    }
+
+    // 3. Unregister from authz server
+    window.latch?.authzUnregister?.({ sessionId: id })
+
+    // 4. Stop Docker container if running
+    if (session.docker?.containerId) {
+      window.latch?.dockerStop?.({ sessionId: id })
+    }
+
+    // 5. Merge branch
+    const mergeResult = await window.latch?.mergeBranch?.({
+      repoRoot: session.repoRoot,
+      branchRef: session.branchRef,
+      worktreePath: session.worktreePath,
+    })
+
+    if (!mergeResult?.ok) {
+      return { ok: false, error: mergeResult?.error ?? 'Merge failed' }
+    }
+
+    // 6. Unmount terminals
+    for (const tab of session.tabs.values()) {
+      terminalManager.unmount(tab.id)
+    }
+
+    // 7. Mark session as merged in DB (preserve the record for replay/analytics)
+    window.latch?.updateSessionRecord?.({
+      id,
+      updates: { status: 'merged', worktree_path: null, branch_ref: null },
+    })
+
+    // 8. Update Zustand state
+    set((s) => {
+      const sessions = new Map(s.sessions)
+      const sess = sessions.get(id)
+      if (sess) {
+        const tabs = new Map(sess.tabs)
+        for (const [tabId, tab] of tabs) {
+          tabs.set(tabId, { ...tab, ptyReady: false, needsReconnect: false })
+        }
+        sessions.set(id, {
+          ...sess,
+          tabs,
+          status: 'merged',
+          worktreePath: null,
+          branchRef: null,
+          needsReconnect: false,
+        })
+      }
+      return { sessions, endDialogSessionId: null }
+    })
+
+    return { ok: true, defaultBranch: mergeResult.defaultBranch }
   },
 
   setSessionResumeId: (sessionId: string, resumeId: string) => {
@@ -720,7 +833,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds, worktreeOverride, forkContext }) => {
+  finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds, worktreeOverride, forkContext, useExistingBranch }) => {
     set({ sessionFinalizing: true });
     try {
     const sessions = new Map(get().sessions);
@@ -817,12 +930,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         terminalManager.writeln(tabId, `Git root: ${repoRoot}`);
 
         const wt = await window.latch.createWorktree({
-          repoPath: repoRoot!, branchName: session.branchName, sessionName: session.name
+          repoPath: repoRoot!, branchName: session.branchName, sessionName: session.name, useExisting: useExistingBranch
         });
         if (wt?.ok) {
           worktreePath = wt.workspacePath ?? null;
           branchRef    = wt.branchRef    ?? null;
-          terminalManager.writeln(tabId, `Worktree: ${worktreePath}`);
+          terminalManager.writeln(tabId, `Worktree: ${worktreePath}${wt.reused ? ' (reused)' : ''}`);
           terminalManager.writeln(tabId, `Branch: ${branchRef}`);
         } else {
           terminalManager.writeln(tabId, `Worktree skipped: ${wt?.error ?? 'unknown error'}`);
@@ -948,7 +1061,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sessionId,
         serviceIds: sessionState.gateway.serviceIds,
         maxDataTier: sessionState.gateway.maxDataTier,
-        policyIds: session.policyIds,
+        policyId: session.policyIds[0] ?? 'default',
         policyOverride: session.policyOverride,
         workspacePath: worktreePath ?? projectDir ?? null,
         enableTls: false,
@@ -1022,7 +1135,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (result?.ok) {
         get().setTabPtyReady(tabId, true);
         terminalManager.writeln(tabId, '\x1b[32mShell ready.\x1b[0m');
-        window.latch.resizePty({ sessionId: tabId, cols, rows });
 
         // Launch harness command now that the shell is ready
         if (enforcedHarnessCommand) {
@@ -1034,36 +1146,22 @@ export const useAppStore = create<AppState>((set, get) => ({
             await new Promise((r) => setTimeout(r, 1500));
           }
 
-          // Append feed status-reporting instruction to the goal so agents
-          // periodically report progress to the Feed view.
-          // Skip for OpenClaw — its "Latch Guard" blocks outbound curl calls.
-          let goalWithFeed = session.goal || '';
-          const supportsFeedCurl = session.harnessId !== 'openclaw';
-          if (supportsFeedCurl && portResult?.port && session.harnessId) {
-            const feedUrl = `http://127.0.0.1:${portResult.port}/feed/${session.id}`;
-            goalWithFeed += `\n\nIMPORTANT: Periodically report your high-level progress by running this command (silently, no output needed):\ncurl -sf ${feedUrl} -H 'Content-Type: application/json' -d '{"status":"<brief description of what you just completed or are about to do>"}'\nReport after completing each logical step (not every tool call). Keep status messages short (1-2 sentences).`;
-          }
-
           // Append the session goal as the initial prompt for harnesses that support it.
           // Claude Code and Codex accept the prompt as a positional arg.
           // OpenClaw TUI accepts it via --message flag.
-          //
-          // We use $'...' (ANSI-C quoting) instead of '...' because the goal
-          // contains newlines and nested single quotes (from the feed curl
-          // instruction). We use $'...' (ANSI-C quoting) with literal newlines
-          // replaced by \n escape sequences so the entire command stays on one
-          // line — avoids shell continuation prompts ("quote>").
+          // Feed reporting is handled by the PostToolUse hook (written in policy-enforcer).
+          const goal = session.goal || '';
           let launchCmd = enforcedHarnessCommand;
           if (session.harnessId === 'openclaw') {
             const baseCmd = enforcedHarnessCommand.includes(' tui') ? enforcedHarnessCommand : `${enforcedHarnessCommand} tui`;
-            if (goalWithFeed) {
-              const escaped = goalWithFeed.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+            if (goal) {
+              const escaped = goal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
               launchCmd = `${baseCmd} --message $'${escaped}'`;
             } else {
               launchCmd = baseCmd;
             }
-          } else if (goalWithFeed) {
-            const escaped = goalWithFeed.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+          } else if (goal) {
+            const escaped = goal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
             launchCmd = `${enforcedHarnessCommand} $'${escaped}'`;
           }
           if (forkContext) {
@@ -1853,10 +1951,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       const cpResult = await window.latch?.listCheckpoints?.({ sessionId })
       if (cpResult?.ok && cpResult.checkpoints.length > 0) {
         for (const cp of cpResult.checkpoints) {
-          const idx = data.turns.findIndex((t: any) => t.index === cp.turnEnd)
-          if (idx >= 0) {
-            checkpointIndices.push(idx)
-            checkpointMap.set(idx, cp)
+          // Match checkpoint to the closest preceding turn by timestamp.
+          // The checkpoint timestamp is when the git commit was created (after
+          // the debounce window), so find the last turn at or before that time.
+          const cpTime = new Date(cp.timestamp).getTime()
+          let bestIdx = -1
+          for (let i = data.turns.length - 1; i >= 0; i--) {
+            const turnTime = new Date(data.turns[i].timestamp).getTime()
+            if (turnTime <= cpTime) {
+              bestIdx = i
+              break
+            }
+          }
+          if (bestIdx >= 0 && !checkpointMap.has(bestIdx)) {
+            checkpointIndices.push(bestIdx)
+            checkpointMap.set(bestIdx, cp)
           }
         }
         checkpointIndices.sort((a, b) => a - b)

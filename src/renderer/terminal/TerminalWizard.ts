@@ -306,13 +306,28 @@ export class TerminalWizard {
     this.answers[step.id] = dir
     this.writeln(`  ${GREEN}>${RESET} ${dir}`)
 
-    // Check git status
+    // Check git status and fetch branches for the branch picker
     if (window.latch?.getGitStatus) {
       const status = await window.latch.getGitStatus({ cwd: dir })
       if (status?.isRepo) {
         this.writeln(`  ${GREEN}✓${RESET} ${DIM}Git repo detected${RESET}`)
+
+        // Fetch branches for the branch picker
+        if (window.latch?.listBranches && status.root) {
+          const branchResult = await window.latch.listBranches({ repoPath: status.root })
+          if (branchResult?.ok && branchResult.branches && branchResult.branches.length > 1) {
+            for (const s of this.steps) {
+              if (s.id === 'branchSelect') s.options = branchResult.branches.map(b => ({ label: b, value: b }))
+              if (s.id === 'branchMode') s.skip = false
+            }
+          }
+        }
       } else {
         this.writeln(`  ${DIM}No git repo — will start without worktree${RESET}`)
+        // Not a git repo — skip all branch steps
+        for (const s of this.steps) {
+          if (s.id === 'branchMode' || s.id === 'branchSelect' || s.id === 'branch') s.skip = true
+        }
       }
     }
 
@@ -444,10 +459,19 @@ export class TerminalWizard {
       }
     }
 
+    // After branchMode selection, toggle branch vs branchSelect visibility
+    if (justCompleted?.id === 'branchMode') {
+      const mode = this.answers.branchMode as string
+      for (const step of this.steps) {
+        if (step.id === 'branchSelect') step.skip = mode !== 'existing'
+        if (step.id === 'branch') step.skip = mode !== 'new'
+      }
+    }
+
     // After harness selection, skip irrelevant steps for OpenClaw
     if (justCompleted?.id === 'harness' && this.answers.harness === 'openclaw') {
       for (const step of this.steps) {
-        if (step.id === 'projectDir' || step.id === 'branch') {
+        if (step.id === 'projectDir' || step.id === 'branch' || step.id === 'branchMode' || step.id === 'branchSelect') {
           step.skip = true
         }
         if (step.id === 'goal') {
@@ -523,13 +547,22 @@ export interface WizardStepBuilderOpts {
 export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
   const { harnesses, policies, services } = opts
 
-  const harnessOptions: WizardOption[] = harnesses.map(h => ({
+  // Sort harnesses: opencode first, then the rest
+  const sortedHarnesses = [...harnesses].sort((a, b) => {
+    if (a.id === 'opencode') return -1
+    if (b.id === 'opencode') return 1
+    return 0
+  })
+
+  const harnessOptions: WizardOption[] = sortedHarnesses.map(h => ({
     label: `${h.label}${h.installed ? '' : ` ${DIM}(not detected)${RESET}`}`,
     value: h.id,
     disabled: !h.installed,
   }))
 
-  const defaultHarness = harnesses.find(h => h.installed)?.id
+  // Default to opencode if installed, otherwise first installed harness
+  const defaultHarness = sortedHarnesses.find(h => h.id === 'opencode' && h.installed)?.id
+    ?? sortedHarnesses.find(h => h.installed)?.id
 
   // Auto-select harness when only one is available
   const autoSelectedHarness = harnessOptions.filter(o => !o.disabled).length <= 1
@@ -602,6 +635,25 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
       hint: 'Leave blank to use default. e.g. 10',
     },
     {
+      id: 'branchMode',
+      prompt: 'Branch',
+      type: 'select',
+      options: [
+        { label: 'New branch', value: 'new' },
+        { label: 'Existing branch', value: 'existing' },
+      ],
+      default: 'new',
+      skip: true,  // Unskipped dynamically when projectDir is a git repo with branches
+    },
+    {
+      id: 'branchSelect',
+      prompt: 'Select branch',
+      type: 'select',
+      options: [],  // Populated dynamically after projectDir
+      hint: 'Most recent branches',
+      skip: true,
+    },
+    {
       id: 'branch',
       prompt: 'Branch name',
       type: 'text',
@@ -612,7 +664,7 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
   // If harness is auto-selected (only one available), apply adaptive skips now
   if (autoSelectedHarness === 'openclaw') {
     for (const step of steps) {
-      if (step.id === 'projectDir' || step.id === 'branch') {
+      if (step.id === 'projectDir' || step.id === 'branch' || step.id === 'branchMode' || step.id === 'branchSelect') {
         step.skip = true
       }
       if (step.id === 'goal') {
