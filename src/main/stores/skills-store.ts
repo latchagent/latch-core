@@ -92,6 +92,12 @@ export class SkillsStore {
       return s.harnesses.includes(harnessId)
     })
 
+    // OpenCode uses .opencode/agents/latch-*.md files (project-level)
+    if (harnessId === 'opencode') {
+      const agentsDir = path.join(process.cwd(), '.opencode', 'agents')
+      return this._syncToAgentsDir(agentsDir, applicable)
+    }
+
     // Harnesses with a skills/ directory (Claude Code, OpenClaw)
     const skillsDir = HARNESS_SKILLS_DIRS[harnessId]
     if (skillsDir) {
@@ -154,6 +160,45 @@ export class SkillsStore {
     }
 
     return { ok: true, path: skillsDir }
+  }
+
+  /** Write each skill as <agentsDir>/latch-<skill-id>.md with YAML frontmatter.
+   *  Used by OpenCode which uses .opencode/agents/*.md files.
+   */
+  async _syncToAgentsDir(agentsDir: string, skills: any[]) {
+    await fs.mkdir(agentsDir, { recursive: true })
+
+    let existingFiles: string[] = []
+    try { existingFiles = await fs.readdir(agentsDir) } catch { /* directory doesn't exist yet */ }
+
+    const latchFileNames = new Set(skills.map((s: any) => `latch-${s.id}.md`))
+
+    for (const skill of skills) {
+      const frontmatter = [
+        '---',
+        `name: latch-${skill.id}`,
+        skill.description ? `description: ${skill.description}` : null,
+        'managed-by: latch',
+        '---',
+      ].filter(Boolean).join('\n')
+
+      const content = `${frontmatter}\n\n${skill.body}\n`
+      await fs.writeFile(path.join(agentsDir, `latch-${skill.id}.md`), content, 'utf8')
+    }
+
+    // Clean up stale latch-managed agent files
+    for (const file of existingFiles) {
+      if (!file.startsWith('latch-') || !file.endsWith('.md')) continue
+      if (latchFileNames.has(file)) continue
+      const filePath = path.join(agentsDir, file)
+      try {
+        const content = await fs.readFile(filePath, 'utf8')
+        if (!content.includes('managed-by: latch')) continue  // Not ours
+        await fs.unlink(filePath)
+      } catch { /* can't read — skip */ }
+    }
+
+    return { ok: true, path: agentsDir }
   }
 
   _deserialise(row: any) {
