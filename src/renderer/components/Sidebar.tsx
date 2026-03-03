@@ -1,5 +1,5 @@
 import React from 'react'
-import { Terminal, Broadcast, Lock, Robot, HardDrives, Gear, BookOpenText, Target, Plugs, ShieldCheck, ChartBar, TrendUp, Pulse, PlayCircle, ArrowCounterClockwise, Ticket, Queue } from '@phosphor-icons/react'
+import { Terminal, Broadcast, Lock, Robot, HardDrives, Gear, BookOpenText, Target, Plugs, ShieldCheck, ChartBar, TrendUp, Pulse, PlayCircle, Ticket, Queue } from '@phosphor-icons/react'
 import { useAppStore, useAgentStatus } from '../store/useAppStore'
 import StatusDot from './StatusDot'
 import type { SessionRecord, AppView } from '../../types'
@@ -144,14 +144,6 @@ export default function Sidebar() {
             </span>
           )}
         </button>
-        <button
-          className={`sidebar-nav-item${activeView === 'rewind' ? ' is-active' : ''}`}
-          onClick={() => setActiveView('rewind')}
-        >
-          <ArrowCounterClockwise className="sidebar-nav-icon" weight="light" />
-          Rewind
-        </button>
-
         {/* ── Govern ───────────────────────────── */}
         <div className="sidebar-nav-group-label">Govern</div>
         <button

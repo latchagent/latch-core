@@ -28,7 +28,6 @@ import UsageView        from './components/UsageView'
 import AnalyticsView    from './components/AnalyticsView'
 import LiveView         from './components/LiveView'
 import ReplayView       from './components/ReplayView'
-import RewindView       from './components/RewindView'
 import IssuesView       from './components/IssuesView'
 import SessionsView     from './components/SessionsView'
 import DocsView         from './components/DocsView'
@@ -264,8 +263,6 @@ export default function App() {
     mainContent = <LiveView />
   } else if (activeView === 'replay') {
     mainContent = <ReplayView />
-  } else if (activeView === 'rewind') {
-    mainContent = <RewindView />
   } else if (activeView === 'issues') {
     mainContent = <IssuesView />
   } else if (activeView === 'services') {

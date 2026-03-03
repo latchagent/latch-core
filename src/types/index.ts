@@ -917,7 +917,7 @@ export interface UpdateState {
 
 export type RailPanel = 'activity' | 'policy' | 'services' | 'gateway';
 
-export type AppView = 'home' | 'sessions' | 'policies' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'create-service' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway' | 'usage' | 'analytics' | 'live' | 'replay' | 'rewind' | 'issues';
+export type AppView = 'home' | 'sessions' | 'policies' | 'agents' | 'mcp' | 'create-policy' | 'edit-policy' | 'create-service' | 'settings' | 'feed' | 'radar' | 'docs' | 'services' | 'gateway' | 'usage' | 'analytics' | 'live' | 'replay' | 'issues';
 
 // ─── Window.latch API ─────────────────────────────────────────────────────────
 // These types mirror the contextBridge API from the preload script.
