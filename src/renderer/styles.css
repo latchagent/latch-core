@@ -6758,7 +6758,15 @@ textarea:focus-visible,
   height: 100%;
 }
 
-/* ── Replay Summary + Legend (from Timeline merge) ─────────────────────────── */
+/* ── Replay player header (stacked back + title) ──────────────────────────── */
+
+.replay-player-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* ── Replay Summary (from Timeline merge) ──────────────────────────────────── */
 
 .replay-summary-bar {
   display: flex;

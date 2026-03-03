@@ -212,7 +212,7 @@ export default function ReplayView() {
   if (replayTurns.length > 0) {
     return (
       <div className="view-container replay-view">
-        <div className="view-header">
+        <div className="view-header replay-player-header">
           <button className="an-back-btn" onClick={() => loadReplay('')}>
             <ArrowLeft size={16} weight="bold" />
             Conversations
@@ -220,9 +220,8 @@ export default function ReplayView() {
           <h1 className="view-title">Replay</h1>
         </div>
 
-        {/* Summary + legend (from Timeline) */}
+        {/* Summary (from Timeline) */}
         {replaySummary && <SummaryBar summary={replaySummary} />}
-        <ActionLegend turns={replayTurns} />
 
         {/* Stats bar */}
         <div className="replay-stats-bar">
@@ -388,26 +387,6 @@ function TurnCard({
 // ── Turn Detail (Right Panel) ───────────────────────────────────────────────
 
 function TurnDetail({ turn }: { turn: TimelineTurn }) {
-  // User prompt turns get a simpler detail view
-  if (turn.actionType === 'prompt') {
-    return (
-      <div className="replay-turn-detail">
-        <div className="replay-detail-header">
-          <span className="replay-detail-badge" style={{ background: ACTION_COLORS.prompt }}>
-            Prompt
-          </span>
-          <span className="replay-detail-turn">Turn #{turn.index + 1}</span>
-          <span className="replay-detail-time">{formatTime(turn.timestamp)}</span>
-        </div>
-
-        <div className="replay-detail-section">
-          <div className="replay-detail-section-label">User Input</div>
-          <div className="replay-detail-prompt">{turn.textSummary}</div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="replay-turn-detail">
       <div className="replay-detail-header">
