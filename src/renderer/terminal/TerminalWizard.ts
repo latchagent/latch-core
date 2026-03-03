@@ -480,6 +480,13 @@ export class TerminalWizard {
           } catch { /* model discovery failed */ }
         }
 
+        // Load last-used model for this harness
+        let lastModel = ''
+        try {
+          const saved = await window.latch?.getSetting?.({ key: `last-model-${this.answers.harness}` })
+          if (saved?.ok && saved.value) lastModel = saved.value
+        } catch { /* ignore */ }
+
         if (models.length) {
           // Dynamic model list available — show as select
           modelStep.type = 'select'
@@ -490,10 +497,12 @@ export class TerminalWizard {
               value: m.id,
             })),
           ]
+          if (lastModel) modelStep.default = lastModel
         } else {
           // No models discovered — show freeform text input
           modelStep.type = 'text'
           modelStep.hint = 'e.g. anthropic/claude-sonnet-4-20250514 (leave blank for default)'
+          if (lastModel) modelStep.default = lastModel
         }
         modelStep.skip = false
       }

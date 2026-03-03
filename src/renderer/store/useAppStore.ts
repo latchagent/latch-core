@@ -845,7 +845,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (goal       !== undefined) session.goal       = goal;
     if (branchName !== undefined) session.branchName = branchName;
     if (projectDir !== undefined) session.projectDir = projectDir;
-    if (model) (session as any).model = model;
+    if (model) {
+      (session as any).model = model;
+      // Persist model choice per harness for next session
+      if (session.harnessId) {
+        window.latch?.setSetting?.({ key: `last-model-${session.harnessId}`, value: model })
+      }
+    }
 
     // Generate a descriptive session title from the goal (async, non-blocking).
     // We capture a promise so we can persist the title after the DB record exists.
