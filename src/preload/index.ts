@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('latch', {
 
   detectHarnesses: () => ipcRenderer.invoke('latch:harness-detect'),
   installHarness: (payload: { harnessId: string }) => ipcRenderer.invoke('latch:harness-install', payload),
+  listModels: (payload: { harnessId: string }) => ipcRenderer.invoke('latch:model-list', payload),
   openExternal: (url: string) => ipcRenderer.invoke('latch:open-external', { url }),
 
   // ── Sessions ──────────────────────────────────────────────────────────────

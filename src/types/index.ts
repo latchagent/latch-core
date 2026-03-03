@@ -9,6 +9,13 @@ export interface HarnessRecord {
   url?: string;
 }
 
+export interface ModelRecord {
+  id: string;           // e.g. "anthropic/claude-sonnet-4-20250514"
+  name: string;         // e.g. "Claude Sonnet 4"
+  provider: string;     // e.g. "Anthropic"
+  recommended?: boolean;
+}
+
 // ─── Policy ───────────────────────────────────────────────────────────────────
 
 export type ToolRuleDecision = 'allow' | 'deny' | 'prompt'
@@ -955,6 +962,7 @@ export interface LatchAPI {
 
   detectHarnesses(): Promise<{ ok: boolean; harnesses: HarnessRecord[] }>;
   installHarness(payload: { harnessId: string }): Promise<{ ok: boolean; error?: string }>;
+  listModels(payload: { harnessId: string }): Promise<{ ok: boolean; models: ModelRecord[]; error?: string }>;
   openExternal(url: string): Promise<{ ok: boolean }>;
 
   listSessionRecords(): Promise<{ ok: boolean; sessions: SessionRow[] }>;

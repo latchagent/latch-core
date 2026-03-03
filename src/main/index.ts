@@ -590,6 +590,68 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('latch:model-list', async (_event: any, payload: { harnessId: string }) => {
+    const { harnessId } = payload
+
+    if (harnessId === 'opencode') {
+      // Try `opencode models` for dynamic discovery
+      try {
+        const { execFile } = await import('node:child_process')
+        const { promisify } = await import('node:util')
+        const exec = promisify(execFile)
+        const { stdout } = await exec('opencode', ['models'], { timeout: 10000 })
+
+        const models: Array<{ id: string; name: string; provider: string; recommended?: boolean }> = []
+        for (const line of stdout.split('\n').filter(Boolean)) {
+          const match = line.match(/^\s*(\S+\/\S+)/)
+          if (match) {
+            const id = match[1]
+            const [provider, ...rest] = id.split('/')
+            models.push({ id, name: rest.join('/'), provider: provider.charAt(0).toUpperCase() + provider.slice(1) })
+          }
+        }
+        if (models.length) return { ok: true, models }
+      } catch { /* fall through to curated list */ }
+
+      return {
+        ok: true,
+        models: [
+          { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', recommended: true },
+          { id: 'anthropic/claude-opus-4-20250514', name: 'Claude Opus 4', provider: 'Anthropic' },
+          { id: 'anthropic/claude-haiku-3-5-20241022', name: 'Claude Haiku 3.5', provider: 'Anthropic' },
+          { id: 'openai/gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI' },
+          { id: 'openai/o3', name: 'o3', provider: 'OpenAI' },
+          { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'Google' },
+          { id: 'openrouter/auto', name: 'Auto (OpenRouter)', provider: 'OpenRouter' },
+        ],
+      }
+    }
+
+    if (harnessId === 'claude') {
+      return {
+        ok: true,
+        models: [
+          { id: 'sonnet', name: 'Claude Sonnet 4', provider: 'Anthropic', recommended: true },
+          { id: 'opus', name: 'Claude Opus 4', provider: 'Anthropic' },
+          { id: 'haiku', name: 'Claude Haiku 3.5', provider: 'Anthropic' },
+        ],
+      }
+    }
+
+    if (harnessId === 'codex') {
+      return {
+        ok: true,
+        models: [
+          { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', recommended: true },
+          { id: 'o3', name: 'o3', provider: 'OpenAI' },
+          { id: 'o4-mini', name: 'o4-mini', provider: 'OpenAI' },
+        ],
+      }
+    }
+
+    return { ok: true, models: [] }
+  })
+
   ipcMain.handle('latch:open-external', async (_event: any, { url }: { url: string }) => {
     if (!url || typeof url !== 'string') return { ok: false }
     // Only allow http/https URLs
