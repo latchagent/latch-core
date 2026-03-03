@@ -445,7 +445,7 @@ export class TerminalWizard {
 
   // ─── Step navigation ───────────────────────────────────────────────────
 
-  private advance(): void {
+  private async advance(): Promise<void> {
     // Dynamically update skip flags based on collected answers
     const justCompleted = this.steps[this.currentStep]
 
