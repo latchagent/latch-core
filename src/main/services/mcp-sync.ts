@@ -73,6 +73,8 @@ export async function syncMcpToHarness(
       return syncKiro(applicable, secretContext)
     case 'windsurf':
       return syncWindsurf(applicable, secretContext)
+    case 'opencode':
+      return syncOpenCode(applicable, targetDir, secretContext)
     case 'openclaw':
       return { ok: false, error: 'OpenClaw does not support static MCP config files.' }
     default:
@@ -402,4 +404,63 @@ async function syncWindsurf(servers: McpServerForSync[], secretContext?: SecretC
     ? buildWrappedMcpServersObject(servers, secretContext)
     : buildMcpServersObject(servers)
   return writeJsonConfig(filePath, 'mcpServers', mcpServers)
+}
+
+async function syncOpenCode(
+  servers: McpServerForSync[],
+  targetDir?: string | null,
+  secretContext?: SecretContext | null
+): Promise<{ ok: boolean; path?: string; error?: string }> {
+  const dir = targetDir || process.cwd()
+  const filePath = path.join(dir, 'opencode.json')
+
+  // Read existing config to preserve non-MCP keys
+  let existing: Record<string, any> = {}
+  try {
+    const content = await fs.readFile(filePath, 'utf8')
+    // Strip JSONC comments before parsing
+    const stripped = content.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+    existing = JSON.parse(stripped)
+  } catch { /* file doesn't exist or invalid — start fresh */ }
+
+  // Build MCP config in OpenCode's format
+  const mcp: Record<string, any> = {}
+  const wrapPath = secretContext ? getLatchMcpWrapPath() : null
+
+  for (const s of servers) {
+    if (s.transport === 'stdio') {
+      if (secretContext && wrapPath && hasSecretRefs(s.env)) {
+        const wrapped = buildWrappedEntry(s, wrapPath, secretContext)
+        mcp[s.name] = {
+          type: 'local',
+          command: [wrapped.command, ...(wrapped.args ?? [])],
+          environment: wrapped.env ?? {},
+          enabled: true,
+        }
+      } else {
+        const cmd = [s.command ?? '', ...(s.args ?? [])]
+        mcp[s.name] = {
+          type: 'local',
+          command: cmd,
+          ...(s.env && Object.keys(s.env).length
+            ? { environment: stripSecretRefs(s.env) }
+            : {}),
+          enabled: true,
+        }
+      }
+    } else if (s.transport === 'http') {
+      mcp[s.name] = {
+        type: 'remote',
+        url: s.url ?? '',
+        ...(s.headers && Object.keys(s.headers).length ? { headers: s.headers } : {}),
+        enabled: true,
+      }
+    }
+  }
+
+  existing.mcp = { ...(existing.mcp ?? {}), ...mcp }
+
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  await fs.writeFile(filePath, JSON.stringify(existing, null, 2) + '\n', 'utf8')
+  return { ok: true, path: filePath }
 }
