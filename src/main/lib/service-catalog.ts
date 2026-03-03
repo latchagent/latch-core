@@ -184,6 +184,126 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     },
   },
   {
+    id: 'groq',
+    name: 'Groq',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: ['token'] },
+    injection: {
+      env: { GROQ_API_KEY: '${credential.token}' },
+      files: {},
+      proxy: {
+        domains: ['api.groq.com'],
+        headers: { Authorization: 'Bearer ${credential.token}' },
+      },
+    },
+    dataTier: {
+      defaultTier: 'internal',
+      redaction: { patterns: ['gsk_[a-zA-Z0-9]{52}'], fields: [] },
+    },
+    skill: {
+      description: 'Groq API access for fast LLM inference.',
+      capabilities: ['Groq API calls'],
+      constraints: ['Never print API keys'],
+    },
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: ['token'] },
+    injection: {
+      env: { OPENROUTER_API_KEY: '${credential.token}' },
+      files: {},
+      proxy: {
+        domains: ['openrouter.ai'],
+        headers: { Authorization: 'Bearer ${credential.token}' },
+      },
+    },
+    dataTier: {
+      defaultTier: 'internal',
+      redaction: { patterns: ['sk-or-[a-zA-Z0-9_-]+'], fields: [] },
+    },
+    skill: {
+      description: 'OpenRouter API access for multi-provider LLM routing.',
+      capabilities: ['OpenRouter API calls'],
+      constraints: ['Never print API keys'],
+    },
+  },
+  {
+    id: 'xai',
+    name: 'xAI',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: ['token'] },
+    injection: {
+      env: { XAI_API_KEY: '${credential.token}' },
+      files: {},
+      proxy: {
+        domains: ['api.x.ai'],
+        headers: { Authorization: 'Bearer ${credential.token}' },
+      },
+    },
+    dataTier: {
+      defaultTier: 'internal',
+      redaction: { patterns: ['xai-[a-zA-Z0-9_-]+'], fields: [] },
+    },
+    skill: {
+      description: 'xAI (Grok) API access.',
+      capabilities: ['xAI API calls'],
+      constraints: ['Never print API keys'],
+    },
+  },
+  {
+    id: 'google-ai',
+    name: 'Google AI',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: ['token'] },
+    injection: {
+      env: { GOOGLE_API_KEY: '${credential.token}' },
+      files: {},
+      proxy: {
+        domains: ['generativelanguage.googleapis.com', '*.aiplatform.googleapis.com'],
+        headers: {},
+      },
+    },
+    dataTier: {
+      defaultTier: 'internal',
+      redaction: { patterns: ['AIza[a-zA-Z0-9_-]{35}'], fields: [] },
+    },
+    skill: {
+      description: 'Google AI (Gemini / Vertex AI) API access.',
+      capabilities: ['Gemini API calls', 'Vertex AI calls'],
+      constraints: ['Never print API keys'],
+    },
+  },
+  {
+    id: 'models-dev',
+    name: 'Models.dev',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: [] },
+    injection: {
+      env: {},
+      files: {},
+      proxy: {
+        domains: ['models.dev'],
+        headers: {},
+      },
+    },
+    dataTier: {
+      defaultTier: 'public',
+      redaction: { patterns: [], fields: [] },
+    },
+    skill: {
+      description: 'Models.dev — open-source AI model registry. No auth required.',
+      capabilities: ['Model metadata lookups'],
+      constraints: [],
+    },
+  },
+  {
     id: 'aws',
     name: 'AWS',
     category: 'cloud',

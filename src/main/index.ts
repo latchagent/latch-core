@@ -1303,15 +1303,18 @@ app.whenReady().then(() => {
     const resolvedServiceIds: string[] = serviceIds ?? []
 
     try {
-      // Auto-include the harness's own API service so it can reach its backend.
-      // e.g. claude → anthropic, codex → openai
-      const HARNESS_API_SERVICE: Record<string, string> = {
-        claude: 'anthropic',
-        codex: 'openai',
+      // Auto-include the harness's required API services so it can reach its backend.
+      // e.g. claude → anthropic, codex → openai, opencode → all supported providers
+      const HARNESS_API_SERVICES: Record<string, string[]> = {
+        claude: ['anthropic'],
+        codex: ['openai'],
+        opencode: ['anthropic', 'openai', 'groq', 'openrouter', 'xai', 'google-ai', 'models-dev'],
       }
-      const harnessApiSvc = harnessId ? HARNESS_API_SERVICE[harnessId] : undefined
-      if (harnessApiSvc && !resolvedServiceIds.includes(harnessApiSvc)) {
-        resolvedServiceIds.push(harnessApiSvc)
+      const harnessApiSvcs = harnessId ? HARNESS_API_SERVICES[harnessId] ?? [] : []
+      for (const svc of harnessApiSvcs) {
+        if (!resolvedServiceIds.includes(svc)) {
+          resolvedServiceIds.push(svc)
+        }
       }
 
       // Load service definitions and grant access
