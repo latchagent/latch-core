@@ -63,7 +63,7 @@ import { ServiceStore }                          from './stores/service-store'
 import { AttestationStore }                      from './stores/attestation-store'
 import { AttestationEngine }                     from './services/attestation'
 import { annotatePR }                            from './services/pr-annotator'
-import { SERVICE_CATALOG }                       from './lib/service-catalog'
+import { SERVICE_CATALOG, getCatalogService }     from './lib/service-catalog'
 import { DataClassifier }                        from './services/data-classifier'
 import { CredentialManager }                     from './services/credential-manager'
 import { LatchProxy }                            from './services/latch-proxy'
@@ -81,6 +81,10 @@ import {
   stopBudgetEnforcer,
 } from './services/budget-enforcer'
 import { CheckpointStore }                        from './stores/checkpoint-store'
+import { IssueStore }                             from './stores/issue-store'
+import { startIssueSync, stopIssueSync }          from './services/issue-sync'
+import { githubListRepos, githubListIssues, githubGetIssue } from './services/github-issues'
+import { linearListRepos, linearListIssues, linearGetIssue } from './services/linear-issues'
 import {
   startCheckpointEngine,
   checkpointOnFileWrite,
@@ -118,6 +122,7 @@ let dataClassifier: DataClassifier | null = null
 let credentialManager: CredentialManager | null = null
 let usageStore: UsageStore | null = null
 let checkpointStore: CheckpointStore | null = null
+let issueStore: IssueStore | null = null
 
 // Gateway orchestration maps — keyed by sessionId
 const proxyInstances = new Map<string, LatchProxy>()
@@ -236,6 +241,7 @@ app.whenReady().then(() => {
     attestationStore = AttestationStore.open(db)
     usageStore    = UsageStore.open(db)
     checkpointStore = CheckpointStore.open(db)
+    issueStore      = IssueStore.open(db)
     const keyPath = path.join(app.getPath('userData'), 'attestation-key.json')
     attestationEngine = new AttestationEngine(attestationStore, keyPath)
 
@@ -344,6 +350,9 @@ app.whenReady().then(() => {
         return row?.worktree_path ?? row?.project_dir ?? null
       },
     })
+
+    // Start issue sync for GitHub/Linear write-back
+    startIssueSync({ issueStore: issueStore!, secretStore: secretStore! })
 
     // Start budget enforcer for spend controls
     startBudgetEnforcer({
@@ -554,7 +563,12 @@ app.whenReady().then(() => {
   ipcMain.handle('latch:session-update', async (_event: any, payload: any) => {
     const v = validateIpc(SessionUpdateSchema, payload)
     if (!v.ok) return v
-    return sessionStore.updateSession(v.data.id, v.data.updates)
+    const result = sessionStore.updateSession(v.data.id, v.data.updates)
+    // Start live-tailing when a session gets its repo_root (after wizard finalize)
+    if (result.ok && v.data.updates.repo_root) {
+      liveTailerAddSession(v.data.id, v.data.updates.repo_root)
+    }
+    return result
   })
 
   ipcMain.handle('latch:session-set-override', async (_event: any, { id, override }: any) => {
@@ -753,12 +767,19 @@ app.whenReady().then(() => {
     if (!serviceStore) return { ok: false, error: 'ServiceStore unavailable' }
     const result = serviceStore.save(payload.definition)
     if (result.ok && payload.credentialValue && secretStore) {
+      // Unwrap single-field credentials so op:// references resolve correctly
+      let credToStore = payload.credentialValue
+      try {
+        const parsed = JSON.parse(credToStore)
+        const keys = Object.keys(parsed)
+        if (keys.length === 1) credToStore = parsed[keys[0]]
+      } catch { /* keep as-is */ }
       const secretKey = `service:${payload.definition.id}`
       secretStore.save({
         id: `svc-${payload.definition.id}`,
         name: `${payload.definition.name} credential`,
         key: secretKey,
-        value: payload.credentialValue,
+        value: credToStore,
         description: `Auto-managed credential for ${payload.definition.name} service`,
         scope: 'global',
         tags: ['service', payload.definition.id],
@@ -1168,19 +1189,38 @@ app.whenReady().then(() => {
   // ── Gateway orchestration handlers ──────────────────────────────────────
 
   ipcMain.handle('latch:gateway-start', async (_event: any, payload: any) => {
-    const { sessionId, serviceIds, maxDataTier, policyId, policyOverride, workspacePath, enableTls } = payload ?? {}
+    const { sessionId, serviceIds, maxDataTier, policyId, policyOverride, workspacePath, enableTls, harnessId } = payload ?? {}
     if (!sessionId) return { ok: false, error: 'Missing sessionId' }
     const resolvedServiceIds: string[] = serviceIds ?? []
 
     try {
+      // Auto-include the harness's own API service so it can reach its backend.
+      // e.g. claude → anthropic, codex → openai
+      const HARNESS_API_SERVICE: Record<string, string> = {
+        claude: 'anthropic',
+        codex: 'openai',
+      }
+      const harnessApiSvc = harnessId ? HARNESS_API_SERVICE[harnessId] : undefined
+      if (harnessApiSvc && !resolvedServiceIds.includes(harnessApiSvc)) {
+        resolvedServiceIds.push(harnessApiSvc)
+      }
+
       // Load service definitions and grant access
       const services: import('../../types').ServiceDefinition[] = []
       for (const sid of resolvedServiceIds) {
-        if (!serviceStore) continue
-        const result = serviceStore.get(sid)
-        if (result.ok && result.service) {
-          services.push(result.service.definition)
-          serviceStore.grantToSession(sid, sessionId)
+        // Try user-installed service store first, fall back to built-in catalog
+        if (serviceStore) {
+          const result = serviceStore.get(sid)
+          if (result.ok && result.service) {
+            services.push(result.service.definition)
+            serviceStore.grantToSession(sid, sessionId)
+            continue
+          }
+        }
+        // Fall back to catalog (for auto-included harness API services)
+        const catalogDef = getCatalogService(sid)
+        if (catalogDef) {
+          services.push(catalogDef)
         }
       }
 
@@ -1599,6 +1639,46 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('latch:fork-checkpoint', async (_event: any, payload: any) => {
+    const { checkpointId, sourceSessionId } = payload ?? {}
+    if (!checkpointId || !sourceSessionId) return { ok: false, error: 'Missing checkpointId or sourceSessionId' }
+
+    const checkpoint = checkpointStore?.get(checkpointId)
+    if (!checkpoint) return { ok: false, error: 'Checkpoint not found' }
+
+    // Get source session to find the repo root
+    const result = sessionStore.listSessions() as any
+    const sessions = result?.sessions ?? []
+    const row = sessions.find((s: any) => s.id === sourceSessionId)
+    const repoRoot = row?.repo_root
+    if (!repoRoot) return { ok: false, error: 'Source session has no git repository' }
+
+    try {
+      const { createWorktree } = await import('./lib/git-workspaces')
+      const ts = Date.now().toString(36)
+      const branchName = `fork-ckpt-${checkpoint.number}-${ts}`
+
+      const wt = await createWorktree({
+        repoPath: repoRoot,
+        branchName,
+        sessionName: `fork-ckpt-${checkpoint.number}`,
+        startPoint: checkpoint.commitHash,
+      })
+
+      if (!wt.ok) return { ok: false, error: wt.error ?? 'Failed to create worktree' }
+
+      feedStore?.record({
+        sessionId: sourceSessionId,
+        message: `Forked checkpoint #${checkpoint.number} → branch ${wt.branchRef}`,
+        harnessId: 'latch',
+      })
+
+      return { ok: true, workspacePath: wt.workspacePath, branchRef: wt.branchRef, repoRoot: wt.repoRoot }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
   // Checkpoint list/search handlers
   ipcMain.handle('latch:checkpoint-list', async (_event: any, payload: any) => {
     const { sessionId } = payload ?? {}
@@ -1610,6 +1690,153 @@ app.whenReady().then(() => {
     const { query, sessionId } = payload ?? {}
     if (!query) return { ok: true, checkpoints: [] }
     return { ok: true, checkpoints: checkpointStore?.search(query, sessionId) ?? [] }
+  })
+
+  // ── Issue Tracking ──────────────────────────────────────────────────────────
+
+  ipcMain.handle('latch:issue-list-repos', async (_event: any, { provider }: any) => {
+    try {
+      if (provider === 'latch') {
+        const dirs = issueStore?.listLatchProjectDirs() ?? []
+        const repos = dirs.map(d => ({ id: d, name: d.split('/').pop() || d, fullName: d }))
+        // Add an "All Tasks" pseudo-repo
+        repos.unshift({ id: '__all__', name: 'All Tasks', fullName: 'All Tasks' })
+        return { ok: true, repos }
+      }
+      const key = provider === 'github' ? 'service:github' : 'service:linear'
+      const token = await secretStore?.resolveAsync(key)
+      if (!token) return { ok: false, error: `No ${provider} token configured. Add it in Services.`, repos: [] }
+      const repos = provider === 'github'
+        ? await githubListRepos(token)
+        : await linearListRepos(token)
+      return { ok: true, repos }
+    } catch (err: any) {
+      return { ok: false, error: err.message, repos: [] }
+    }
+  })
+
+  ipcMain.handle('latch:issue-list', async (_event: any, { provider, repo, status, labels }: any) => {
+    try {
+      if (provider === 'latch') {
+        const opts: any = { provider: 'latch' }
+        if (repo && repo !== '__all__') opts.repo = repo
+        if (status) opts.status = status
+        return { ok: true, issues: issueStore?.list(opts) ?? [] }
+      }
+      const key = provider === 'github' ? 'service:github' : 'service:linear'
+      const token = await secretStore?.resolveAsync(key)
+      if (!token) return { ok: false, error: `No ${provider} token configured.`, issues: [] }
+      const issues = provider === 'github'
+        ? await githubListIssues(token, repo, { status, labels })
+        : await linearListIssues(token, repo, { status, labels })
+      for (const issue of issues) issueStore?.save(issue)
+      return { ok: true, issues }
+    } catch (err: any) {
+      return { ok: false, error: err.message, issues: [] }
+    }
+  })
+
+  ipcMain.handle('latch:issue-get', async (_event: any, { provider, ref }: any) => {
+    try {
+      if (provider === 'latch') {
+        const issue = issueStore?.get(`latch:${ref}`)
+        if (!issue) return { ok: false, error: `Latch task not found: ${ref}` }
+        return { ok: true, issue }
+      }
+      const key = provider === 'github' ? 'service:github' : 'service:linear'
+      const token = secretStore?.resolve(key)
+      if (!token) return { ok: false, error: `No ${provider} token configured.` }
+      const issue = provider === 'github'
+        ? await githubGetIssue(token, ref)
+        : await linearGetIssue(token, ref)
+      issueStore?.save(issue)
+      return { ok: true, issue }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-create', async (_event: any, payload: any) => {
+    try {
+      const { title, body, projectDir, branchName, labels } = payload ?? {}
+      if (!title) return { ok: false, error: 'Title is required.' }
+      const issue = issueStore?.create({ title, body, projectDir, branchName, labels })
+      return { ok: true, issue }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-update', async (_event: any, payload: any) => {
+    try {
+      const { id, ...fields } = payload ?? {}
+      if (!id) return { ok: false, error: 'Issue ID is required.' }
+      issueStore?.update(id, fields)
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-delete', async (_event: any, { id }: any) => {
+    try {
+      issueStore?.delete(id)
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-start-session', async (_event: any, { provider, ref }: any) => {
+    try {
+      if (provider === 'latch') {
+        const issue = issueStore?.get(`latch:${ref}`)
+        if (!issue) return { ok: false, error: `Latch task not found: ${ref}` }
+        return { ok: true, issue }
+      }
+      const key = provider === 'github' ? 'service:github' : 'service:linear'
+      const token = secretStore?.resolve(key)
+      if (!token) return { ok: false, error: `No ${provider} token configured.` }
+      const issue = provider === 'github'
+        ? await githubGetIssue(token, ref)
+        : await linearGetIssue(token, ref)
+      issueStore?.save(issue)
+      return { ok: true, issue }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-link-session', async (_event: any, { issueId, sessionId }: any) => {
+    try {
+      issueStore?.linkSession(issueId, sessionId)
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-sync', async (_event: any, { issueId }: any) => {
+    try {
+      const issue = issueStore?.get(issueId)
+      if (!issue) return { ok: false, error: 'Issue not found' }
+      if (issue.provider === 'latch') return { ok: true } // nothing to sync externally
+      const key = issue.provider === 'github' ? 'service:github' : 'service:linear'
+      const token = secretStore?.resolve(key)
+      if (!token) return { ok: false, error: `No ${issue.provider} token configured.` }
+      const fresh = issue.provider === 'github'
+        ? await githubGetIssue(token, issue.ref)
+        : await linearGetIssue(token, issue.ref)
+      fresh.sessionId = issue.sessionId
+      issueStore?.save(fresh)
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('latch:issue-linked', async () => {
+    return { ok: true, issues: issueStore?.listLinked() ?? [] }
   })
 
 })
@@ -1636,6 +1863,7 @@ app.on('before-quit', () => {
   stopLiveTailer()
   stopBudgetEnforcer()
   stopCheckpointEngine()
+  stopIssueSync()
   db?.close()
   closeDebugLog()
 })

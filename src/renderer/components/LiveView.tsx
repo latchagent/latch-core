@@ -70,7 +70,7 @@ export default function LiveView() {
   }
 
   const activeSessions = Array.from(sessions.values())
-    .filter(s => s.status === 'active' || liveSessionStats.has(s.id))
+    .filter(s => !s.showWizard || liveSessionStats.has(s.id))
     .sort((a, b) => {
       const statsA = liveSessionStats.get(a.id)
       const statsB = liveSessionStats.get(b.id)
