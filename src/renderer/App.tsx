@@ -222,10 +222,9 @@ export default function App() {
       const session = sessions.get(activeSessionId)
       if (!session) return
       const tabId = session.activeTabId
-      terminalManager.fit(tabId)
-      const { cols, rows } = terminalManager.dimensions(tabId)
+      const { cols, rows, changed } = terminalManager.fitIfChanged(tabId)
       const tab = session.tabs.get(tabId)
-      if (tab?.ptyReady) {
+      if (changed && tab?.ptyReady) {
         window.latch?.resizePty?.({ sessionId: tabId, cols, rows })
       }
     }

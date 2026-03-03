@@ -1095,9 +1095,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!tab) return;
 
     requestAnimationFrame(() => {
-      terminalManager.fit(tabId);
-      const { cols, rows } = terminalManager.dimensions(tabId);
-      if (tab.ptyReady) {
+      const { cols, rows, changed } = terminalManager.fitIfChanged(tabId);
+      if (changed && tab.ptyReady) {
         window.latch?.resizePty?.({ sessionId: tabId, cols, rows });
       }
       terminalManager.focus(tabId);

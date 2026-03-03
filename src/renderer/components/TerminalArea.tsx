@@ -435,10 +435,9 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
       const currentSession = useAppStore.getState().sessions.get(session.id)
       if (!currentSession) return
       const tabId = currentSession.activeTabId
-      terminalManager.fit(tabId)
-      const { cols, rows } = terminalManager.dimensions(tabId)
+      const { cols, rows, changed } = terminalManager.fitIfChanged(tabId)
       const tab = currentSession.tabs.get(tabId)
-      if (tab?.ptyReady) {
+      if (changed && tab?.ptyReady) {
         window.latch?.resizePty?.({ sessionId: tabId, cols, rows })
       }
     })

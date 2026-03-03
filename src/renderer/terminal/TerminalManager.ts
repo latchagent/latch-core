@@ -52,6 +52,9 @@ interface TermInstance {
   fitAddon: FitAddon;
   /** Callback registered via term.onData() — stored so we can replace it if needed. */
   onDataDisposable: { dispose: () => void } | null;
+  /** Last cols/rows sent to resizePty — used to skip redundant SIGWINCH. */
+  lastSentCols: number;
+  lastSentRows: number;
 }
 
 class TerminalManager {
@@ -98,7 +101,7 @@ class TerminalManager {
 
     const onDataDisposable = term.onData(onData);
 
-    this.instances.set(tabId, { term, fitAddon, onDataDisposable });
+    this.instances.set(tabId, { term, fitAddon, onDataDisposable, lastSentCols: 0, lastSentRows: 0 });
     return term;
   }
 
@@ -151,6 +154,24 @@ class TerminalManager {
   dimensions(tabId: string): { cols: number; rows: number } {
     const term = this.instances.get(tabId)?.term;
     return { cols: term?.cols ?? 100, rows: term?.rows ?? 32 };
+  }
+
+  /**
+   * Fit + check whether dimensions actually changed since the last resize.
+   * Returns { cols, rows, changed }. Callers should only send resizePty when changed=true.
+   */
+  fitIfChanged(tabId: string): { cols: number; rows: number; changed: boolean } {
+    const instance = this.instances.get(tabId);
+    if (!instance) return { cols: 100, rows: 32, changed: false };
+    try { instance.fitAddon.fit(); } catch { /* not yet visible */ }
+    const cols = instance.term.cols;
+    const rows = instance.term.rows;
+    const changed = cols !== instance.lastSentCols || rows !== instance.lastSentRows;
+    if (changed) {
+      instance.lastSentCols = cols;
+      instance.lastSentRows = rows;
+    }
+    return { cols, rows, changed };
   }
 
   /** Update theme on all terminal instances. */
