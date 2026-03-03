@@ -262,6 +262,9 @@ export interface AppState {
   loadSessions:    () => Promise<void>;
   createSession:   (name: string) => string;
   deleteSession:   (id: string) => Promise<void>;
+  endSession:      (id: string) => Promise<void>;
+  resumeSession:   (id: string) => Promise<void>;
+  setSessionResumeId: (sessionId: string, resumeId: string) => void;
   activateSession: (id: string) => void;
   finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string }) => Promise<void>;
   forkFromCheckpoint: (checkpointId: string, goal: string, sessionId: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>;
@@ -537,6 +540,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeTabId:   tab.id,
         needsReconnect: true,
         showWizard:    false,
+        resumeId:      row.resume_id || null,
       };
 
       sessions.set(row.id, session);
@@ -574,6 +578,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeTabId:   tab.id,
       needsReconnect: false,
       showWizard:    true,
+      resumeId:      null,
     };
 
     set((s) => {
@@ -661,6 +666,58 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (newActive) {
       get().loadPolicyPanel();
     }
+  },
+
+  endSession: async (id: string) => {
+    const session = get().sessions.get(id)
+    if (!session) return
+    const tabId = session.activeTabId
+    const tab = session.tabs.get(tabId)
+    if (tab?.ptyReady) {
+      window.latch?.writePty?.({ sessionId: tabId, data: '\x03' })
+    }
+  },
+
+  setSessionResumeId: (sessionId: string, resumeId: string) => {
+    set((s) => {
+      const sessions = new Map(s.sessions)
+      const sess = sessions.get(sessionId)
+      if (sess) sessions.set(sessionId, { ...sess, resumeId })
+      return { sessions }
+    })
+    window.latch?.updateSessionRecord?.({ id: sessionId, updates: { resume_id: resumeId } })
+  },
+
+  resumeSession: async (id: string) => {
+    const session = get().sessions.get(id)
+    if (!session) return
+
+    const tabId = session.activeTabId
+    const cwd = session.worktreePath ?? session.repoRoot ?? session.projectDir ?? undefined
+    const { cols, rows } = terminalManager.dimensions(tabId)
+
+    const result = await window.latch?.createPty?.({ sessionId: tabId, cwd, cols, rows })
+    if (!result?.ok) return
+    get().setTabPtyReady(tabId, true)
+
+    // Build resume command
+    const harnessBase = session.harnessCommand?.split(' ')[0] ?? 'claude'
+    const resumeCmd = session.resumeId
+      ? `${harnessBase} --resume ${session.resumeId}\r`
+      : `${session.harnessCommand ?? 'claude'}\r`
+    window.latch?.writePty?.({ sessionId: tabId, data: resumeCmd })
+
+    // Clear needsReconnect flag
+    set((s) => {
+      const sessions = new Map(s.sessions)
+      const sess = sessions.get(id)
+      if (!sess) return s
+      const tabs = new Map(sess.tabs)
+      const tab = tabs.get(tabId)
+      if (tab) tabs.set(tabId, { ...tab, needsReconnect: false })
+      sessions.set(id, { ...sess, tabs, needsReconnect: false })
+      return { sessions }
+    })
   },
 
   finalizeSession: async (sessionId, { skipWorktree, goal, branchName, projectDir, mcpServerIds, worktreeOverride, forkContext }) => {

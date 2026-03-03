@@ -111,6 +111,11 @@ class PtyManager {
       const pattern = this.redactionPatterns.get(sessionId)
       const safeData = pattern ? data.replace(pattern, '[REDACTED]') : data
       this.send('latch:pty-data', { sessionId, data: safeData })
+      // Detect Claude Code resume ID in output
+      const resumeMatch = safeData.match(/claude --resume ([a-f0-9-]+)/)
+      if (resumeMatch) {
+        this.send('latch:resume-id-detected', { sessionId, resumeId: resumeMatch[1] })
+      }
       for (const cb of this.dataCallbacks) {
         try { cb(sessionId, safeData) } catch (err: unknown) { console.warn('[pty-manager] Data callback error:', err instanceof Error ? err.message : String(err)) }
       }

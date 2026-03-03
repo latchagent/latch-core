@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld('latch', {
     ipcRenderer.on('latch:pty-exit', handler)
     return () => { ipcRenderer.removeListener('latch:pty-exit', handler) }
   },
+  onResumeIdDetected: (callback: (payload: { sessionId: string; resumeId: string }) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload)
+    ipcRenderer.on('latch:resume-id-detected', handler)
+    return () => { ipcRenderer.removeListener('latch:resume-id-detected', handler) }
+  },
 
   // ── Git ───────────────────────────────────────────────────────────────────
 
@@ -454,4 +459,35 @@ contextBridge.exposeInMainWorld('latch', {
 
   getAnalyticsDashboard: () =>
     ipcRenderer.invoke('latch:analytics-dashboard'),
+
+  // ── Issues ────────────────────────────────────────────────────────────
+  listIssueRepos: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-list-repos', payload),
+
+  listIssues: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-list', payload),
+
+  getIssue: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-get', payload),
+
+  createIssue: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-create', payload),
+
+  updateIssue: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-update', payload),
+
+  deleteIssue: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-delete', payload),
+
+  startIssueSession: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-start-session', payload),
+
+  linkIssueSession: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-link-session', payload),
+
+  syncIssue: (payload: any) =>
+    ipcRenderer.invoke('latch:issue-sync', payload),
+
+  listLinkedIssues: () =>
+    ipcRenderer.invoke('latch:issue-linked'),
 });

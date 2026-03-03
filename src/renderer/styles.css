@@ -324,6 +324,25 @@ body {
   color: var(--text-primary);
 }
 
+.topbar-end-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--error);
+  background: transparent;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.topbar-end-btn:hover {
+  background: rgba(248, 113, 113, 0.1);
+}
+
 .workspace {
   position: relative;
   padding: 32px 24px 40px;
@@ -629,6 +648,10 @@ body {
 
 .session-disconnected .session-meta {
   color: var(--text-tertiary);
+}
+
+.session-item.is-resumable .session-meta {
+  color: var(--accent);
 }
 
 /* ── Welcome Screen ──────────────────────────────────────────────────────── */

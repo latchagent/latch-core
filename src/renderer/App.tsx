@@ -134,6 +134,17 @@ export default function App() {
       if (useAppStore.getState().soundNotifications) playNotificationSound()
     })
 
+    // Register resume-id listener (captures Claude Code resume ID from PTY output)
+    const disposeResumeId = window.latch?.onResumeIdDetected?.(({ sessionId: tabId, resumeId }) => {
+      // tabId is the PTY key — find the parent session
+      for (const [sessId, sess] of useAppStore.getState().sessions) {
+        if (sess.tabs.has(tabId)) {
+          useAppStore.getState().setSessionResumeId(sessId, resumeId)
+          break
+        }
+      }
+    })
+
     // Register approval listeners
     const disposeApprovalRequest = window.latch?.onApprovalRequest?.((approval) => {
       handleApprovalRequest(approval)
@@ -164,6 +175,7 @@ export default function App() {
       disposeUsageEvent?.()
       disposeLiveEvent?.()
       disposeBudgetAlert?.()
+      disposeResumeId?.()
       disposeApprovalRequest?.()
       disposeApprovalResolved?.()
     }

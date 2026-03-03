@@ -50,7 +50,8 @@ class SessionStore {
       'ALTER TABLE sessions ADD COLUMN docker_config   TEXT',
       'ALTER TABLE sessions ADD COLUMN project_dir     TEXT',
       'ALTER TABLE sessions ADD COLUMN mcp_server_ids  TEXT',
-      'ALTER TABLE sessions ADD COLUMN enclave_config  TEXT'
+      'ALTER TABLE sessions ADD COLUMN enclave_config  TEXT',
+      'ALTER TABLE sessions ADD COLUMN resume_id       TEXT'
     ]
 
     migrations.forEach((sql) => {
@@ -93,7 +94,8 @@ class SessionStore {
   static readonly ALLOWED_COLUMNS = new Set([
     'name', 'status', 'repo_root', 'worktree_path', 'branch_ref',
     'policy_set', 'harness_id', 'harness_command', 'goal',
-    'policy_override', 'docker_config', 'project_dir', 'mcp_server_ids', 'enclave_config'
+    'policy_override', 'docker_config', 'project_dir', 'mcp_server_ids', 'enclave_config',
+    'resume_id'
   ])
 
   updateSession(id: string, updates: Record<string, any>) {

@@ -1,4 +1,6 @@
 import React from 'react'
+import { StopCircle } from '@phosphor-icons/react'
+import { useAppStore } from '../store/useAppStore'
 import type { SessionRecord } from '../../types'
 
 interface TopbarProps {
@@ -6,6 +8,7 @@ interface TopbarProps {
 }
 
 export default function Topbar({ session }: TopbarProps) {
+  const endSession = useAppStore((s) => s.endSession)
   const harness = session?.harness || '—'
   const policy  = session?.policyOverride?.name ?? session?.policy ?? '—'
   const name    = session?.name ?? '—'
@@ -17,6 +20,10 @@ export default function Topbar({ session }: TopbarProps) {
   const sandboxClass = docker?.enabled
     ? docker.status === 'running' ? 'status-docker-running' : 'status-docker-other'
     : ''
+
+  // Check if the active tab has a running PTY
+  const activeTab = session?.tabs.get(session.activeTabId)
+  const canEnd = activeTab?.ptyReady && !session?.showWizard
 
   return (
     <header className="topbar">
@@ -32,6 +39,16 @@ export default function Topbar({ session }: TopbarProps) {
       <div className="status">
         Sandbox: <span className={`status-strong ${sandboxClass}`}>{sandboxLabel}</span>
       </div>
+      {canEnd && session && (
+        <button
+          className="topbar-end-btn"
+          onClick={() => endSession(session.id)}
+          title="End session (Ctrl+C)"
+        >
+          <StopCircle size={14} weight="bold" />
+          End
+        </button>
+      )}
     </header>
   )
 }

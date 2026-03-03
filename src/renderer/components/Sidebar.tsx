@@ -14,12 +14,13 @@ interface SessionItemProps {
 }
 
 function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps) {
-  const isDisconnected = session.needsReconnect && !session.showWizard
+  const isResumable = session.needsReconnect && !session.showWizard && !!session.resumeId
+  const isDisconnected = session.needsReconnect && !session.showWizard && !session.resumeId
   const status = useAgentStatus(session.id)
 
   return (
     <div
-      className={`session-item${isActive ? ' is-active' : ''}${isDisconnected ? ' session-disconnected' : ''}`}
+      className={`session-item${isActive ? ' is-active' : ''}${isResumable ? ' is-resumable' : ''}${isDisconnected ? ' session-disconnected' : ''}`}
       onClick={onClick}
     >
       <div className="session-item-content">
@@ -28,9 +29,11 @@ function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps)
           {session.name}
         </span>
         <span className="session-meta">
-          {isDisconnected
-            ? `${session.harness || 'Shell'} · disconnected`
-            : (session.harness || 'Shell')}
+          {isResumable
+            ? `${session.harness || 'Claude'} · resumable`
+            : isDisconnected
+              ? `${session.harness || 'Shell'} · disconnected`
+              : (session.harness || 'Shell')}
         </span>
       </div>
       <button

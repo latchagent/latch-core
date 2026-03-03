@@ -87,34 +87,47 @@ function TabPane({ tab, isActive, sessionId, wizardRef }: TabPaneProps) {
       if (t?.needsReconnect && !t.ptyReady && !reconnectingRef.current) {
         reconnectingRef.current = true
 
-        // Clear needsReconnect synchronously BEFORE spawning PTY to prevent
-        // re-renders from triggering duplicate reconnections.
-        useAppStore.setState((s) => {
-          const sessions = new Map(s.sessions)
-          sessions.forEach((sess) => {
-            if (sess.tabs.has(tab.id)) {
-              const tabs = new Map(sess.tabs)
-              const existingTab = tabs.get(tab.id)!
-              tabs.set(tab.id, { ...existingTab, needsReconnect: false })
-              sessions.set(sess.id, { ...sess, tabs })
-            }
+        if (session?.resumeId) {
+          // Use resumeSession which handles PTY creation + --resume flag
+          terminalManager.writeln(tab.id, '\x1b[2mResuming session...\x1b[0m')
+          useAppStore.getState().resumeSession(sessionId).then(() => {
+            reconnectingRef.current = false
+            terminalManager.writeln(tab.id, '\x1b[32mSession resumed.\x1b[0m')
+          }).catch((err) => {
+            reconnectingRef.current = false
+            console.error('PTY resume failed:', err)
           })
-          return { sessions }
-        })
+        } else {
+          // Existing reconnect flow (re-spawn vanilla shell)
+          // Clear needsReconnect synchronously BEFORE spawning PTY to prevent
+          // re-renders from triggering duplicate reconnections.
+          useAppStore.setState((s) => {
+            const sessions = new Map(s.sessions)
+            sessions.forEach((sess) => {
+              if (sess.tabs.has(tab.id)) {
+                const tabs = new Map(sess.tabs)
+                const existingTab = tabs.get(tab.id)!
+                tabs.set(tab.id, { ...existingTab, needsReconnect: false })
+                sessions.set(sess.id, { ...sess, tabs })
+              }
+            })
+            return { sessions }
+          })
 
-        const cwd = session?.worktreePath ?? session?.repoRoot ?? undefined
-        terminalManager.writeln(tab.id, '\x1b[2mReconnecting...\x1b[0m')
-        const { cols, rows } = terminalManager.dimensions(tab.id)
-        window.latch?.createPty?.({ sessionId: tab.id, cwd, cols, rows }).then((result) => {
-          reconnectingRef.current = false
-          if (result?.ok) {
-            setTabPtyReady(tab.id, true)
-            terminalManager.writeln(tab.id, '\x1b[32mShell ready.\x1b[0m')
-          }
-        }).catch((err) => {
-          reconnectingRef.current = false
-          console.error('PTY reconnect failed:', err)
-        })
+          const cwd = session?.worktreePath ?? session?.repoRoot ?? undefined
+          terminalManager.writeln(tab.id, '\x1b[2mReconnecting...\x1b[0m')
+          const { cols, rows } = terminalManager.dimensions(tab.id)
+          window.latch?.createPty?.({ sessionId: tab.id, cwd, cols, rows }).then((result) => {
+            reconnectingRef.current = false
+            if (result?.ok) {
+              setTabPtyReady(tab.id, true)
+              terminalManager.writeln(tab.id, '\x1b[32mShell ready.\x1b[0m')
+            }
+          }).catch((err) => {
+            reconnectingRef.current = false
+            console.error('PTY reconnect failed:', err)
+          })
+        }
       }
     })
   }, [isActive, tab.id, sessionId]) // eslint-disable-line react-hooks/exhaustive-deps

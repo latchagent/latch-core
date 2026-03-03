@@ -452,6 +452,7 @@ export interface SessionUpdateFields {
   project_dir?: string | null
   mcp_server_ids?: string | null
   enclave_config?: string | null
+  resume_id?: string | null
 }
 
 /** Raw session row returned from SQLite. */
@@ -505,6 +506,7 @@ export interface SessionRecord {
   gateway: GatewayConfig | null;
   needsReconnect: boolean;
   showWizard: boolean;
+  resumeId: string | null;
 }
 
 // ─── Activity / Authz ────────────────────────────────────────────────────────
@@ -932,6 +934,7 @@ export interface LatchAPI {
   killPty(payload: { sessionId: string }): Promise<{ ok: boolean }>;
   onPtyData(callback: (payload: { sessionId: string; data: string }) => void): () => void;
   onPtyExit(callback: (payload: { sessionId: string }) => void): () => void;
+  onResumeIdDetected(callback: (payload: { sessionId: string; resumeId: string }) => void): () => void;
 
   getGitStatus(payload?: { cwd?: string }): Promise<{ isRepo: boolean; root: string | null }>;
   createWorktree(payload: { repoPath: string; branchName?: string; sessionName: string }): Promise<{ ok: boolean; workspacePath?: string; branchRef?: string; error?: string }>;
