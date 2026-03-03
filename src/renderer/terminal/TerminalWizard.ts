@@ -541,6 +541,12 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
 
   const steps: WizardStep[] = [
     {
+      id: 'name',
+      prompt: 'Session name',
+      type: 'text',
+      hint: 'Leave blank to auto-generate from goal',
+    },
+    {
       id: 'harness',
       prompt: 'Preferred harness',
       type: 'select',

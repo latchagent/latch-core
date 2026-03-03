@@ -361,13 +361,15 @@ export default function TerminalArea({ session }: TerminalAreaProps) {
           .filter(Boolean)
           .join(', ') || 'None'
 
-        // Apply harness + docker + policy to session in store
+        // Apply session name, harness, docker, policy to session in store
+        const sessionName = (answers.name as string)?.trim()
         useAppStore.setState((s) => {
           const sessions = new Map(s.sessions)
           const sess = sessions.get(sessionId)
           if (sess) {
             sessions.set(sessionId, {
               ...sess,
+              ...(sessionName ? { name: sessionName } : {}),
               ...(harness ? {
                 harnessId: harness.id,
                 harness: harness.label,

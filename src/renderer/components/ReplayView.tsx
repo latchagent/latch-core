@@ -1,12 +1,12 @@
 // src/renderer/components/ReplayView.tsx
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   PlayCircle, PauseCircle, SkipBack, SkipForward,
-  ArrowLeft,
+  ArrowLeft, ArrowCounterClockwise, GitFork,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../store/useAppStore'
-import type { TimelineTurn, TimelineActionType, PlaybackSpeed } from '../../types'
+import type { TimelineTurn, TimelineActionType, PlaybackSpeed, Checkpoint } from '../../types'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -117,6 +117,8 @@ export default function ReplayView() {
     replayIsPlaying,
     replaySpeed,
     replayCheckpointIndices,
+    replayCheckpointMap,
+    replaySessionId,
     replaySummary,
     loadTimelineConversations,
     loadReplay,
@@ -126,10 +128,21 @@ export default function ReplayView() {
     replaySeek,
     setReplaySpeed,
     sessions,
+    executeRewind,
+    forkFromCheckpoint,
+    activateSession,
+    setActiveView,
   } = useAppStore()
 
   const streamRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Checkpoint action inline state
+  const [rewindConfirmId, setRewindConfirmId] = useState<string | null>(null)
+  const [forkingCpId, setForkingCpId] = useState<string | null>(null)
+  const [forkGoal, setForkGoal] = useState('')
+  const [forkLoading, setForkLoading] = useState(false)
+  const [forkError, setForkError] = useState('')
 
   // Load conversations on mount
   useEffect(() => {
@@ -170,7 +183,7 @@ export default function ReplayView() {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (replayTurns.length === 0) return
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
 
       if (e.code === 'Space') {
         e.preventDefault()
@@ -186,6 +199,50 @@ export default function ReplayView() {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [replayTurns.length, replayIsPlaying])
+
+  // Reset checkpoint action state when navigating turns
+  useEffect(() => {
+    setRewindConfirmId(null)
+    setForkingCpId(null)
+    setForkGoal('')
+    setForkError('')
+  }, [replayCurrentIndex])
+
+  // Checkpoint action handlers
+  const handleReplayRewind = async (checkpoint: Checkpoint) => {
+    if (rewindConfirmId !== checkpoint.id) {
+      setRewindConfirmId(checkpoint.id)
+      setForkingCpId(null)
+      return
+    }
+    const result = await executeRewind(checkpoint.id, replaySessionId!)
+    setRewindConfirmId(null)
+    if (result.ok) {
+      activateSession(checkpoint.sessionId)
+    }
+  }
+
+  const handleReplayFork = async (checkpoint: Checkpoint) => {
+    if (forkingCpId !== checkpoint.id) {
+      setForkingCpId(checkpoint.id)
+      setRewindConfirmId(null)
+      setForkGoal('')
+      setForkError('')
+      return
+    }
+    if (!forkGoal.trim()) return
+    setForkLoading(true)
+    setForkError('')
+    const result = await forkFromCheckpoint(checkpoint.id, forkGoal.trim(), replaySessionId!)
+    setForkLoading(false)
+    if (result.ok) {
+      setForkingCpId(null)
+      setForkGoal('')
+      setActiveView('home')
+    } else {
+      setForkError(result.error ?? 'Fork failed')
+    }
+  }
 
   // Handle conversation selection
   const handleConversationSelect = (filePath: string) => {
@@ -253,7 +310,59 @@ export default function ReplayView() {
           {/* Right: Turn detail */}
           <div className="replay-detail">
             {currentTurn ? (
-              <TurnDetail turn={currentTurn} />
+              <>
+                <TurnDetail
+                  turn={currentTurn}
+                  checkpoint={replayCheckpointMap.get(replayCurrentIndex) ?? null}
+                  sessionId={replaySessionId}
+                  onRewind={handleReplayRewind}
+                  onFork={handleReplayFork}
+                />
+                {/* Inline rewind confirm */}
+                {rewindConfirmId && replayCheckpointMap.get(replayCurrentIndex)?.id === rewindConfirmId && (
+                  <div className="rewind-confirm" style={{ margin: '12px 16px' }}>
+                    <span className="rewind-confirm-text">
+                      This will revert all file changes after checkpoint #{replayCheckpointMap.get(replayCurrentIndex)!.number}. Continue?
+                    </span>
+                    <div className="rewind-confirm-actions">
+                      <button className="budget-alert-btn is-danger" onClick={() => handleReplayRewind(replayCheckpointMap.get(replayCurrentIndex)!)}>
+                        Yes, rewind
+                      </button>
+                      <button className="budget-alert-btn is-extend" onClick={() => setRewindConfirmId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* Inline fork form */}
+                {forkingCpId && replayCheckpointMap.get(replayCurrentIndex)?.id === forkingCpId && (
+                  <div className="rewind-fork-form" style={{ margin: '12px 16px' }}>
+                    <div className="rewind-fork-label">New goal for the forked session:</div>
+                    <textarea
+                      className="rewind-fork-textarea"
+                      placeholder="What should the agent do differently from this point?"
+                      value={forkGoal}
+                      onChange={(e) => setForkGoal(e.target.value)}
+                      rows={3}
+                      disabled={forkLoading}
+                      autoFocus
+                    />
+                    {forkError && <span className="rewind-fork-error">{forkError}</span>}
+                    <div className="rewind-fork-actions">
+                      <button
+                        className="budget-alert-btn is-extend"
+                        onClick={() => handleReplayFork(replayCheckpointMap.get(replayCurrentIndex)!)}
+                        disabled={forkLoading || !forkGoal.trim()}
+                      >
+                        {forkLoading ? 'Forking...' : 'Fork'}
+                      </button>
+                      <button className="budget-alert-btn" onClick={() => { setForkingCpId(null); setForkGoal(''); setForkError('') }} disabled={forkLoading}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="an-empty-text" style={{ padding: 32 }}>Select a turn to view details</div>
             )}
@@ -386,7 +495,13 @@ function TurnCard({
 
 // ── Turn Detail (Right Panel) ───────────────────────────────────────────────
 
-function TurnDetail({ turn }: { turn: TimelineTurn }) {
+function TurnDetail({ turn, checkpoint, sessionId, onRewind, onFork }: {
+  turn: TimelineTurn
+  checkpoint?: Checkpoint | null
+  sessionId?: string | null
+  onRewind?: (cp: Checkpoint) => void
+  onFork?: (cp: Checkpoint) => void
+}) {
   return (
     <div className="replay-turn-detail">
       <div className="replay-detail-header">
@@ -470,6 +585,29 @@ function TurnDetail({ turn }: { turn: TimelineTurn }) {
           )}
         </div>
       </div>
+
+      {/* Checkpoint actions */}
+      {checkpoint && sessionId && onRewind && onFork && (
+        <div className="replay-detail-section">
+          <div className="replay-detail-section-label">Checkpoint #{checkpoint.number}</div>
+          <div className="replay-detail-checkpoint-summary">{checkpoint.summary}</div>
+          <div className="replay-detail-checkpoint-meta">
+            <span>{checkpoint.commitHash.slice(0, 7)}</span>
+            <span>{checkpoint.filesChanged.length} file{checkpoint.filesChanged.length === 1 ? '' : 's'} changed</span>
+            {checkpoint.costUsd > 0 && <span>{formatCost(checkpoint.costUsd)}</span>}
+          </div>
+          <div className="replay-detail-checkpoint-actions">
+            <button className="replay-checkpoint-action-btn is-rewind" onClick={() => onRewind(checkpoint)}>
+              <ArrowCounterClockwise size={14} weight="bold" />
+              Rewind to here
+            </button>
+            <button className="replay-checkpoint-action-btn is-fork" onClick={() => onFork(checkpoint)}>
+              <GitFork size={14} weight="bold" />
+              Fork from here
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

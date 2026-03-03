@@ -212,6 +212,8 @@ export interface AppState {
   replayIsPlaying: boolean;
   replaySpeed: PlaybackSpeed;
   replayCheckpointIndices: number[];
+  replayCheckpointMap: Map<number, Checkpoint>;
+  replaySessionId: string | null;
   replaySummary: { totalCostUsd: number; totalDurationMs: number; turnCount: number; models: string[] } | null;
 
   // ── Issues ──────────────────────────────────────────────────────────────
@@ -270,7 +272,7 @@ export interface AppState {
   deleteSession:   (id: string) => Promise<void>;
   activateSession: (id: string) => void;
   finalizeSession: (sessionId: string, opts: { skipWorktree: boolean; goal?: string; branchName?: string; projectDir?: string; mcpServerIds?: string[]; worktreeOverride?: { repoRoot: string; worktreePath: string; branchRef: string }; forkContext?: string }) => Promise<void>;
-  forkFromCheckpoint: (checkpointId: string, goal: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>;
+  forkFromCheckpoint: (checkpointId: string, goal: string, sessionId?: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>;
 
   // Tabs
   activateTab: (sessionId: string, tabId: string) => void;
@@ -372,7 +374,7 @@ export interface AppState {
   searchCheckpoints: (query: string) => Promise<void>;
   selectCheckpoint: (checkpoint: Checkpoint | null) => void;
   loadCheckpointDiff: (checkpoint: Checkpoint) => Promise<void>;
-  executeRewind: (checkpointId: string) => Promise<{ ok: boolean; rewindContext?: string; error?: string }>;
+  executeRewind: (checkpointId: string, sessionId?: string) => Promise<{ ok: boolean; rewindContext?: string; error?: string }>;
 
   // Replay
   setReplayConversation: (id: string | null) => void;
@@ -463,6 +465,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   replayIsPlaying:          false,
   replaySpeed:              1 as PlaybackSpeed,
   replayCheckpointIndices:  [],
+  replayCheckpointMap:      new Map(),
+  replaySessionId:          null,
   replaySummary:            null,
   issuesProvider:           'latch' as IssueProvider,
   issuesRepos:              [],
@@ -694,7 +698,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Generate a descriptive session title from the goal (async, non-blocking).
     // We capture a promise so we can persist the title after the DB record exists.
     let generatedTitle: string | null = null;
-    const titlePromise = (goal && window.latch?.generateSessionTitle)
+    const isDefaultName = session.name.startsWith('Session ') || session.name.startsWith('Fork of ')
+    const titlePromise = (goal && isDefaultName && window.latch?.generateSessionTitle)
       ? window.latch.generateSessionTitle({ goal }).then((result) => {
           if (result?.ok && result.title) {
             generatedTitle = result.title;
@@ -1750,29 +1755,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ rewindDiff: res?.ok ? res.diff : null })
   },
 
-  executeRewind: async (checkpointId) => {
-    const { rewindSessionId } = get()
-    if (!rewindSessionId) return { ok: false, error: 'No session selected' }
-    const res = await window.latch?.rewind?.({ sessionId: rewindSessionId, checkpointId })
+  executeRewind: async (checkpointId, sessionId?) => {
+    const effectiveSessionId = sessionId ?? get().rewindSessionId
+    if (!effectiveSessionId) return { ok: false, error: 'No session selected' }
+    const res = await window.latch?.rewind?.({ sessionId: effectiveSessionId, checkpointId })
     if (res?.ok) {
-      get().loadCheckpoints(rewindSessionId)
+      get().loadCheckpoints(effectiveSessionId)
       set({ rewindSelectedCheckpoint: null, rewindDiff: null })
     }
     return res ?? { ok: false, error: 'IPC failed' }
   },
 
-  forkFromCheckpoint: async (checkpointId, goal) => {
-    const { rewindSessionId, rewindCheckpoints, sessions } = get()
-    if (!rewindSessionId) return { ok: false, error: 'No session selected' }
+  forkFromCheckpoint: async (checkpointId, goal, sessionId?) => {
+    const { rewindSessionId, rewindCheckpoints, replayCheckpointMap, sessions } = get()
+    const effectiveSessionId = sessionId ?? rewindSessionId
+    if (!effectiveSessionId) return { ok: false, error: 'No session selected' }
 
-    const checkpoint = rewindCheckpoints.find(c => c.id === checkpointId)
-    const sourceSession = sessions.get(rewindSessionId)
+    // Look up checkpoint from rewind or replay sources
+    let checkpoint = rewindCheckpoints.find(c => c.id === checkpointId)
+    if (!checkpoint) {
+      for (const cp of replayCheckpointMap.values()) {
+        if (cp.id === checkpointId) { checkpoint = cp; break }
+      }
+    }
+    const sourceSession = sessions.get(effectiveSessionId)
     if (!checkpoint || !sourceSession) return { ok: false, error: 'Checkpoint or source session not found' }
 
     // 1. Create worktree from checkpoint commit
     const result = await window.latch?.forkFromCheckpoint?.({
       checkpointId,
-      sourceSessionId: rewindSessionId,
+      sourceSessionId: effectiveSessionId,
     })
     if (!result?.ok) return { ok: false, error: result?.error ?? 'Fork failed' }
 
@@ -1830,6 +1842,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       replayCurrentIndex: 0,
       replayIsPlaying: false,
       replayCheckpointIndices: [],
+      replayCheckpointMap: new Map(),
+      replaySessionId: null,
       replaySummary: null,
     })
   },
@@ -1837,22 +1851,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadReplay: async (filePath, sessionId?) => {
     get().replayPause()
     if (!filePath) {
-      set({ replayConversationId: null, replayTurns: [], replayCurrentIndex: 0, replayCheckpointIndices: [], replaySummary: null })
+      set({ replayConversationId: null, replayTurns: [], replayCurrentIndex: 0, replayCheckpointIndices: [], replayCheckpointMap: new Map(), replaySessionId: null, replaySummary: null })
       return
     }
     const result = await window.latch?.loadTimeline?.({ filePath })
     const data = result?.data ?? null
     if (!data) return
 
-    // Load checkpoint indices if we have a session
-    let checkpointIndices: number[] = []
+    // Load checkpoint indices + objects if we have a session
+    const checkpointIndices: number[] = []
+    const checkpointMap = new Map<number, Checkpoint>()
     if (sessionId) {
       const cpResult = await window.latch?.listCheckpoints?.({ sessionId })
       if (cpResult?.ok && cpResult.checkpoints.length > 0) {
-        checkpointIndices = cpResult.checkpoints
-          .map((cp: any) => data.turns.findIndex((t: any) => t.index === cp.turnEnd))
-          .filter((i: number) => i >= 0)
-          .sort((a: number, b: number) => a - b)
+        for (const cp of cpResult.checkpoints) {
+          const idx = data.turns.findIndex((t: any) => t.index === cp.turnEnd)
+          if (idx >= 0) {
+            checkpointIndices.push(idx)
+            checkpointMap.set(idx, cp)
+          }
+        }
+        checkpointIndices.sort((a, b) => a - b)
       }
     }
 
@@ -1862,6 +1881,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       replayCurrentIndex: 0,
       replayIsPlaying: false,
       replayCheckpointIndices: checkpointIndices,
+      replayCheckpointMap: checkpointMap,
+      replaySessionId: sessionId ?? null,
       replaySummary: {
         totalCostUsd: data.totalCostUsd,
         totalDurationMs: data.totalDurationMs,
