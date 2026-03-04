@@ -6,7 +6,7 @@ import {
   ArrowLeft, ArrowCounterClockwise, GitFork, MagnifyingGlass,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../store/useAppStore'
-import type { TimelineTurn, TimelineActionType, PlaybackSpeed, Checkpoint } from '../../types'
+import type { TimelineTurn, TimelineActionType, PlaybackSpeed, Checkpoint, TimelineConversation } from '../../types'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -331,12 +331,11 @@ export default function ReplayView() {
   }
 
   // Handle conversation selection — match by worktreePath first (Claude Code uses CWD slug)
-  const handleConversationSelect = (filePath: string) => {
+  const handleConversationSelect = (conv: TimelineConversation) => {
     setFilterSearch('')
     setFilterChips(new Set())
-    const conv = timelineConversations.find(c => c.filePath === filePath)
     let sessionId: string | undefined
-    if (conv) {
+    if (conv.sourceId === 'claude-jsonl') {
       for (const [id, s] of sessions) {
         const cwd = s.worktreePath ?? s.repoRoot
         if (cwd && cwd.replace(/[/.]/g, '-') === conv.projectSlug) {
@@ -344,8 +343,10 @@ export default function ReplayView() {
           break
         }
       }
+    } else {
+      sessionId = conv.id
     }
-    loadReplay(filePath, sessionId)
+    loadReplay(conv.filePath, sessionId, conv.sourceId)
   }
 
   // Build slug → session name lookup for the conversation list
@@ -598,7 +599,7 @@ export default function ReplayView() {
         <div className="an-empty">
           <PlayCircle size={48} weight="light" className="an-empty-icon" />
           <span className="an-empty-text">No conversations found</span>
-          <span className="an-empty-hint">Run an agent session first. Conversations are loaded from Claude Code project logs.</span>
+          <span className="an-empty-hint">Run an agent session to see replay data here.</span>
         </div>
       ) : (
         <div className="replay-conversation-list">
@@ -606,10 +607,13 @@ export default function ReplayView() {
             <div
               key={conv.id}
               className="replay-conversation-card"
-              onClick={() => handleConversationSelect(conv.filePath)}
+              onClick={() => handleConversationSelect(conv)}
             >
               <div className="replay-conv-header">
                 <span className="replay-conv-project">{sessionNameBySlug.get(conv.projectSlug) ?? conv.projectName}</span>
+                {conv.harnessId && conv.harnessId !== 'claude' && (
+                  <span className="replay-conv-harness">{conv.harnessId}</span>
+                )}
                 <span className="replay-conv-date">
                   {new Date(conv.lastModified).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                 </span>

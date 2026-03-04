@@ -374,7 +374,7 @@ export interface AppState {
 
   // Replay
   setReplayConversation: (id: string | null) => void;
-  loadReplay: (filePath: string, sessionId?: string) => Promise<void>;
+  loadReplay: (filePath: string, sessionId?: string, sourceId?: string) => Promise<void>;
   replayPlay: () => void;
   replayPause: () => void;
   replayStep: (direction: 1 | -1) => void;
@@ -1961,13 +1961,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  loadReplay: async (filePath, sessionId?) => {
+  loadReplay: async (filePath, sessionId?, sourceId?) => {
     get().replayPause()
     if (!filePath) {
       set({ replayConversationId: null, replayTurns: [], replayCurrentIndex: 0, replayCheckpointIndices: [], replayCheckpointMap: new Map(), replaySessionId: null, replaySummary: null })
       return
     }
-    const result = await window.latch?.loadTimeline?.({ filePath })
+    const result = await window.latch?.loadTimeline?.({ filePath, sourceId })
     const data = result?.data ?? null
     if (!data) return
 

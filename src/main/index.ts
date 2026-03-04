@@ -97,6 +97,12 @@ import {
   stopCheckpointEngine,
 } from './services/checkpoint-engine'
 import { listConversations, parseTimeline }      from './lib/timeline-parser'
+import { ConversationStore }                     from './stores/conversation-store'
+import {
+  ConversationRegistry,
+  ClaudeConversationSource,
+  PluginConversationSource,
+} from './lib/conversation-source'
 import { computeConversationAnalytics, computeDashboard } from './lib/analytics-engine'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
@@ -128,6 +134,9 @@ let credentialManager: CredentialManager | null = null
 let usageStore: UsageStore | null = null
 let checkpointStore: CheckpointStore | null = null
 let issueStore: IssueStore | null = null
+let conversationStore: ConversationStore | null = null
+let conversationRegistry: ConversationRegistry | null = null
+let pluginConversationSource: PluginConversationSource | null = null
 
 // Gateway orchestration maps — keyed by sessionId
 const proxyInstances = new Map<string, LatchProxy>()
@@ -247,6 +256,11 @@ app.whenReady().then(() => {
     usageStore    = UsageStore.open(db)
     checkpointStore = CheckpointStore.open(db)
     issueStore      = IssueStore.open(db)
+    conversationStore = ConversationStore.open(db)
+    conversationRegistry = new ConversationRegistry()
+    conversationRegistry.register(new ClaudeConversationSource())
+    pluginConversationSource = new PluginConversationSource(conversationStore)
+    conversationRegistry.register(pluginConversationSource)
     const keyPath = path.join(app.getPath('userData'), 'attestation-key.json')
     attestationEngine = new AttestationEngine(attestationStore, keyPath)
 
@@ -1156,7 +1170,9 @@ app.whenReady().then(() => {
 
   ipcMain.handle('latch:timeline-conversations', async (_event: any, payload: any = {}) => {
     try {
-      const conversations = listConversations(payload.projectSlug)
+      const conversations = conversationRegistry
+        ? conversationRegistry.listAll(payload.projectSlug)
+        : listConversations(payload.projectSlug)
       return { ok: true, conversations }
     } catch (err: unknown) {
       return { ok: false, conversations: [], error: err instanceof Error ? err.message : String(err) }
@@ -1164,9 +1180,18 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:timeline-load', async (_event: any, payload: any = {}) => {
-    if (!payload.filePath) return { ok: false, data: null, error: 'filePath required' }
+    const { filePath, sourceId } = payload
+    if (!filePath && !sourceId) return { ok: false, data: null, error: 'filePath or sourceId required' }
+
     try {
-      const data = parseTimeline(payload.filePath)
+      let data: import('../types').TimelineData | null = null
+
+      if (sourceId && conversationRegistry) {
+        data = conversationRegistry.load(filePath, sourceId)
+      } else if (filePath) {
+        data = parseTimeline(filePath)
+      }
+
       return { ok: true, data }
     } catch (err: unknown) {
       return { ok: false, data: null, error: err instanceof Error ? err.message : String(err) }

@@ -7363,6 +7363,16 @@ textarea:focus-visible,
   color: var(--text-tertiary);
 }
 
+.replay-conv-harness {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(var(--d-blue), 0.15);
+  color: rgb(var(--d-blue));
+  letter-spacing: 0.5px;
+}
+
 .replay-conv-preview {
   font-size: 12px;
   color: var(--text-secondary);

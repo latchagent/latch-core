@@ -1154,7 +1154,7 @@ export interface LatchAPI {
 
   // Timeline
   listTimelineConversations(payload: { projectSlug?: string }): Promise<{ ok: boolean; conversations: TimelineConversation[] }>;
-  loadTimeline(payload: { filePath: string }): Promise<{ ok: boolean; data: TimelineData | null; error?: string }>;
+  loadTimeline(payload: { filePath: string; sourceId?: string }): Promise<{ ok: boolean; data: TimelineData | null; error?: string }>;
 
   // Analytics
   getConversationAnalytics(payload: { filePath: string }): Promise<{ ok: boolean; analytics: ConversationAnalytics | null; error?: string }>;

@@ -462,7 +462,7 @@ contextBridge.exposeInMainWorld('latch', {
   listTimelineConversations: (payload?: { projectSlug?: string }) =>
     ipcRenderer.invoke('latch:timeline-conversations', payload ?? {}),
 
-  loadTimeline: (payload: { filePath: string }) =>
+  loadTimeline: (payload: { filePath: string; sourceId?: string }) =>
     ipcRenderer.invoke('latch:timeline-load', payload),
 
   // ── Analytics ──────────────────────────────────────────────────────────
