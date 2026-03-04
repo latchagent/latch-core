@@ -1174,11 +1174,8 @@ export const useAppStore = create<AppState>((set, get) => ({
               launchCmd = baseCmd;
             }
           } else if (session.harnessId === 'opencode') {
-            // opencode uses `opencode run "prompt"` for initial prompt, plain `opencode` for TUI
-            if (goal) {
-              const escaped = goal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-              launchCmd = `${enforcedHarnessCommand} run $'${escaped}'`;
-            }
+            // opencode TUI doesn't accept an initial prompt — just launch plain
+            launchCmd = enforcedHarnessCommand;
           } else if (goal) {
             const escaped = goal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
             launchCmd = `${enforcedHarnessCommand} $'${escaped}'`;
