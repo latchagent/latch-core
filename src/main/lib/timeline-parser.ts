@@ -115,6 +115,8 @@ export function listConversations(projectSlug?: string): TimelineConversation[] 
           projectName,
           lastModified: stat.mtime.toISOString(),
           sizeBytes: stat.size,
+          sourceId: 'claude-jsonl',
+          harnessId: 'claude',
           ...preview,
         })
       } catch { continue }
@@ -482,6 +484,8 @@ export function parseTimeline(filePath: string): TimelineData {
       totalCostUsd: totalCost,
       totalTokens,
       turnCount: turns.length,
+      sourceId: 'claude-jsonl',
+      harnessId: 'claude',
     },
     turns,
     totalCostUsd: totalCost,

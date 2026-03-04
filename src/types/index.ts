@@ -821,6 +821,8 @@ export interface TimelineConversation {
   totalCostUsd: number
   totalTokens: number
   turnCount: number
+  sourceId: string           // 'claude-jsonl' | 'opencode-sse' | ...
+  harnessId?: string         // 'claude' | 'opencode' | ...
 }
 
 export interface TimelineData {
