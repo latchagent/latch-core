@@ -514,10 +514,6 @@ export class TerminalWizard {
         if (step.id === 'projectDir' || step.id === 'branch' || step.id === 'branchMode' || step.id === 'branchSelect') {
           step.skip = true
         }
-        if (step.id === 'goal') {
-          step.prompt = 'What do you want to do?'
-          step.hint = 'e.g. Research the latest trends in AI safety'
-        }
       }
     }
 
@@ -675,6 +671,7 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
       prompt: 'What are you trying to build?',
       type: 'text',
       hint: 'e.g. Build a REST API for user authentication',
+      skip: true,
     },
     {
       id: 'budget',
@@ -714,10 +711,6 @@ export function buildWizardSteps(opts: WizardStepBuilderOpts): WizardStep[] {
     for (const step of steps) {
       if (step.id === 'projectDir' || step.id === 'branch' || step.id === 'branchMode' || step.id === 'branchSelect') {
         step.skip = true
-      }
-      if (step.id === 'goal') {
-        step.prompt = 'What do you want to do?'
-        step.hint = 'e.g. Research the latest trends in AI safety'
       }
     }
   }

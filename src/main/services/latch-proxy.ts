@@ -370,6 +370,9 @@ export class LatchProxy {
     const [host, portStr] = (req.url ?? '').split(':')
     const port = parseInt(portStr, 10) || 443
 
+    // Prevent uncaught ECONNRESET if the client socket errors before we set up a tunnel
+    socket.on('error', () => socket.destroy())
+
     // M4: Restrict CONNECT to allowed ports (default: 443 only)
     if (!ALLOWED_CONNECT_PORTS.has(port)) {
       this.config.onBlock?.(`CONNECT to ${host}:${port} blocked — port not allowed`)
