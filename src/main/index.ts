@@ -105,6 +105,7 @@ import {
 } from './lib/conversation-source'
 import { computeConversationAnalytics, computeDashboard } from './lib/analytics-engine'
 import { OpenCodeTailer }                         from './services/opencode-tailer'
+import { OpenCodeDbSource }                       from './lib/opencode-db-source'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -263,6 +264,7 @@ app.whenReady().then(() => {
     conversationStore = ConversationStore.open(db)
     conversationRegistry = new ConversationRegistry()
     conversationRegistry.register(new ClaudeConversationSource())
+    conversationRegistry.register(new OpenCodeDbSource())
     pluginConversationSource = new PluginConversationSource(conversationStore)
     conversationRegistry.register(pluginConversationSource)
     const keyPath = path.join(app.getPath('userData'), 'attestation-key.json')
