@@ -311,6 +311,7 @@ export class AuthzServer {
   private feedStore: FeedStore | null = null
   private settingsStore: SettingsStore | null = null
   private secretStore: import('../stores/secret-store').SecretStore | null = null
+  private onOpenCodeApiUrl: ((sessionId: string, apiUrl: string) => void) | null = null
   private sendToRenderer: (channel: string, payload: unknown) => void
 
   constructor(
@@ -347,6 +348,11 @@ export class AuthzServer {
   /** Wire up the secret store for /secrets/resolve endpoint. */
   setSecretStore(store: import('../stores/secret-store').SecretStore): void {
     this.secretStore = store
+  }
+
+  /** Wire up the OpenCode API URL callback for starting the SSE tailer. */
+  setOnOpenCodeApiUrl(cb: (sessionId: string, apiUrl: string) => void): void {
+    this.onOpenCodeApiUrl = cb
   }
 
   /** Register a callback for supervisor actions (used by Supervisor service). */
@@ -545,8 +551,12 @@ export class AuthzServer {
     const secretsMatch = (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch)
       ? req.url?.match(/^\/secrets\/resolve$/)
       : null
+    // Route: POST /opencode-api/:sessionId — OpenCode plugin reports its API URL
+    const openCodeApiMatch = (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch)
+      ? req.url?.match(/^\/opencode-api\/([^/]+)$/)
+      : null
 
-    if (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch) {
+    if (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch && !openCodeApiMatch) {
       res.writeHead(404)
       res.end('Not found')
       return
@@ -566,7 +576,7 @@ export class AuthzServer {
 
     const sessionId = secretsMatch
       ? ''
-      : decodeURIComponent((superviseMatch ?? authzMatch ?? notifyMatch ?? feedMatch)![1])
+      : decodeURIComponent((superviseMatch ?? authzMatch ?? notifyMatch ?? feedMatch ?? openCodeApiMatch)![1])
 
     // Rate limit per session (skip for secrets endpoint which has no session)
     if (sessionId && !this.checkRateLimit(sessionId)) {
@@ -607,6 +617,8 @@ export class AuthzServer {
           this.processNotify(sessionId, body, res)
         } else if (feedMatch) {
           this.processFeed(sessionId, body, res)
+        } else if (openCodeApiMatch) {
+          this.processOpenCodeApi(sessionId, body, res)
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -656,6 +668,31 @@ export class AuthzServer {
         : { sessionStatus: message.toLowerCase().includes('waiting') ? 'idle' as const : 'active' as const }),
     }
     this.sendToRenderer('latch:live-event', liveEvent)
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  }
+
+  /** Process an OpenCode API URL report — starts the SSE tailer for replay. */
+  private processOpenCodeApi(sessionId: string, body: string, res: http.ServerResponse): void {
+    let payload: Record<string, unknown>
+    try {
+      payload = JSON.parse(body)
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON' }))
+      return
+    }
+
+    const apiUrl = typeof payload.apiUrl === 'string' ? payload.apiUrl.trim() : ''
+    if (!apiUrl) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Missing apiUrl' }))
+      return
+    }
+
+    console.log(`[authz] OpenCode API URL reported for session ${sessionId}: ${apiUrl}`)
+    this.onOpenCodeApiUrl?.(sessionId, apiUrl)
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true }))

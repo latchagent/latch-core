@@ -104,6 +104,7 @@ import {
   PluginConversationSource,
 } from './lib/conversation-source'
 import { computeConversationAnalytics, computeDashboard } from './lib/analytics-engine'
+import { OpenCodeTailer }                         from './services/opencode-tailer'
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -137,6 +138,9 @@ let issueStore: IssueStore | null = null
 let conversationStore: ConversationStore | null = null
 let conversationRegistry: ConversationRegistry | null = null
 let pluginConversationSource: PluginConversationSource | null = null
+
+// OpenCode SSE tailers — keyed by sessionId
+const openCodeTailers = new Map<string, OpenCodeTailer>()
 
 // Gateway orchestration maps — keyed by sessionId
 const proxyInstances = new Map<string, LatchProxy>()
@@ -294,6 +298,21 @@ app.whenReady().then(() => {
     if (feedStore) authzServer.setFeedStore(feedStore)
     authzServer.setSettingsStore(settingsStore)
     if (secretStore) authzServer.setSecretStore(secretStore)
+    authzServer.setOnOpenCodeApiUrl((sessionId, apiUrl) => {
+      // Don't create duplicate tailers
+      if (openCodeTailers.has(sessionId)) return
+      if (!conversationStore) return
+
+      const tailer = new OpenCodeTailer({
+        store: conversationStore,
+        sendToRenderer,
+        apiUrl,
+        sessionId,
+      })
+      openCodeTailers.set(sessionId, tailer)
+      tailer.start()
+      console.log(`[main] OpenCodeTailer started for session ${sessionId}`)
+    })
     authzServer.start().catch((err: unknown) => {
       console.error('Authz server start failed:', err instanceof Error ? err.message : String(err))
       authzServer = null
@@ -707,6 +726,14 @@ app.whenReady().then(() => {
       const cwd = v.data.updates.worktree_path ?? v.data.updates.repo_root
       liveTailerAddSession(v.data.id, cwd)
     }
+    // Stop OpenCode tailer when session ends
+    if (result.ok && v.data.updates.status === 'ended') {
+      const tailer = openCodeTailers.get(v.data.id)
+      if (tailer) {
+        tailer.stop()
+        openCodeTailers.delete(v.data.id)
+      }
+    }
     return result
   })
 
@@ -715,6 +742,12 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('latch:session-delete', async (_event: any, { id }: any) => {
+    // Stop OpenCode tailer before deleting
+    const tailer = openCodeTailers.get(id)
+    if (tailer) {
+      tailer.stop()
+      openCodeTailers.delete(id)
+    }
     return sessionStore.deleteSession(id)
   })
 
