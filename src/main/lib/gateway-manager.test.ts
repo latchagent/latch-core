@@ -29,7 +29,7 @@ describe('GatewayManager', () => {
 
     expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:9801')
     expect(env.HTTP_PROXY).toBe('http://127.0.0.1:9801')
-    expect(env.NO_PROXY).toBe('')
+    expect(env.NO_PROXY).toBe('localhost,127.0.0.1,::1')
     expect(env.LATCH_GATEWAY).toBe('true')
     expect(env.LATCH_SESSION_ID).toBe('session-1')
     expect(env.GH_TOKEN).toBe('ghp_secret')

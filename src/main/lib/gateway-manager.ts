@@ -28,7 +28,8 @@ export class GatewayManager {
       HTTPS_PROXY: `http://127.0.0.1:${input.proxyPort}`,
       http_proxy: `http://127.0.0.1:${input.proxyPort}`,
       https_proxy: `http://127.0.0.1:${input.proxyPort}`,
-      NO_PROXY: '',
+      NO_PROXY: 'localhost,127.0.0.1,::1',
+      no_proxy: 'localhost,127.0.0.1,::1',
 
       // Latch metadata
       LATCH_GATEWAY: 'true',
