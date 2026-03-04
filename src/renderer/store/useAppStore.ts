@@ -1057,6 +1057,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // ── OpenCode plugin setup (always, regardless of policy) ──────────
+    if (session.harnessId === 'opencode' && window.latch?.setupOpenCode) {
+      const setupDir = worktreePath ?? projectDir
+      if (setupDir) {
+        const setupResult = await window.latch.setupOpenCode({ sessionId: session.id, targetDir: setupDir })
+        if (setupResult?.ok) {
+          terminalManager.writeln(tabId, `\x1b[2mOpenCode plugin installed.\x1b[0m`)
+        }
+      }
+    }
+
     // ── Gateway start ──────────────────────────────────────────────────
     let gatewayEnv: Record<string, string> = {}
     let gatewaySandboxCommand: string | undefined

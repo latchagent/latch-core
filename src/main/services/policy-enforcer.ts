@@ -931,7 +931,7 @@ function generateOpenCodeConfig(
 /** Write `.opencode/plugins/latch-policy.ts` plugin for runtime authz interception
  *  and feed reporting via Latch's authz server.
  */
-function generateOpenCodePlugin(
+export function generateOpenCodePlugin(
   targetDir: string,
   authzOptions: { port: number; sessionId: string; secret: string },
 ): void {

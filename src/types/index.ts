@@ -962,6 +962,7 @@ export interface LatchAPI {
 
   detectHarnesses(): Promise<{ ok: boolean; harnesses: HarnessRecord[] }>;
   installHarness(payload: { harnessId: string }): Promise<{ ok: boolean; error?: string }>;
+  setupOpenCode(payload: { sessionId: string; targetDir: string }): Promise<{ ok: boolean; error?: string }>;
   listModels(payload: { harnessId: string }): Promise<{ ok: boolean; models: ModelRecord[]; error?: string }>;
   openExternal(url: string): Promise<{ ok: boolean }>;
 

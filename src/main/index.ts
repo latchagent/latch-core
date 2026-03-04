@@ -33,7 +33,7 @@ import {
 import { detectAllHarnesses }                   from './lib/harnesses'
 import SessionStore                              from './stores/session-store'
 import { PolicyStore }                           from './stores/policy-store'
-import { enforcePolicy }                         from './services/policy-enforcer'
+import { enforcePolicy, generateOpenCodePlugin } from './services/policy-enforcer'
 import { generatePolicy, generateSessionTitle }  from './services/policy-generator'
 import { SkillsStore }                           from './stores/skills-store'
 import { McpStore }                              from './stores/mcp-store'
@@ -587,6 +587,22 @@ app.whenReady().then(() => {
         } catch { /* brew also failed */ }
       }
       return { ok: false, error: 'Installation failed. Try running: npm i -g opencode-ai' }
+    }
+  })
+
+  ipcMain.handle('latch:opencode-setup', async (_event: any, payload: { sessionId: string; targetDir: string }) => {
+    const { sessionId, targetDir } = payload
+    if (!sessionId || !targetDir) return { ok: false, error: 'Missing sessionId or targetDir' }
+    if (!authzServer) return { ok: false, error: 'Authz server not available' }
+    try {
+      generateOpenCodePlugin(targetDir, {
+        port: authzServer.getPort(),
+        sessionId,
+        secret: authzServer.getSecret(),
+      })
+      return { ok: true }
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
