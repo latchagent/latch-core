@@ -304,6 +304,30 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     },
   },
   {
+    id: 'opencode-ai',
+    name: 'OpenCode',
+    category: 'cloud',
+    protocol: 'http',
+    credential: { type: 'token', fields: [] },
+    injection: {
+      env: {},
+      files: {},
+      proxy: {
+        domains: ['opencode.ai'],
+        headers: {},
+      },
+    },
+    dataTier: {
+      defaultTier: 'public',
+      redaction: { patterns: [], fields: [] },
+    },
+    skill: {
+      description: 'OpenCode home service for telemetry and referrer headers.',
+      capabilities: [],
+      constraints: [],
+    },
+  },
+  {
     id: 'aws',
     name: 'AWS',
     category: 'cloud',

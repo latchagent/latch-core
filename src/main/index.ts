@@ -1308,7 +1308,7 @@ app.whenReady().then(() => {
       const HARNESS_API_SERVICES: Record<string, string[]> = {
         claude: ['anthropic'],
         codex: ['openai'],
-        opencode: ['anthropic', 'openai', 'groq', 'openrouter', 'xai', 'google-ai', 'models-dev'],
+        opencode: ['anthropic', 'openai', 'groq', 'openrouter', 'xai', 'google-ai', 'models-dev', 'opencode-ai', 'npm'],
       }
       const harnessApiSvcs = harnessId ? HARNESS_API_SERVICES[harnessId] ?? [] : []
       for (const svc of harnessApiSvcs) {
