@@ -92,10 +92,10 @@ export class SkillsStore {
       return s.harnesses.includes(harnessId)
     })
 
-    // OpenCode uses .opencode/agents/latch-*.md files (project-level)
+    // OpenCode uses .opencode/skills/<name>/SKILL.md (agentskills.io spec, project-level)
     if (harnessId === 'opencode') {
-      const agentsDir = path.join(process.cwd(), '.opencode', 'agents')
-      return this._syncToAgentsDir(agentsDir, applicable)
+      const skillsDir = path.join(process.cwd(), '.opencode', 'skills')
+      return this._syncToSkillsDir(skillsDir, applicable)
     }
 
     // Harnesses with a skills/ directory (Claude Code, OpenClaw)
