@@ -1173,6 +1173,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             } else {
               launchCmd = baseCmd;
             }
+          } else if (session.harnessId === 'opencode') {
+            // opencode TUI doesn't accept a positional prompt arg.
+            // Just launch `opencode` — the user types their prompt inside the TUI.
+            launchCmd = enforcedHarnessCommand;
           } else if (goal) {
             const escaped = goal.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
             launchCmd = `${enforcedHarnessCommand} $'${escaped}'`;
