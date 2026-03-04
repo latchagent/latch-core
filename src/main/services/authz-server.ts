@@ -643,6 +643,20 @@ export class AuthzServer {
       this.sendToRenderer('latch:feed-update', item)
     }
 
+    // Also emit as a live-event so the replay view picks it up.
+    // Parse the message to determine if it's a tool call or status update.
+    const isToolCall = message.includes(':')
+    const liveEvent = {
+      id: `feed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId,
+      timestamp: new Date().toISOString(),
+      kind: isToolCall ? 'tool-call' as const : 'status-change' as const,
+      ...(isToolCall
+        ? { toolName: message.split(':')[0].trim(), target: message.split(':').slice(1).join(':').trim(), status: 'success' as const }
+        : { sessionStatus: message.toLowerCase().includes('waiting') ? 'idle' as const : 'active' as const }),
+    }
+    this.sendToRenderer('latch:live-event', liveEvent)
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true }))
   }
