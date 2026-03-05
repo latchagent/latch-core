@@ -1,7 +1,7 @@
 {
   "name": "latch-core",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Terminal-first control plane for AI coding harnesses — policy enforcement, session management, and conversation replay for Claude Code, OpenCode, Codex, and more.",
   "author": "Latch Agent <hello@latchagent.com>",
   "license": "AGPL-3.0-only",

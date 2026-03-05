@@ -165,9 +165,10 @@ const gatewayStartTimes = new Map<string, number>()
 // ─── Window ───────────────────────────────────────────────────────────────────
 
 function createWindow(): BrowserWindow {
-  // Resolve icon path — electron-builder embeds icons in production,
-  // but in dev we load from the build/ directory.
-  const iconPath = path.join(__dirname, '../../build/icon.png')
+  // Resolve icon path — in dev, load from the build/ directory;
+  // in production on macOS, the .icns is in Resources/ and Electron uses it automatically.
+  const isDev = !!process.env.ELECTRON_RENDERER_URL
+  const iconPath = isDev ? path.join(__dirname, '../../build/icon.png') : undefined
 
   const win = new BrowserWindow({
     width:           1280,
@@ -177,7 +178,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#05060a',
     title:           'Latch Desktop',
     titleBarStyle:   process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    icon:            iconPath,
+    ...(iconPath ? { icon: iconPath } : {}),
     show:            false,
     webPreferences: {
       preload:          path.join(__dirname, '../preload/index.js'),
@@ -187,8 +188,8 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  // Set macOS dock icon in dev mode
-  if (process.platform === 'darwin' && app.dock) {
+  // Set macOS dock icon in dev mode (production uses the bundled .icns automatically)
+  if (iconPath && process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(iconPath)
   }
 
