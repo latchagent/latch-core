@@ -106,6 +106,7 @@ export class PluginConversationSource implements ConversationSource {
   readonly id = 'opencode-sse'
   private store: ConversationStore
   private sessionMeta = new Map<string, SessionMeta>()
+  private sessionLookup: ((sessionId: string) => SessionMeta | null) | null = null
 
   constructor(store: ConversationStore) {
     this.store = store
@@ -119,12 +120,30 @@ export class PluginConversationSource implements ConversationSource {
     this.sessionMeta.set(sessionId, meta)
   }
 
+  /** Set a fallback lookup for session metadata (e.g., from Latch session store). */
+  setSessionLookup(fn: (sessionId: string) => SessionMeta | null): void {
+    this.sessionLookup = fn
+  }
+
+  /** Get session meta, trying cached first, then fallback lookup. */
+  private _getMeta(sessionId: string): SessionMeta | undefined {
+    let meta = this.sessionMeta.get(sessionId)
+    if (!meta && this.sessionLookup) {
+      const looked = this.sessionLookup(sessionId)
+      if (looked) {
+        this.sessionMeta.set(sessionId, looked)
+        meta = looked
+      }
+    }
+    return meta
+  }
+
   listConversations(projectSlug?: string): TimelineConversation[] {
     const summaries = this.store.listConversations()
     const conversations: TimelineConversation[] = []
 
     for (const row of summaries) {
-      const meta = this.sessionMeta.get(row.sessionId)
+      const meta = this._getMeta(row.sessionId)
 
       // If projectSlug filter is set and doesn't match, skip
       if (projectSlug && meta?.projectSlug !== projectSlug) continue
@@ -137,11 +156,17 @@ export class PluginConversationSource implements ConversationSource {
   }
 
   loadConversation(conversationId: string): TimelineData | null {
-    const events = this.store.listBySession(conversationId)
+    // Strip plugin:// prefix if present — the DB stores raw session IDs
+    const prefix = `plugin://${this.id}/`
+    const sessionId = conversationId.startsWith(prefix)
+      ? conversationId.slice(prefix.length)
+      : conversationId
+
+    const events = this.store.listBySession(sessionId)
     if (events.length === 0) return null
 
     const turns = this.assembleTimeline(events)
-    const meta = this.sessionMeta.get(conversationId)
+    const meta = this._getMeta(sessionId)
 
     const totalCost = turns.reduce((s, t) => s + t.costUsd, 0)
     const modelsSet = new Set<string>()
@@ -166,8 +191,8 @@ export class PluginConversationSource implements ConversationSource {
 
     return {
       conversation: {
-        id: conversationId,
-        filePath: `plugin://${this.id}/${conversationId}`,
+        id: sessionId,
+        filePath: `plugin://${this.id}/${sessionId}`,
         projectSlug: meta?.projectSlug ?? 'unknown',
         projectName: meta?.projectName ?? 'Unknown',
         lastModified: lastEvent.timestamp,
@@ -218,6 +243,17 @@ export class PluginConversationSource implements ConversationSource {
       turns.push(turn)
     }
 
+    // Drop trailing empty prompt turns — these are user messages that arrived
+    // just before the session ended, with no assistant response following.
+    while (turns.length > 0) {
+      const last = turns[turns.length - 1]
+      if (last.actionType === 'prompt' && !last.textSummary && last.toolCalls.length === 0) {
+        turns.pop()
+      } else {
+        break
+      }
+    }
+
     // Calculate durations from timestamp gaps between consecutive turns
     for (let i = 0; i < turns.length; i++) {
       if (i < turns.length - 1) {
@@ -243,6 +279,9 @@ export class PluginConversationSource implements ConversationSource {
     // Check for prompt events — if all events are prompts, this is a prompt turn
     const promptEvents = events.filter((e) => e.kind === 'prompt')
     if (promptEvents.length > 0 && promptEvents.length === events.length) {
+      // Find the first prompt event that has text content (the text part comes
+      // from message.part.updated, which may fire after the initial prompt event)
+      const promptText = promptEvents.find((e) => e.textContent)?.textContent ?? null
       return {
         index,
         requestId: null,
@@ -256,7 +295,7 @@ export class PluginConversationSource implements ConversationSource {
         cacheReadTokens: 0,
         cacheWriteTokens: 0,
         thinkingSummary: null,
-        textSummary: promptEvents[0].textContent ?? null,
+        textSummary: promptText,
         toolCalls: [],
         actionType: 'prompt',
       }

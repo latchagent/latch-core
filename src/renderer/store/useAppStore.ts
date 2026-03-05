@@ -559,6 +559,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         showWizard:    false,
         resumeId:      row.resume_id || null,
         status:        row.status || null,
+        model:         null,
       };
 
       sessions.set(row.id, session);
@@ -598,6 +599,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       showWizard:    true,
       resumeId:      null,
       status:        'active',
+      model:         null,
     };
 
     set((s) => {
@@ -846,7 +848,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (branchName !== undefined) session.branchName = branchName;
     if (projectDir !== undefined) session.projectDir = projectDir;
     if (model) {
-      (session as any).model = model;
+      session.model = model;
       // Persist model choice per harness for next session
       if (session.harnessId) {
         window.latch?.setSetting?.({ key: `last-model-${session.harnessId}`, value: model })
@@ -1059,7 +1061,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // ── OpenCode plugin setup (always, regardless of policy) ──────────
     if (session.harnessId === 'opencode' && window.latch?.setupOpenCode) {
-      const setupDir = worktreePath ?? projectDir
+      const setupDir = cwd ?? worktreePath ?? projectDir
       if (setupDir) {
         const setupResult = await window.latch.setupOpenCode({ sessionId: session.id, targetDir: setupDir })
         if (setupResult?.ok) {
@@ -1165,7 +1167,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
 
           // Append --model flag if a model was selected in the wizard
-          const selectedModel = (session as any).model as string | null
+          const selectedModel = session.model
           if (selectedModel) {
             enforcedHarnessCommand = `${enforcedHarnessCommand} --model ${selectedModel}`
           }

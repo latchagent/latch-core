@@ -18,6 +18,9 @@ import type Database from 'better-sqlite3'
 
 const execFileAsync = promisify(execFile)
 
+import fs from 'node:fs'
+import os from 'node:os'
+
 // Local modules — these are JS files imported as ESM so Vite will bundle them.
 import {
   getGitRoot,
@@ -33,7 +36,7 @@ import {
 import { detectAllHarnesses }                   from './lib/harnesses'
 import SessionStore                              from './stores/session-store'
 import { PolicyStore }                           from './stores/policy-store'
-import { enforcePolicy, generateOpenCodePlugin } from './services/policy-enforcer'
+import { enforcePolicy, installGlobalOpenCodePlugin } from './services/policy-enforcer'
 import { generatePolicy, generateSessionTitle }  from './services/policy-generator'
 import { SkillsStore }                           from './stores/skills-store'
 import { McpStore }                              from './stores/mcp-store'
@@ -59,6 +62,9 @@ import {
   AgentsReadSchema, AgentsWriteSchema,
   SettingsKeySchema, SettingsSetSchema,
   SecretSaveSchema, DockerStartSchema, AuthzRegisterSchema,
+  GitStatusSchema, GitCreateWorktreeSchema, GitListWorktreesSchema,
+  GitRemoveWorktreeSchema, GitListBranchesSchema, GitDefaultBranchSchema,
+  GitMergeBranchSchema,
 } from './lib/ipc-schemas'
 import { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall, getUpdateState } from './services/updater'
 import { initDebugLog, closeDebugLog } from './services/debug-log'
@@ -105,7 +111,15 @@ import {
 } from './lib/conversation-source'
 import { computeConversationAnalytics, computeDashboard } from './lib/analytics-engine'
 import { OpenCodeTailer }                         from './services/opencode-tailer'
-import { OpenCodeDbSource }                       from './lib/opencode-db-source'
+
+// Install global OpenCode plugin at boot — writes the plugin file to
+// ~/.config/opencode/plugins/latch.ts so OpenCode auto-loads it.
+// Connection details (port/secret) get updated when the authz server starts.
+try {
+  installGlobalOpenCodePlugin(0, '')
+} catch {
+  // Non-fatal — plugin install fails gracefully
+}
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -215,7 +229,7 @@ initDebugLog()
 
 // ─── Telemetry SDK (must init before app.whenReady) ──────────────────────────
 
-initTelemetrySDK(process.env.LATCH_APTABASE_KEY ?? 'A-US-1996460381')
+initTelemetrySDK(process.env.LATCH_APTABASE_KEY ?? '')
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
@@ -264,8 +278,18 @@ app.whenReady().then(() => {
     conversationStore = ConversationStore.open(db)
     conversationRegistry = new ConversationRegistry()
     conversationRegistry.register(new ClaudeConversationSource())
-    conversationRegistry.register(new OpenCodeDbSource())
     pluginConversationSource = new PluginConversationSource(conversationStore)
+    pluginConversationSource.setSessionLookup((sessionId) => {
+      const { sessions } = sessionStore.listSessions()
+      const row = sessions.find((s: any) => s.id === sessionId)
+      if (!row) return null
+      const cwd = row.worktree_path ?? row.repo_root ?? row.project_dir ?? null
+      return {
+        projectSlug: cwd ? cwd.replace(/[/.]/g, '-') : 'unknown',
+        projectName: row.name ?? 'Unknown',
+        projectDir: cwd,
+      }
+    })
     conversationRegistry.register(pluginConversationSource)
     const keyPath = path.join(app.getPath('userData'), 'attestation-key.json')
     attestationEngine = new AttestationEngine(attestationStore, keyPath)
@@ -300,6 +324,7 @@ app.whenReady().then(() => {
     if (feedStore) authzServer.setFeedStore(feedStore)
     authzServer.setSettingsStore(settingsStore)
     if (secretStore) authzServer.setSecretStore(secretStore)
+    if (conversationStore) authzServer.setConversationStore(conversationStore)
     authzServer.setOnOpenCodeApiUrl((sessionId, apiUrl) => {
       // Don't create duplicate tailers
       if (openCodeTailers.has(sessionId)) return
@@ -315,7 +340,14 @@ app.whenReady().then(() => {
       tailer.start()
       console.log(`[main] OpenCodeTailer started for session ${sessionId}`)
     })
-    authzServer.start().catch((err: unknown) => {
+    authzServer.start().then((port) => {
+      // Update connection file with real port/secret now that authz server is running
+      try {
+        installGlobalOpenCodePlugin(port, authzServer!.getSecret())
+      } catch {
+        // Non-fatal
+      }
+    }).catch((err: unknown) => {
       console.error('Authz server start failed:', err instanceof Error ? err.message : String(err))
       authzServer = null
     })
@@ -331,9 +363,8 @@ app.whenReady().then(() => {
     if (usageStore) {
       startUsageWatcher(usageStore, {
         getSessionMap: () => {
-          const result = sessionStore.listSessions() as any
-          const sessions = result?.sessions ?? []
-          const map = new Map<string, string>()
+          const { sessions } = sessionStore.listSessions()
+              const map = new Map<string, string>()
           for (const s of sessions) {
             const cwd = s.worktree_path ?? s.repo_root
             if (cwd) map.set(s.id, cwd)
@@ -354,9 +385,8 @@ app.whenReady().then(() => {
     startLiveTailer({
       sendToRenderer,
       getSessionMap: () => {
-        const result = sessionStore.listSessions() as any
-        const sessions = result?.sessions ?? []
-        const map = new Map<string, string>()
+        const { sessions } = sessionStore.listSessions()
+          const map = new Map<string, string>()
         for (const s of sessions) {
           // Prefer worktree_path — Claude Code uses its CWD for the project slug
           const cwd = s.worktree_path ?? s.repo_root
@@ -393,11 +423,20 @@ app.whenReady().then(() => {
       store: checkpointStore!,
       sendToRenderer,
       getSessionWorktree: (sessionId) => {
-        const result = sessionStore.listSessions() as any
-        const sessions = result?.sessions ?? []
-        const row = sessions.find((s: any) => s.id === sessionId)
-        return row?.worktree_path ?? row?.repo_root ?? row?.project_dir ?? null
+        // Check Latch session store first (Claude / Codex / etc.)
+        const { sessions } = sessionStore.listSessions()
+          const row = sessions.find((s: any) => s.id === sessionId)
+        if (row) return row.worktree_path ?? row.repo_root ?? row.project_dir ?? null
+        // Fall back to OpenCode worktree map (OpenCode uses its own session IDs)
+        return authzServer?.getOpenCodeWorktree(sessionId) ?? null
       },
+    })
+
+    // Wire checkpoint callbacks into authz server for OpenCode events
+    authzServer?.setCheckpointCallbacks({
+      onFileWrite: checkpointOnFileWrite,
+      onPrompt: checkpointOnPrompt,
+      onTurnUpdate: checkpointUpdateTurn,
     })
 
     // Start issue sync for GitHub/Linear write-back
@@ -419,9 +458,8 @@ app.whenReady().then(() => {
         return v ? parseFloat(v) : null
       },
       getSessionProject: (sessionId) => {
-        const result = sessionStore.listSessions() as any
-        const sessions = result?.sessions ?? []
-        const row = sessions.find((s: any) => s.id === sessionId)
+        const { sessions } = sessionStore.listSessions()
+          const row = sessions.find((s: any) => s.id === sessionId)
         return row?.project_dir ?? row?.repo_root ?? null
       },
       killSession: (sessionId) => {
@@ -432,6 +470,7 @@ app.whenReady().then(() => {
     })
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err)
+    console.error('SQLite init failed:', errMsg)
     const unavailable = (name: string) => ({
       ok:    false,
       error: `${name} unavailable: ${errMsg}`
@@ -555,21 +594,29 @@ app.whenReady().then(() => {
 
   // ── Git handlers ────────────────────────────────────────────────────────
 
-  ipcMain.handle('latch:git-status', async (_event, { cwd } = {} as any) => {
-    const root = await getGitRoot(cwd || process.cwd())
+  ipcMain.handle('latch:git-status', async (_event, raw) => {
+    const v = validateIpc(GitStatusSchema, raw || {})
+    if (!v.ok) return { isRepo: false, root: null }
+    const root = await getGitRoot(v.data.cwd || process.cwd())
     return root ? { isRepo: true, root } : { isRepo: false, root: null }
   })
 
-  ipcMain.handle('latch:git-create-worktree', async (_event, payload) => {
-    return createWorktree(payload)
+  ipcMain.handle('latch:git-create-worktree', async (_event, raw) => {
+    const v = validateIpc(GitCreateWorktreeSchema, raw)
+    if (!v.ok) return { ok: false, error: v.error }
+    return createWorktree(v.data)
   })
 
-  ipcMain.handle('latch:git-list-worktrees', async (_event, payload) => {
-    return listWorktrees(payload?.repoPath)
+  ipcMain.handle('latch:git-list-worktrees', async (_event, raw) => {
+    const v = validateIpc(GitListWorktreesSchema, raw)
+    if (!v.ok) return { ok: false, error: v.error }
+    return listWorktrees(v.data.repoPath)
   })
 
-  ipcMain.handle('latch:git-remove-worktree', async (_event, payload) => {
-    return removeWorktree(payload || {})
+  ipcMain.handle('latch:git-remove-worktree', async (_event, raw) => {
+    const v = validateIpc(GitRemoveWorktreeSchema, raw)
+    if (!v.ok) return { ok: false, error: v.error }
+    return removeWorktree(v.data)
   })
 
   ipcMain.handle('latch:git-defaults', async () => ({
@@ -577,20 +624,26 @@ app.whenReady().then(() => {
     branchPrefix:  getBranchPrefix()
   }))
 
-  ipcMain.handle('latch:git-list-branches', async (_event: any, payload: any) => {
-    const repoRoot = await getGitRoot(payload?.repoPath)
+  ipcMain.handle('latch:git-list-branches', async (_event, raw) => {
+    const v = validateIpc(GitListBranchesSchema, raw)
+    if (!v.ok) return { ok: false, error: v.error }
+    const repoRoot = await getGitRoot(v.data.repoPath)
     if (!repoRoot) return { ok: false, error: 'Git repository not detected.' }
-    return listBranches(repoRoot, payload?.limit)
+    return listBranches(repoRoot, v.data.limit)
   })
 
-  ipcMain.handle('latch:git-default-branch', async (_event: any, payload: any) => {
-    const repoRoot = await getGitRoot(payload?.repoPath)
+  ipcMain.handle('latch:git-default-branch', async (_event, raw) => {
+    const v = validateIpc(GitDefaultBranchSchema, raw)
+    if (!v.ok) return { ok: false, branch: 'main' }
+    const repoRoot = await getGitRoot(v.data.repoPath)
     if (!repoRoot) return { ok: false, branch: 'main' }
     return { ok: true, branch: await getDefaultBranch(repoRoot) }
   })
 
-  ipcMain.handle('latch:git-merge-branch', async (_event: any, payload: any) => {
-    return mergeBranch(payload)
+  ipcMain.handle('latch:git-merge-branch', async (_event, raw) => {
+    const v = validateIpc(GitMergeBranchSchema, raw)
+    if (!v.ok) return { ok: false, error: v.error }
+    return mergeBranch(v.data)
   })
 
   // ── Harness handlers ────────────────────────────────────────────────────
@@ -625,20 +678,10 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('latch:opencode-setup', async (_event: any, payload: { sessionId: string; targetDir: string }) => {
-    const { sessionId, targetDir } = payload
-    if (!sessionId || !targetDir) return { ok: false, error: 'Missing sessionId or targetDir' }
-    if (!authzServer) return { ok: false, error: 'Authz server not available' }
-    try {
-      generateOpenCodePlugin(targetDir, {
-        port: authzServer.getPort(),
-        sessionId,
-        secret: authzServer.getSecret(),
-      })
-      return { ok: true }
-    } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
+  ipcMain.handle('latch:opencode-setup', async (_event: any, _payload: { sessionId: string; targetDir: string }) => {
+    // No-op: OpenCode plugin is installed globally by installGlobalOpenCodePlugin().
+    // Kept for backward compatibility with renderer calls.
+    return { ok: true }
   })
 
   ipcMain.handle('latch:model-list', async (_event: any, payload: { harnessId: string }) => {
@@ -1792,8 +1835,7 @@ app.whenReady().then(() => {
     if (!checkpoint) return { ok: false, error: 'Checkpoint not found' }
 
     // Find the worktree path
-    const result = sessionStore.listSessions() as any
-    const sessions = result?.sessions ?? []
+    const { sessions } = sessionStore.listSessions()
     const row = sessions.find((s: any) => s.id === sessionId)
     const cwd = row?.worktree_path ?? row?.project_dir
     if (!cwd) return { ok: false, error: 'Session has no worktree' }
@@ -1835,8 +1877,7 @@ app.whenReady().then(() => {
     if (!checkpoint) return { ok: false, error: 'Checkpoint not found' }
 
     // Get source session to find the repo root
-    const result = sessionStore.listSessions() as any
-    const sessions = result?.sessions ?? []
+    const { sessions } = sessionStore.listSessions()
     const row = sessions.find((s: any) => s.id === sourceSessionId)
     const repoRoot = row?.repo_root
     if (!repoRoot) return { ok: false, error: 'Source session has no git repository' }

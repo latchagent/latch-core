@@ -611,9 +611,6 @@ export default function ReplayView() {
             >
               <div className="replay-conv-header">
                 <span className="replay-conv-project">{sessionNameBySlug.get(conv.projectSlug) ?? conv.projectName}</span>
-                {conv.harnessId && conv.harnessId !== 'claude' && (
-                  <span className="replay-conv-harness">{conv.harnessId}</span>
-                )}
                 <span className="replay-conv-date">
                   {new Date(conv.lastModified).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                 </span>

@@ -24,6 +24,9 @@ Thumbs.db
 # Environment / secrets
 .env
 .env.*
+*.p12
+*.b64
+*.pem
 
 # SQLite databases (user data, not source)
 *.db
@@ -46,3 +49,6 @@ debug_logs/
 
 # Coverage
 coverage/
+
+# Generated audit artifacts
+dependency-license-audit.csv

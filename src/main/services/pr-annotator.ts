@@ -28,7 +28,7 @@ export function parsePrUrl(url: string): PrUrlParts | null {
 }
 
 /** URL shown in the PR comment footer. Override via LATCH_REPO_URL env var. */
-const LATCH_REPO_URL = process.env.LATCH_REPO_URL ?? 'https://github.com/anthropics/latch'
+const LATCH_REPO_URL = process.env.LATCH_REPO_URL ?? 'https://github.com/latchagent/latch-core'
 
 /** Format a session receipt as a GitHub PR comment body (Markdown). */
 export function formatReceiptComment(receipt: SessionReceipt): string {

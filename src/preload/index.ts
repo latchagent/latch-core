@@ -473,31 +473,31 @@ contextBridge.exposeInMainWorld('latch', {
     ipcRenderer.invoke('latch:analytics-dashboard'),
 
   // ── Issues ────────────────────────────────────────────────────────────
-  listIssueRepos: (payload: any) =>
+  listIssueRepos: (payload: { provider: string }) =>
     ipcRenderer.invoke('latch:issue-list-repos', payload),
 
-  listIssues: (payload: any) =>
+  listIssues: (payload: { provider: string; repo: string; status?: string; labels?: string[] }) =>
     ipcRenderer.invoke('latch:issue-list', payload),
 
-  getIssue: (payload: any) =>
+  getIssue: (payload: { provider: string; ref: string }) =>
     ipcRenderer.invoke('latch:issue-get', payload),
 
-  createIssue: (payload: any) =>
+  createIssue: (payload: { title: string; body?: string; projectDir?: string; branchName?: string; labels?: string[] }) =>
     ipcRenderer.invoke('latch:issue-create', payload),
 
-  updateIssue: (payload: any) =>
+  updateIssue: (payload: { id: string; title?: string; body?: string; status?: string; projectDir?: string; branchName?: string }) =>
     ipcRenderer.invoke('latch:issue-update', payload),
 
-  deleteIssue: (payload: any) =>
+  deleteIssue: (payload: { id: string }) =>
     ipcRenderer.invoke('latch:issue-delete', payload),
 
-  startIssueSession: (payload: any) =>
+  startIssueSession: (payload: { provider: string; ref: string; projectDir?: string }) =>
     ipcRenderer.invoke('latch:issue-start-session', payload),
 
-  linkIssueSession: (payload: any) =>
+  linkIssueSession: (payload: { issueId: string; sessionId: string }) =>
     ipcRenderer.invoke('latch:issue-link-session', payload),
 
-  syncIssue: (payload: any) =>
+  syncIssue: (payload: { issueId: string }) =>
     ipcRenderer.invoke('latch:issue-sync', payload),
 
   listLinkedIssues: () =>

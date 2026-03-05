@@ -59,10 +59,10 @@ class SessionStore {
     })
   }
 
-  listSessions() {
+  listSessions(): { ok: true; sessions: Record<string, any>[] } {
     const rows = this.db
       .prepare('SELECT * FROM sessions ORDER BY created_at DESC')
-      .all()
+      .all() as Record<string, any>[]
     return { ok: true, sessions: rows }
   }
 

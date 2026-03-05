@@ -41,6 +41,7 @@ import McpEditor       from './components/modals/McpEditor'
 import McpDetail       from './components/modals/McpDetail'
 import BudgetAlertDialog from './components/modals/BudgetAlertDialog'
 import EndSessionDialog from './components/modals/EndSessionDialog'
+import UpdateBanner    from './components/UpdateBanner'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -312,6 +313,8 @@ export default function App() {
       {mcpDetailOpen    && <McpDetail />}
       {activeBudgetAlert && <BudgetAlertDialog />}
       {endDialogSessionId && <EndSessionDialog />}
+      {/* ── Update banner ────────────────────────────────────────────────── */}
+      <UpdateBanner />
       {/* ── App shell ───────────────────────────────────────────────────── */}
       <div className="app no-rail">
         <Sidebar />

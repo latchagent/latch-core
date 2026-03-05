@@ -10,7 +10,7 @@
 import crypto from 'node:crypto'
 import http from 'node:http'
 import os from 'node:os'
-import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule, SupervisorAction } from '../../types'
+import type { PolicyDocument, ActionClass, RiskLevel, AuthzDecision, PendingApproval, ApprovalDecision, ToolRule, McpServerRule, CommandRule, SupervisorAction, HarnessesConfig } from '../../types'
 import type { PolicyStore } from '../stores/policy-store'
 import { resolvePolicy, computeStrictestBaseline } from './policy-enforcer'
 import type { ActivityStore } from '../stores/activity-store'
@@ -196,7 +196,7 @@ export function authorizeToolCall(
   }
 
   // Check per-tool rules (toolRules → mcpServerRules → legacy arrays)
-  const harnessConfig = policy.harnesses?.[harnessId as keyof typeof policy.harnesses] as any
+  const harnessConfig = policy.harnesses?.[harnessId as keyof HarnessesConfig]
   const toolDecision = resolveToolDecision(toolName, harnessConfig)
   if (toolDecision === 'deny') {
     return { decision: 'deny', reason: `Tool "${toolName}" is denied by policy rule.` }
@@ -311,8 +311,17 @@ export class AuthzServer {
   private feedStore: FeedStore | null = null
   private settingsStore: SettingsStore | null = null
   private secretStore: import('../stores/secret-store').SecretStore | null = null
+  private conversationStore: import('../stores/conversation-store').ConversationStore | null = null
   private onOpenCodeApiUrl: ((sessionId: string, apiUrl: string) => void) | null = null
   private sendToRenderer: (channel: string, payload: unknown) => void
+  /** OpenCode session ID → worktree path. Populated when the plugin reports its CWD. */
+  private openCodeWorktrees = new Map<string, string>()
+  /** Checkpoint callbacks — wired from main process so authz can trigger checkpointing. */
+  private checkpointCallbacks: {
+    onFileWrite: (sessionId: string, filePath: string) => void
+    onPrompt: (sessionId: string) => void
+    onTurnUpdate: (sessionId: string, turnIndex: number, thinkingSummary?: string, costUsd?: number) => void
+  } | null = null
 
   constructor(
     policyStore: PolicyStore,
@@ -350,9 +359,28 @@ export class AuthzServer {
     this.secretStore = store
   }
 
+  /** Wire up the conversation store for OpenCode event persistence. */
+  setConversationStore(store: import('../stores/conversation-store').ConversationStore): void {
+    this.conversationStore = store
+  }
+
   /** Wire up the OpenCode API URL callback for starting the SSE tailer. */
   setOnOpenCodeApiUrl(cb: (sessionId: string, apiUrl: string) => void): void {
     this.onOpenCodeApiUrl = cb
+  }
+
+  /** Wire up checkpoint callbacks for harness-agnostic checkpointing. */
+  setCheckpointCallbacks(cbs: {
+    onFileWrite: (sessionId: string, filePath: string) => void
+    onPrompt: (sessionId: string) => void
+    onTurnUpdate: (sessionId: string, turnIndex: number, thinkingSummary?: string, costUsd?: number) => void
+  }): void {
+    this.checkpointCallbacks = cbs
+  }
+
+  /** Get the worktree path for an OpenCode session (used by checkpoint engine). */
+  getOpenCodeWorktree(sessionId: string): string | null {
+    return this.openCodeWorktrees.get(sessionId) ?? null
   }
 
   /** Register a callback for supervisor actions (used by Supervisor service). */
@@ -555,8 +583,16 @@ export class AuthzServer {
     const openCodeApiMatch = (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch)
       ? req.url?.match(/^\/opencode-api\/([^/]+)$/)
       : null
+    // Route: POST /opencode-event/:sessionId — OpenCode plugin forwards conversation events
+    const openCodeEventMatch = (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch && !openCodeApiMatch)
+      ? req.url?.match(/^\/opencode-event\/([^/]+)$/)
+      : null
+    // Route: POST /opencode-cwd/:sessionId — OpenCode plugin registers its CWD (worktree path)
+    const openCodeCwdMatch = (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch && !openCodeApiMatch && !openCodeEventMatch)
+      ? req.url?.match(/^\/opencode-cwd\/([^/]+)$/)
+      : null
 
-    if (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch && !openCodeApiMatch) {
+    if (!superviseMatch && !authzMatch && !notifyMatch && !feedMatch && !secretsMatch && !openCodeApiMatch && !openCodeEventMatch && !openCodeCwdMatch) {
       res.writeHead(404)
       res.end('Not found')
       return
@@ -576,7 +612,7 @@ export class AuthzServer {
 
     const sessionId = secretsMatch
       ? ''
-      : decodeURIComponent((superviseMatch ?? authzMatch ?? notifyMatch ?? feedMatch ?? openCodeApiMatch)![1])
+      : decodeURIComponent((superviseMatch ?? authzMatch ?? notifyMatch ?? feedMatch ?? openCodeApiMatch ?? openCodeEventMatch ?? openCodeCwdMatch)![1])
 
     // Rate limit per session (skip for secrets endpoint which has no session)
     if (sessionId && !this.checkRateLimit(sessionId)) {
@@ -619,6 +655,10 @@ export class AuthzServer {
           this.processFeed(sessionId, body, res)
         } else if (openCodeApiMatch) {
           this.processOpenCodeApi(sessionId, body, res)
+        } else if (openCodeEventMatch) {
+          this.processOpenCodeEvent(sessionId, body, res)
+        } else if (openCodeCwdMatch) {
+          this.processOpenCodeCwd(sessionId, body, res)
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -698,6 +738,128 @@ export class AuthzServer {
     res.end(JSON.stringify({ ok: true }))
   }
 
+  /** Process an OpenCode conversation event forwarded by the plugin. */
+  private processOpenCodeEvent(sessionId: string, body: string, res: http.ServerResponse): void {
+    if (!this.conversationStore) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'ConversationStore unavailable' }))
+      return
+    }
+
+    // Auto-register as 'opencode' so feeds show the correct harness badge
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, { sessionId, harnessId: 'opencode', policyIds: [], policyOverride: null })
+    }
+
+    let event: Record<string, unknown>
+    try {
+      event = JSON.parse(body)
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON' }))
+      return
+    }
+
+    const kind = typeof event.kind === 'string' ? event.kind : ''
+    if (!kind) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Missing event kind' }))
+      return
+    }
+
+    const timestamp = new Date().toISOString()
+    this.conversationStore.record({
+      sessionId,
+      harnessId: 'opencode',
+      timestamp,
+      kind,
+      turnIndex: typeof event.turnIndex === 'number' ? event.turnIndex : undefined,
+      toolName: typeof event.toolName === 'string' ? event.toolName : undefined,
+      toolInput: typeof event.toolInput === 'string' ? event.toolInput : undefined,
+      toolResult: typeof event.toolResult === 'string' ? event.toolResult : undefined,
+      isError: event.isError === true,
+      model: typeof event.model === 'string' ? event.model : undefined,
+      inputTokens: typeof event.inputTokens === 'number' ? event.inputTokens : undefined,
+      outputTokens: typeof event.outputTokens === 'number' ? event.outputTokens : undefined,
+      reasoningTokens: typeof event.reasoningTokens === 'number' ? event.reasoningTokens : undefined,
+      cacheReadTokens: typeof event.cacheReadTokens === 'number' ? event.cacheReadTokens : undefined,
+      cacheWriteTokens: typeof event.cacheWriteTokens === 'number' ? event.cacheWriteTokens : undefined,
+      costUsd: typeof event.costUsd === 'number' ? event.costUsd : undefined,
+      textContent: typeof event.textContent === 'string' ? event.textContent : undefined,
+    })
+
+    // Push a live event to the renderer for real-time updates
+    this.sendToRenderer('latch:live-event', {
+      sessionId,
+      timestamp,
+      kind: kind === 'tool-call' ? 'tool-call' as const : 'status-change' as const,
+      ...(kind === 'tool-call'
+        ? { toolName: event.toolName ?? 'unknown', target: event.toolInput ?? '', status: event.isError ? 'error' : 'success' }
+        : { sessionStatus: kind === 'prompt' ? 'idle' as const : 'active' as const }),
+    })
+
+    // ── Checkpoint engine integration ───────────────────────────────────
+    // Trigger the same checkpoint machinery used by Claude sessions.
+    if (this.checkpointCallbacks && this.openCodeWorktrees.has(sessionId)) {
+      const turnIndex = typeof event.turnIndex === 'number' ? event.turnIndex : undefined
+
+      if (kind === 'tool-call') {
+        const toolName = String(event.toolName ?? '').toLowerCase()
+        const toolInput = String(event.toolInput ?? '')
+        // Detect write/edit tools and trigger checkpoint
+        if (toolName === 'write' || toolName === 'edit' || toolName === 'create' || toolName === 'patch') {
+          this.checkpointCallbacks.onFileWrite(sessionId, toolInput)
+        }
+        if (turnIndex !== undefined) {
+          this.checkpointCallbacks.onTurnUpdate(sessionId, turnIndex)
+        }
+      } else if (kind === 'prompt') {
+        this.checkpointCallbacks.onPrompt(sessionId)
+        if (turnIndex !== undefined) {
+          this.checkpointCallbacks.onTurnUpdate(sessionId, turnIndex)
+        }
+      } else if (kind === 'thinking') {
+        const thinkingSummary = typeof event.textContent === 'string' ? event.textContent : undefined
+        if (turnIndex !== undefined) {
+          this.checkpointCallbacks.onTurnUpdate(sessionId, turnIndex, thinkingSummary)
+        }
+      } else if (kind === 'step-finish') {
+        const costUsd = typeof event.costUsd === 'number' ? event.costUsd : undefined
+        if (turnIndex !== undefined) {
+          this.checkpointCallbacks.onTurnUpdate(sessionId, turnIndex, undefined, costUsd)
+        }
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  }
+
+  /** Register an OpenCode session's working directory for checkpoint support. */
+  private processOpenCodeCwd(sessionId: string, body: string, res: http.ServerResponse): void {
+    let payload: Record<string, unknown>
+    try {
+      payload = JSON.parse(body)
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON' }))
+      return
+    }
+
+    const cwd = typeof payload.cwd === 'string' ? payload.cwd.trim() : ''
+    if (!cwd) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Missing cwd' }))
+      return
+    }
+
+    this.openCodeWorktrees.set(sessionId, cwd)
+    console.log(`[authz] OpenCode session ${sessionId} registered CWD: ${cwd}`)
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  }
+
   /** Resolve secret keys for latch-mcp-wrap (resolves op:// refs via 1Password). */
   private async processSecretsResolve(body: string, res: http.ServerResponse): Promise<void> {
     if (!this.secretStore) {
@@ -753,18 +915,19 @@ export class AuthzServer {
       return
     }
 
-    // Accept both Claude Code format (tool_name/tool_input) and generic format
-    const toolName  = String(payload.tool_name ?? payload.toolName ?? 'unknown')
-    const toolInput = (payload.tool_input ?? payload.args ?? {}) as Record<string, unknown>
+    // Accept Claude Code format (tool_name/tool_input), generic (toolName/args), and plugin (tool/input)
+    const toolName  = String(payload.tool_name ?? payload.toolName ?? payload.tool ?? 'unknown')
+    const toolInput = (payload.tool_input ?? payload.args ?? payload.input ?? {}) as Record<string, unknown>
     const { actionClass, risk } = classifyTool(toolName)
 
     // Resolve effective policy — filter to session's selected policies
     const allResult = this.policyStore.listPolicies()
     let basePolicy: PolicyDocument
-    if (allResult.ok && allResult.policies?.length) {
-      const selected = registered.policyIds?.length
-        ? allResult.policies.filter(p => registered.policyIds.includes(p.id))
-        : allResult.policies
+    if (!registered.policyIds?.length) {
+      // No policy selected — allow everything
+      basePolicy = { id: '__none__', name: 'No Policy', description: '', permissions: { allowBash: true, allowNetwork: true, allowFileWrite: true, confirmDestructive: false, blockedGlobs: [] }, harnesses: {} }
+    } else if (allResult.ok && allResult.policies?.length) {
+      const selected = allResult.policies.filter(p => registered.policyIds.includes(p.id))
       basePolicy = selected.length
         ? computeStrictestBaseline(selected, registered.harnessId)
         : { id: '__none__', name: 'No Policy', description: '', permissions: { allowBash: true, allowNetwork: true, allowFileWrite: true, confirmDestructive: false, blockedGlobs: [] }, harnesses: {} }
@@ -929,10 +1092,11 @@ export class AuthzServer {
     const allResult = this.policyStore.listPolicies()
     let basePolicy: PolicyDocument
 
-    if (allResult.ok && allResult.policies?.length) {
-      const selected = registered.policyIds?.length
-        ? allResult.policies.filter(p => registered.policyIds.includes(p.id))
-        : allResult.policies
+    if (!registered.policyIds?.length) {
+      // No policy selected — allow everything
+      basePolicy = { id: '__none__', name: 'No Policy', description: '', permissions: { allowBash: true, allowNetwork: true, allowFileWrite: true, confirmDestructive: false, blockedGlobs: [] }, harnesses: {} }
+    } else if (allResult.ok && allResult.policies?.length) {
+      const selected = allResult.policies.filter(p => registered.policyIds.includes(p.id))
       basePolicy = selected.length
         ? computeStrictestBaseline(selected, registered.harnessId)
         : { id: '__none__', name: 'No Policy', description: '', permissions: { allowBash: true, allowNetwork: true, allowFileWrite: true, confirmDestructive: false, blockedGlobs: [] }, harnesses: {} }

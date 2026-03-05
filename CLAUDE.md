@@ -2,15 +2,14 @@
 
 Latch Desktop is an **Electron app** that acts as a terminal-first control plane
 for LLM coding harnesses (Claude Code, Codex, OpenClaw). It wraps real PTY
-shells, manages git worktrees, enforces policies, and coordinates multi-agent
-workflows via walkie-sh (P2P messaging).
+shells, manages git worktrees, enforces policies, and provides conversation
+replay and session analytics.
 
 ---
 
 ## Running the app
 
 ```bash
-cd apps/desktop
 npm install          # also runs electron-rebuild for native modules
 npm run dev          # launch app (electron-vite + Vite HMR)
 LATCH_DEVTOOLS=1 npm run dev   # launch with DevTools open
@@ -34,7 +33,14 @@ npm run build        # production build → out/
 │   │   │   ├── mcp-store.ts       # MCP server configurations
 │   │   │   ├── activity-store.ts  # Tool-call activity log
 │   │   │   ├── feed-store.ts      # Agent status feed
-│   │   │   └── settings-store.ts  # Encrypted key-value settings
+│   │   │   ├── settings-store.ts  # Encrypted key-value settings
+│   │   │   ├── conversation-store.ts # Conversation history
+│   │   │   ├── attestation-store.ts  # Attestation records
+│   │   │   ├── checkpoint-store.ts   # Checkpoint snapshots
+│   │   │   ├── issue-store.ts     # Issue tracking data
+│   │   │   ├── usage-store.ts     # Token/cost usage tracking
+│   │   │   ├── secret-store.ts    # Encrypted secrets
+│   │   │   └── service-store.ts   # Service catalog data
 │   │   ├── services/              # Business logic & background services
 │   │   │   ├── authz-server.ts    # Runtime tool-call authorization
 │   │   │   ├── policy-enforcer.ts # Harness-native config generation
@@ -42,12 +48,26 @@ npm run build        # production build → out/
 │   │   │   ├── mcp-sync.ts        # MCP config sync to harnesses
 │   │   │   ├── radar.ts           # Anomaly detection engine
 │   │   │   ├── telemetry.ts       # Anonymous usage telemetry
-│   │   │   └── updater.ts         # Auto-update lifecycle
+│   │   │   ├── updater.ts         # Auto-update lifecycle
+│   │   │   ├── budget-enforcer.ts # Token/cost budget enforcement
+│   │   │   ├── checkpoint-engine.ts # Git checkpoint snapshots
+│   │   │   ├── live-tailer.ts     # Live conversation tailing
+│   │   │   ├── supervisor.ts      # Agent supervisor orchestration
+│   │   │   ├── opencode-tailer.ts # OpenCode log tailing
+│   │   │   ├── github-issues.ts   # GitHub issue integration
+│   │   │   ├── linear-issues.ts   # Linear issue integration
+│   │   │   └── issue-sync.ts      # Issue sync coordinator
 │   │   └── lib/                   # Infrastructure
 │   │       ├── pty-manager.ts     # PTY lifecycle via node-pty
 │   │       ├── docker-manager.ts  # Docker container management
 │   │       ├── git-workspaces.ts  # Git worktree create/list/remove
-│   │       └── harnesses.ts       # Detects claude / codex / openclaw
+│   │       ├── harnesses.ts       # Detects claude / codex / openclaw
+│   │       ├── ipc-schemas.ts     # Zod schemas for IPC validation
+│   │       ├── service-catalog.ts # Service discovery & registry
+│   │       ├── conversation-source.ts # Conversation data sources
+│   │       ├── timeline-classifier.ts # Timeline event classification
+│   │       ├── analytics-engine.ts # Session analytics computation
+│   │       └── pricing.ts         # Token pricing lookups
 │   ├── preload/
 │   │   └── index.ts               # contextBridge → window.latch API
 │   ├── renderer/                  # Renderer process (React + TypeScript)
@@ -64,16 +84,25 @@ npm run build        # production build → out/
 │   │   │   ├── Topbar.tsx         # Status bar (harness, policy, session)
 │   │   │   ├── TerminalArea.tsx   # Tab bar + xterm panes (always-mounted)
 │   │   │   ├── Rail.tsx           # Rail tabs + panel switching
+│   │   │   ├── LiveView.tsx       # Live conversation view
+│   │   │   ├── ReplayView.tsx     # Conversation replay viewer
+│   │   │   ├── IssuesView.tsx     # Issue tracking view
+│   │   │   ├── SessionsView.tsx   # Sessions management view
+│   │   │   ├── AnalyticsView.tsx  # Session analytics dashboard
+│   │   │   ├── UsageView.tsx      # Token/cost usage view
 │   │   │   ├── panels/
 │   │   │   │   ├── PolicyPanel.tsx
 │   │   │   │   ├── SkillsPanel.tsx
-│   │   │   │   ├── WorkflowPanel.tsx
-│   │   │   │   └── CommsPanel.tsx
+│   │   │   │   ├── SettingsPanel.tsx
+│   │   │   │   ├── GatewayPanel.tsx
+│   │   │   │   ├── ActivityPanel.tsx
+│   │   │   │   └── ServicesPanel.tsx
 │   │   │   └── modals/
-│   │   │       ├── SessionWizard.tsx
 │   │   │       ├── PolicyEditor.tsx
-│   │   │       ├── SkillEditor.tsx
-│   │   │       └── WorkflowCreator.tsx
+│   │   │       ├── EndSessionDialog.tsx
+│   │   │       ├── BudgetAlertDialog.tsx
+│   │   │       ├── McpDetail.tsx
+│   │   │       └── McpEditor.tsx
 │   │   └── (no barrel files — import directly)
 │   └── types/
 │       └── index.ts               # Shared TS interfaces + Window.latch
@@ -100,6 +129,8 @@ that teach contributor agents how to work in this codebase. Symlinked into
 | `adding-react-components` | Panels, modals, Zustand, Rail registration, CSS tokens |
 | `adding-service-modules` | Main-process services: lifecycle, deps, testing |
 | `running-and-testing` | Build, dev, typecheck, vitest, native module gotchas |
+
+> There are also 18+ enclave-related skills not listed individually here.
 
 ---
 
@@ -226,6 +257,7 @@ created_at TEXT, updated_at TEXT
 | `claude`   | Claude Code | `~/.claude`| `claude`, `claude-code`|
 | `codex`    | Codex       | `~/.codex` | `codex`               |
 | `openclaw` | OpenClaw    | `~/.openclaw`| `openclaw`          |
+| `opencode` | OpenCode    | `~/.opencode`| `opencode`          |
 
 ---
 
@@ -256,13 +288,6 @@ created_at TEXT, updated_at TEXT
 2. Import it in `Rail.tsx` and add conditional render
 3. Add the panel ID to the `RailPanel` type in `src/types/index.ts`
 4. Add panel-specific styles to `styles.css`
-
-### walkie-sh integration (planned)
-
-When building multi-harness workflows, walkie-sh creates a P2P encrypted
-channel per session. Each harness tab spawns with `WALKIE_ID=<harness-id>`
-so messages are labeled. The Comms rail tails `walkie read <channel> --wait`
-via a hidden child process.
 
 ---
 

@@ -157,6 +157,44 @@ export const AuthzRegisterSchema = z.object({
   policyOverride: z.any().nullable().optional(),
 })
 
+// ── Git ─────────────────────────────────────────────────────────────────
+
+export const GitStatusSchema = z.object({
+  cwd: z.string().max(2048).optional(),
+})
+
+export const GitCreateWorktreeSchema = z.object({
+  repoPath: z.string().min(1).max(2048),
+  branchName: z.string().min(1).max(500),
+  sessionName: z.string().max(500).optional(),
+  startPoint: z.string().max(500).optional(),
+  useExisting: z.boolean().optional(),
+})
+
+export const GitListWorktreesSchema = z.object({
+  repoPath: z.string().min(1).max(2048),
+})
+
+export const GitRemoveWorktreeSchema = z.object({
+  repoPath: z.string().max(2048).optional(),
+  worktreePath: z.string().min(1).max(2048),
+})
+
+export const GitListBranchesSchema = z.object({
+  repoPath: z.string().max(2048).optional(),
+  limit: z.number().int().min(1).max(1000).optional(),
+})
+
+export const GitDefaultBranchSchema = z.object({
+  repoPath: z.string().max(2048).optional(),
+})
+
+export const GitMergeBranchSchema = z.object({
+  repoRoot: z.string().min(1).max(2048),
+  branchRef: z.string().min(1).max(500),
+  worktreePath: z.string().max(2048).nullable().optional(),
+})
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 /** Validate an IPC payload against a schema. Returns parsed data or error result. */

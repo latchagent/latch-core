@@ -522,6 +522,7 @@ export interface SessionRecord {
   showWizard: boolean;
   resumeId: string | null;
   status: 'active' | 'merged' | null;
+  model: string | null;
 }
 
 // ─── Activity / Authz ────────────────────────────────────────────────────────

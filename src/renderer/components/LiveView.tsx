@@ -190,19 +190,9 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
   const session = sessions.get(sessionId)
 
   const streamRef = useRef<HTMLDivElement>(null)
-  const autoScrollRef = useRef(true)
 
-  useEffect(() => {
-    if (autoScrollRef.current && streamRef.current) {
-      streamRef.current.scrollTop = streamRef.current.scrollHeight
-    }
-  }, [events.length])
-
-  const handleScroll = () => {
-    if (!streamRef.current) return
-    const { scrollTop, scrollHeight, clientHeight } = streamRef.current
-    autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 50
-  }
+  // Reverse chronological — newest events at top
+  const reversedEvents = [...events].reverse()
 
   const statusEvent = [...events].reverse().find(e => e.kind === 'status-change')
   const status = statusEvent?.sessionStatus ?? 'idle'
@@ -246,25 +236,13 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <div className="live-stream" ref={streamRef} onScroll={handleScroll}>
-        {events.length === 0 ? (
+      <div className="live-stream" ref={streamRef}>
+        {reversedEvents.length === 0 ? (
           <div className="an-empty-text" style={{ padding: 32 }}>Waiting for events...</div>
         ) : (
-          events.map(event => <EventRow key={event.id} event={event} />)
+          reversedEvents.map(event => <EventRow key={event.id} event={event} />)
         )}
       </div>
-
-      {!autoScrollRef.current && events.length > 0 && (
-        <button
-          className="live-jump-btn"
-          onClick={() => {
-            autoScrollRef.current = true
-            streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' })
-          }}
-        >
-          Jump to latest
-        </button>
-      )}
     </div>
   )
 }

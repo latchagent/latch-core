@@ -124,7 +124,8 @@ export async function linearUpdateStatus(apiKey: string, issueId: string, status
     }
   `, { id: issueId })
 
-  const states = issueData.issue.team.states.nodes as any[]
+  const states = issueData?.issue?.team?.states?.nodes as any[] | undefined
+  if (!states?.length) return
   const typeMap: Record<string, string> = {
     'open': 'backlog',
     'in_progress': 'started',
